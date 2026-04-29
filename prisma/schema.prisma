@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Trip {
+  id        Int      @id @default(autoincrement())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  cities    City[]
+}
+
+model City {
+  id        Int       @id @default(autoincrement())
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  order     Int
+  tripId    Int
+  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  pois      Poi[]
+  dayPlans  DayPlan[]
+  createdAt DateTime  @default(now())
+}
+
+// SQLite + Prisma does not support native enums — `category` and `timeSlot`
+// are Strings constrained at the app layer (see src/lib/categories.ts and
+// src/lib/slots.ts).
+model Poi {
+  id          Int           @id @default(autoincrement())
+  name        String
+  category    String
+  description String?
+  latitude    Float?
+  longitude   Float?
+  imageUrl    String?
+  cityId      Int
+  city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  activities  DayActivity[]
+  createdAt   DateTime      @default(now())
+}
+
+model DayPlan {
+  id         Int           @id @default(autoincrement())
+  date       DateTime
+  cityId     Int
+  city       City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  activities DayActivity[]
+  createdAt  DateTime      @default(now())
+
+  @@unique([cityId, date])
+}
+
+model DayActivity {
+  id        Int      @id @default(autoincrement())
+  dayPlanId Int
+  dayPlan   DayPlan  @relation(fields: [dayPlanId], references: [id], onDelete: Cascade)
+  poiId     Int      @unique
+  poi       Poi      @relation(fields: [poiId], references: [id], onDelete: Cascade)
+  timeSlot  String
+  order     Int
+  createdAt DateTime @default(now())
+}
