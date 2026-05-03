@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DeleteTripButton } from "./delete-button";
+import { EditTripButton } from "./edit-trip-button";
 import { CitiesSection } from "./cities-section";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,17 @@ export default async function TripDetailPage({
             <dt className="text-[hsl(var(--muted-foreground))]">End date</dt>
             <dd>{formatDate(trip.endDate)}</dd>
           </dl>
-          <DeleteTripButton id={trip.id} />
+          <div className="flex gap-2 pt-2">
+            <EditTripButton
+              trip={{
+                id: trip.id,
+                name: trip.name,
+                startDate: trip.startDate.toISOString(),
+                endDate: trip.endDate.toISOString(),
+              }}
+            />
+            <DeleteTripButton id={trip.id} />
+          </div>
         </CardContent>
       </Card>
 

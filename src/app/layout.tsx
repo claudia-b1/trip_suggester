@@ -21,7 +21,7 @@ export default function RootLayout({
         <ToastProvider>
           <ConfirmProvider>
             <header className="border-b border-[hsl(var(--border))]">
-              <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+              <div className="mx-auto flex w-full max-w-[75vw] items-center justify-between gap-3 px-4 py-3">
                 <Link href="/" className="text-base font-semibold sm:text-lg">
                   Trip Planner
                 </Link>
@@ -30,7 +30,7 @@ export default function RootLayout({
                 </Button>
               </div>
             </header>
-            <main className="mx-auto max-w-3xl px-4 py-4 sm:px-6">{children}</main>
+            <main className="mx-auto w-full max-w-[75vw] py-4">{children}</main>
           </ConfirmProvider>
         </ToastProvider>
       </body>

@@ -1,59 +1,32 @@
+/**
+ * Auto-plan route — greedy geographic scheduler.
+ *
+ * Algorithm:
+ *  1. Cluster POIs with coordinates geographically: seed each day from the
+ *     first unclaimed POI, then greedily pull in neighbours within MAX_CLUSTER_KM.
+ *  2. Distribute leftover POIs (and those without coordinates) round-robin.
+ *  3. Within each day sort by category priority, then bin into MORNING /
+ *     AFTERNOON / EVENING (max 2 per slot).
+ *     – NIGHTLIFE  → EVENING only
+ *     – FOOD       → any slot (earlier ones filled first)
+ *     – Everything else → MORNING → AFTERNOON → EVENING
+ */
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { isTimeSlot, type TimeSlot } from "@/lib/slots";
+import type { TimeSlot } from "@/lib/slots";
+import { haversineKm } from "@/lib/recommendations/_shared";
 
-const TOOL: Anthropic.Tool = {
-  name: "create_daily_plan",
-  description:
-    "Distribute the given POIs across the given day plans with time slots. Each POI must be assigned exactly once.",
-  input_schema: {
-    type: "object",
-    properties: {
-      assignments: {
-        type: "array",
-        description: "One entry per POI. Every POI from the input must appear exactly once.",
-        items: {
-          type: "object",
-          properties: {
-            dayPlanId: {
-              type: "integer",
-              description: "The id of a dayPlan from the input.",
-            },
-            poiId: {
-              type: "integer",
-              description: "The id of a POI from the input.",
-            },
-            timeSlot: {
-              type: "string",
-              enum: ["MORNING", "AFTERNOON", "EVENING"],
-            },
-            order: {
-              type: "integer",
-              description:
-                "Zero-based position within the (dayPlanId, timeSlot) bucket.",
-            },
-          },
-          required: ["dayPlanId", "poiId", "timeSlot", "order"],
-        },
-      },
-    },
-    required: ["assignments"],
-  },
+const MAX_CLUSTER_KM = 5;
+const MAX_PER_SLOT = 2;
+const SLOTS: TimeSlot[] = ["MORNING", "AFTERNOON", "EVENING"];
+
+type PlanPoi = {
+  id: number;
+  category: string;
+  latitude: number | null;
+  longitude: number | null;
+  bestTimeToVisit: string | null;
 };
-
-const SYSTEM = `You are a trip planner. Given the POIs in one city and the day plans for the visit, distribute the POIs across days and time slots (MORNING / AFTERNOON / EVENING).
-
-Rules:
-- Assign every POI exactly once.
-- Group geographically nearby POIs (close lat/lng) on the same day to reduce travel.
-- Mix POI categories within a single day when possible.
-- Place at most 2 POIs per (day, time slot).
-- Prefer FOOD POIs around mealtimes when reasonable.
-- Place NIGHTLIFE POIs in EVENING.
-- 'order' is the position within (dayPlanId, timeSlot), starting at 0.
-
-Return your plan via the create_daily_plan tool.`;
 
 type Assignment = {
   dayPlanId: number;
@@ -62,20 +35,101 @@ type Assignment = {
   order: number;
 };
 
-export async function POST(
-  _req: Request,
-  { params }: { params: Promise<{ cityId: string }> },
-) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY is not set" },
-      { status: 503 },
-    );
+const CATEGORY_SORT: Record<string, number> = {
+  CULTURE: 0,
+  NATURE: 1,
+  OUTDOORS: 2,
+  SHOPPING: 3,
+  FOOD: 4,
+  NIGHTLIFE: 5,
+};
+
+function preferredSlots(poi: PlanPoi): TimeSlot[] {
+  // bestTimeToVisit from the recommendation engine takes priority
+  if (poi.bestTimeToVisit === "morning") return ["MORNING", "AFTERNOON", "EVENING"];
+  if (poi.bestTimeToVisit === "afternoon") return ["AFTERNOON", "MORNING", "EVENING"];
+  if (poi.bestTimeToVisit === "evening") return ["EVENING", "AFTERNOON", "MORNING"];
+  // fallback to category heuristic
+  if (poi.category === "NIGHTLIFE") return ["EVENING"];
+  return ["MORNING", "AFTERNOON", "EVENING"];
+}
+
+function buildAssignments(pois: PlanPoi[], dayPlans: { id: number }[]): Assignment[] {
+  const withCoords = pois.filter((p) => p.latitude != null && p.longitude != null);
+  const withoutCoords = pois.filter((p) => p.latitude == null || p.longitude == null);
+
+  const dayPoiMap = new Map<number, PlanPoi[]>(dayPlans.map((d) => [d.id, []]));
+  const unclaimed = new Set(withCoords.map((p) => p.id));
+  const byId = new Map(pois.map((p) => [p.id, p]));
+  const maxPerDay = MAX_PER_SLOT * SLOTS.length;
+
+  // Geographic clustering: seed each day, pull in nearby POIs
+  for (const day of dayPlans) {
+    if (unclaimed.size === 0) break;
+    const dayPois = dayPoiMap.get(day.id)!;
+
+    const seedId = unclaimed.values().next().value as number;
+    const seed = byId.get(seedId)!;
+    unclaimed.delete(seedId);
+    dayPois.push(seed);
+
+    for (const id of Array.from(unclaimed)) {
+      if (dayPois.length >= maxPerDay) break;
+      const p = byId.get(id)!;
+      const dist = haversineKm(seed.latitude!, seed.longitude!, p.latitude!, p.longitude!);
+      if (dist <= MAX_CLUSTER_KM) {
+        dayPois.push(p);
+        unclaimed.delete(id);
+      }
+    }
   }
 
+  // Round-robin for leftovers and POIs without coordinates
+  const leftover = [
+    ...Array.from(unclaimed).map((id) => byId.get(id)!),
+    ...withoutCoords,
+  ];
+  leftover.forEach((p, i) => {
+    const day = dayPlans[i % dayPlans.length];
+    const dayPois = dayPoiMap.get(day.id)!;
+    if (dayPois.length < maxPerDay) dayPois.push(p);
+  });
+
+  // Assign time slots within each day
+  const result: Assignment[] = [];
+  for (const day of dayPlans) {
+    const dayPois = dayPoiMap.get(day.id)!;
+    dayPois.sort(
+      (a, b) => (CATEGORY_SORT[a.category] ?? 9) - (CATEGORY_SORT[b.category] ?? 9),
+    );
+    const slotCounts: Record<TimeSlot, number> = { MORNING: 0, AFTERNOON: 0, EVENING: 0 };
+    for (const poi of dayPois) {
+      const slot = preferredSlots(poi).find((s) => slotCounts[s] < MAX_PER_SLOT);
+      if (!slot) continue;
+      result.push({ dayPlanId: day.id, poiId: poi.id, timeSlot: slot, order: slotCounts[slot] });
+      slotCounts[slot]++;
+    }
+  }
+  return result;
+}
+
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ cityId: string }> },
+) {
   const { cityId } = await params;
   const cityIdNum = Number(cityId);
+
+  // Optional: only plan specific days
+  let selectedDayPlanIds: number[] | null = null;
+  try {
+    const body = await req.json();
+    if (Array.isArray(body.dayPlanIds) && body.dayPlanIds.length > 0) {
+      selectedDayPlanIds = body.dayPlanIds.map(Number).filter(Number.isInteger);
+    }
+  } catch {
+    // no body = plan all days
+  }
 
   const city = await prisma.city.findUnique({
     where: { id: cityIdNum },
@@ -94,103 +148,17 @@ export async function POST(
     return NextResponse.json({ error: "No day plans" }, { status: 400 });
   }
 
-  const userPayload = {
-    pois: city.pois.map((p) => ({
-      id: p.id,
-      name: p.name,
-      category: p.category,
-      latitude: p.latitude,
-      longitude: p.longitude,
-    })),
-    dayPlans: city.dayPlans.map((d, idx) => ({
-      id: d.id,
-      day: idx + 1,
-      date: d.date.toISOString().slice(0, 10),
-    })),
-  };
+  const targetDayPlans = selectedDayPlanIds
+    ? city.dayPlans.filter((d) => selectedDayPlanIds!.includes(d.id))
+    : city.dayPlans;
 
-  const anthropic = new Anthropic({ apiKey });
-
-  let response;
-  try {
-    response = await anthropic.messages.create({
-      model: "claude-opus-4-7",
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
-      system: SYSTEM,
-      tools: [TOOL],
-      tool_choice: { type: "tool", name: "create_daily_plan" },
-      messages: [{ role: "user", content: JSON.stringify(userPayload) }],
-    });
-  } catch (err) {
-    if (err instanceof Anthropic.APIError) {
-      return NextResponse.json(
-        { error: `Anthropic API error: ${err.message}` },
-        { status: 502 },
-      );
-    }
-    throw err;
+  if (targetDayPlans.length === 0) {
+    return NextResponse.json({ error: "No matching day plans" }, { status: 400 });
   }
 
-  const toolUse = response.content.find((b) => b.type === "tool_use");
-  if (!toolUse || toolUse.type !== "tool_use") {
-    return NextResponse.json(
-      { error: "Model did not return a tool_use block" },
-      { status: 502 },
-    );
-  }
+  const assignments = buildAssignments(city.pois, targetDayPlans);
 
-  const input = toolUse.input as { assignments?: unknown };
-  if (!Array.isArray(input.assignments)) {
-    return NextResponse.json(
-      { error: "Model returned malformed assignments" },
-      { status: 502 },
-    );
-  }
-
-  const validDayPlanIds = new Set(city.dayPlans.map((d) => d.id));
-  const validPoiIds = new Set(city.pois.map((p) => p.id));
-  const seenPoiIds = new Set<number>();
-  const assignments: Assignment[] = [];
-
-  for (const raw of input.assignments) {
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      typeof (raw as { dayPlanId?: unknown }).dayPlanId !== "number" ||
-      typeof (raw as { poiId?: unknown }).poiId !== "number" ||
-      typeof (raw as { order?: unknown }).order !== "number" ||
-      !isTimeSlot((raw as { timeSlot?: unknown }).timeSlot)
-    ) {
-      return NextResponse.json(
-        { error: "Malformed assignment in model output" },
-        { status: 502 },
-      );
-    }
-    const a = raw as Assignment;
-    if (!validDayPlanIds.has(a.dayPlanId)) {
-      return NextResponse.json(
-        { error: `Unknown dayPlanId ${a.dayPlanId}` },
-        { status: 502 },
-      );
-    }
-    if (!validPoiIds.has(a.poiId)) {
-      return NextResponse.json(
-        { error: `Unknown poiId ${a.poiId}` },
-        { status: 502 },
-      );
-    }
-    if (seenPoiIds.has(a.poiId)) {
-      return NextResponse.json(
-        { error: `Duplicate assignment for poiId ${a.poiId}` },
-        { status: 502 },
-      );
-    }
-    seenPoiIds.add(a.poiId);
-    assignments.push(a);
-  }
-
-  const dayPlanIds = city.dayPlans.map((d) => d.id);
+  const dayPlanIds = targetDayPlans.map((d) => d.id);
   await prisma.$transaction([
     prisma.dayActivity.deleteMany({ where: { dayPlanId: { in: dayPlanIds } } }),
     ...assignments.map((a) =>

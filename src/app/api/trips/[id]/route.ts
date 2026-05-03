@@ -11,6 +11,27 @@ export async function GET(
   return NextResponse.json(trip);
 }
 
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const tripId = Number(id);
+  if (!Number.isInteger(tripId)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+  const body = await req.json();
+  const data: Record<string, unknown> = {};
+  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if (body.startDate) data.startDate = new Date(body.startDate);
+  if (body.endDate) data.endDate = new Date(body.endDate);
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
+  }
+  const trip = await prisma.trip.update({ where: { id: tripId }, data });
+  return NextResponse.json(trip);
+}
+
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },

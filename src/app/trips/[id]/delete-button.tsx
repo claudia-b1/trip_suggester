@@ -33,8 +33,27 @@ export function DeleteTripButton({ id }: { id: number }) {
   }
 
   return (
-    <Button variant="destructive" onClick={onDelete} disabled={deleting}>
-      {deleting ? "Deleting…" : "Delete trip"}
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={onDelete}
+      disabled={deleting}
+      className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 hover:border-red-300"
+    >
+      {deleting ? (
+        "Deleting…"
+      ) : (
+        <>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+            <path d="M9 6V4h6v2" />
+          </svg>
+          Delete trip
+        </>
+      )}
     </Button>
   );
 }

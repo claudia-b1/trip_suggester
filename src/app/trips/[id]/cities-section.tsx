@@ -45,6 +45,7 @@ export function CitiesSection({
   const [submitting, setSubmitting] = useState(false);
   const [dateError, setDateError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   async function onAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -68,6 +69,7 @@ export function CitiesSection({
     setStartDate("");
     setEndDate("");
     setSubmitting(false);
+    setAddOpen(false);
     router.refresh();
   }
 
@@ -117,26 +119,41 @@ export function CitiesSection({
                     {formatDate(city.startDate)} – {formatDate(city.endDate)}
                   </span>
                 </Link>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="self-start sm:ml-3 sm:self-auto"
+                <button
+                  type="button"
+                  className="self-start rounded-md border border-red-200 p-1.5 text-red-500 transition-colors hover:bg-red-50 hover:text-red-700 hover:border-red-300 disabled:opacity-30 sm:ml-3 sm:self-auto"
                   onClick={() => onDelete(city)}
                   disabled={deletingId === city.id}
+                  aria-label={`Delete ${city.name}`}
                 >
-                  {deletingId === city.id ? "…" : "Delete"}
-                </Button>
+                  {deletingId === city.id ? (
+                    <span className="inline-block h-4 w-4 text-center text-xs">…</span>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14H6L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M9 6V4h6v2" />
+                    </svg>
+                  )}
+                </button>
               </li>
             ))}
           </ul>
         )}
 
-        <form
-          onSubmit={onAdd}
-          className="space-y-4 border-t border-[hsl(var(--border))] pt-4"
-          noValidate
-        >
-          <h4 className="text-sm font-semibold">Add city</h4>
+        <div className="border-t border-[hsl(var(--border))] pt-4">
+          {!addOpen ? (
+            <Button variant="outline" onClick={() => setAddOpen(true)}>
+              + Add city
+            </Button>
+          ) : (
+            <form
+              onSubmit={onAdd}
+              className="space-y-4"
+              noValidate
+            >
           <div className="space-y-2">
             <Label htmlFor="city-name">Name</Label>
             <Input
@@ -179,10 +196,17 @@ export function CitiesSection({
           {dateError && (
             <p className="text-sm text-red-600">{dateError}</p>
           )}
-          <Button type="submit" disabled={submitting || !!dateError}>
-            {submitting ? "Adding…" : "Add city"}
-          </Button>
-        </form>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={submitting || !!dateError}>
+              {submitting ? "Adding…" : "Add city"}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setAddOpen(false)} disabled={submitting}>
+              Cancel
+            </Button>
+          </div>
+            </form>
+          )}
+        </div>
       </CardContent>
     </Card>
   );

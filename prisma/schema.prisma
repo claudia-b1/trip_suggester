@@ -34,14 +34,28 @@ model City {
 // are Strings constrained at the app layer (see src/lib/categories.ts and
 // src/lib/slots.ts).
 model Poi {
-  id          Int           @id @default(autoincrement())
-  name        String
-  category    String
-  description String?
-  latitude    Float?
-  longitude   Float?
-  imageUrl    String?
-  cityId      Int
+  id                       Int           @id @default(autoincrement())
+  name                     String
+  category                 String
+  description              String?
+  latitude                 Float?
+  longitude                Float?
+  imageUrl                 String?
+  rating                   Float?
+  bestTimeToVisit          String?
+  estimatedDurationMinutes Int?
+  tips                     String?
+  // Discovery / enrichment fields
+  placeId                  String?
+  priceLevel               Int?          // 1 cheap – 4 expensive
+  website                  String?
+  phoneNumber              String?
+  openingHours             String?       // human-readable display string
+  photoUrl                 String?       // primary photo URL
+  isUnescoSite             Boolean?      @default(false)
+  inceptionYear            Int?
+  wikidataId               String?
+  cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities  DayActivity[]
   createdAt   DateTime      @default(now())
@@ -67,4 +81,26 @@ model DayActivity {
   timeSlot  String
   order     Int
   createdAt DateTime @default(now())
+}
+
+// Per-POI enrichment cache keyed by place ID + source.
+// Avoids re-fetching Wikidata / Google for the same physical place.
+model PoiEnrichCache {
+  id        Int      @id @default(autoincrement())
+  placeId   String
+  source    String   // "wikidata" | "google"
+  payload   String   // JSON enrichment object
+  cachedAt  DateTime @default(now())
+
+  @@unique([placeId, source])
+}
+model PoiCache {
+  id        Int      @id @default(autoincrement())
+  cityName  String
+  category  String
+  source    String   // e.g. "geoapify"
+  payload   String   // JSON array of RecommendedPoi
+  cachedAt  DateTime @default(now())
+
+  @@unique([cityName, category, source])
 }

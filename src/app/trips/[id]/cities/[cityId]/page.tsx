@@ -9,6 +9,7 @@ import { ensureDayPlans } from "@/lib/day-plans";
 import { PoisSection, type PoiDTO } from "./pois-section";
 import type { DayPlanDTO } from "./daily-plan";
 import { RecommendationsPanel } from "./recommendations-panel";
+import { EditCityButton } from "./edit-city-button";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,19 @@ export default async function CityDetailPage({
     description: p.description,
     latitude: p.latitude,
     longitude: p.longitude,
+    rating: p.rating,
+    bestTimeToVisit: p.bestTimeToVisit,
+    estimatedDurationMinutes: p.estimatedDurationMinutes,
+    tips: p.tips,
+    placeId: p.placeId,
+    priceLevel: p.priceLevel,
+    website: p.website,
+    phoneNumber: p.phoneNumber,
+    openingHours: p.openingHours,
+    photoUrl: p.photoUrl,
+    isUnescoSite: p.isUnescoSite,
+    inceptionYear: p.inceptionYear,
+    wikidataId: p.wikidataId,
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -98,12 +112,24 @@ export default async function CityDetailPage({
             <dt className="text-[hsl(var(--muted-foreground))]">End date</dt>
             <dd>{formatDate(city.endDate)}</dd>
           </dl>
+          <div className="pt-2">
+            <EditCityButton
+              tripId={tripId}
+              city={{
+                id: city.id,
+                name: city.name,
+                startDate: city.startDate.toISOString(),
+                endDate: city.endDate.toISOString(),
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
-      <RecommendationsPanel cityId={city.id} />
-
-      <PoisSection cityId={city.id} pois={pois} dayPlans={dayPlans} />
+      <div className="space-y-4">
+        <RecommendationsPanel cityId={city.id} />
+        <PoisSection cityId={city.id} pois={pois} dayPlans={dayPlans} />
+      </div>
     </div>
   );
 }
