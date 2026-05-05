@@ -58,7 +58,7 @@ async function fetchNightlife(cityName: string, subcats: string[]): Promise<Reco
   type Candidate = ScoredItem<{ p: GeoapifyFeature["properties"]; distanceKm: number }>;
 
   const scored: Candidate[] = data.features
-    .filter((f) => f.properties.name)
+    .filter((f) => typeof f.properties.name === "string" && f.properties.name.trim())
     .map((f) => {
       const p = f.properties;
       const distanceKm = haversineKm(center.lat, center.lon, p.lat, p.lon);

@@ -1,21 +1,17 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
-import { isCategory } from "@/lib/categories";
+import { isCategory, CATEGORIES, type Category } from "@/lib/categories";
 import { isTimeSlot, type TimeSlot } from "@/lib/slots";
 import { ensureDayPlans } from "@/lib/day-plans";
 import { PoisSection, type PoiDTO } from "./pois-section";
 import type { DayPlanDTO } from "./daily-plan";
 import { RecommendationsPanel } from "./recommendations-panel";
 import { EditCityButton } from "./edit-city-button";
+import { CityHeader } from "./city-header";
 
 export const dynamic = "force-dynamic";
-
-function formatDate(d: Date) {
-  return new Date(d).toLocaleDateString();
-}
 
 export async function generateMetadata({
   params,
@@ -44,6 +40,17 @@ export default async function CityDetailPage({
     include: { trip: true, pois: { orderBy: { createdAt: "asc" } } },
   });
   if (!city || city.tripId !== tripId) notFound();
+
+  // Sibling cities for stepper and prev/next navigation
+  const siblingCities = await prisma.city.findMany({
+    where: { tripId },
+    orderBy: { order: "asc" },
+    select: { id: true, order: true },
+  });
+  const totalCities = siblingCities.length;
+  const currentIdx = siblingCities.findIndex((c) => c.id === cityIdNum);
+  const prevCityId = currentIdx > 0 ? siblingCities[currentIdx - 1].id : null;
+  const nextCityId = currentIdx < siblingCities.length - 1 ? siblingCities[currentIdx + 1].id : null;
 
   await ensureDayPlans(city.id, city.startDate, city.endDate);
 
@@ -92,6 +99,20 @@ export default async function CityDetailPage({
     })),
   }));
 
+  // POI counts by category
+  const poiCounts = Object.fromEntries(
+    CATEGORIES.map((c) => [c, 0]),
+  ) as Record<Category, number>;
+  for (const p of pois) {
+    poiCounts[p.category]++;
+  }
+
+  // Planned POI count
+  const plannedCount = dayPlans.reduce(
+    (sum, dp) => sum + dp.activities.length,
+    0,
+  );
+
   return (
     <div className="space-y-4">
       <Breadcrumbs
@@ -101,34 +122,43 @@ export default async function CityDetailPage({
           { label: city.name },
         ]}
       />
-      <Card>
-        <CardHeader>
-          <CardTitle>{city.name}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-[120px_1fr] gap-y-2 text-sm">
-            <dt className="text-[hsl(var(--muted-foreground))]">Start date</dt>
-            <dd>{formatDate(city.startDate)}</dd>
-            <dt className="text-[hsl(var(--muted-foreground))]">End date</dt>
-            <dd>{formatDate(city.endDate)}</dd>
-          </dl>
-          <div className="pt-2">
-            <EditCityButton
-              tripId={tripId}
-              city={{
-                id: city.id,
-                name: city.name,
-                startDate: city.startDate.toISOString(),
-                endDate: city.endDate.toISOString(),
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
-      <div className="space-y-4">
-        <RecommendationsPanel cityId={city.id} />
-        <PoisSection cityId={city.id} pois={pois} dayPlans={dayPlans} />
+      <CityHeader
+        cityId={city.id}
+        tripId={tripId}
+        name={city.name}
+        country={city.country}
+        countryCode={city.countryCode}
+        timezone={city.timezone}
+        startDate={city.startDate.toISOString()}
+        endDate={city.endDate.toISOString()}
+        cityOrder={city.order}
+        totalCities={totalCities}
+        prevCityId={prevCityId}
+        nextCityId={nextCityId}
+        poiCounts={poiCounts}
+        plannedCount={plannedCount}
+        totalPois={pois.length}
+      />
+
+      <div id="edit-section">
+        <EditCityButton
+          tripId={tripId}
+          city={{
+            id: city.id,
+            name: city.name,
+            startDate: city.startDate.toISOString(),
+            endDate: city.endDate.toISOString(),
+          }}
+        />
+      </div>
+
+      <div id="discover-section">
+        <RecommendationsPanel cityId={city.id} poisCount={pois.length} />
+      </div>
+
+      <div id="pois-section">
+        <PoisSection cityId={city.id} pois={pois} dayPlans={dayPlans} cityLat={city.latitude ?? undefined} cityLon={city.longitude ?? undefined} />
       </div>
     </div>
   );

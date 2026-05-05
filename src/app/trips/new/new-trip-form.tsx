@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import confetti from "canvas-confetti";
 
 export function NewTripForm() {
   const router = useRouter();
@@ -45,6 +46,14 @@ export function NewTripForm() {
       return;
     }
     const trip = await res.json();
+
+    // 🎉 Celebrate!
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+    });
+
     router.push(`/trips/${trip.id}`);
     router.refresh();
   }
@@ -99,7 +108,8 @@ export function NewTripForm() {
             </p>
           )}
           <Button type="submit" disabled={submitting || !!dateError}>
-            {submitting ? "Creating…" : "Create trip"}
+            {submitting && <span className="spinner mr-1.5" />}
+            {submitting ? "Creating…" : "✈️ Create trip"}
           </Button>
         </form>
       </CardContent>

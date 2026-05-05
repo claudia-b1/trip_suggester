@@ -50,7 +50,7 @@ const CATEGORY_ICONS: Record<Category, string> = {
 };
 
 const MAP_STYLES = {
-  streets: "mapbox://styles/mapbox/streets-v12",
+  streets: "mapbox://styles/mapbox/light-v11",
   satellite: "mapbox://styles/mapbox/satellite-streets-v12",
 } as const;
 type MapStyleKey = keyof typeof MAP_STYLES;
@@ -260,6 +260,8 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
   const [zoom, setZoom] = useState(12);
   const [dropPin, setDropPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
 
   const located: LocatedPoi[] = useMemo(
     () => pois.flatMap((p) =>
@@ -316,34 +318,50 @@ export function PoiMapImpl(props: PoiMapProps) {
   const first = located[0];
 
   return (
-    <div className="relative overflow-hidden rounded-md border border-[hsl(var(--border))]">
-      <button
-        type="button"
-        onClick={() => setMapStyle((s) => (s === "streets" ? "satellite" : "streets"))}
-        className="absolute right-2 top-2 z-10 rounded-md border border-gray-300 bg-white/90 px-2 py-1 text-xs font-medium shadow hover:bg-white backdrop-blur-sm"
-      >
-        {mapStyle === "streets" ? "🛰 Satellite" : "🗺 Streets"}
-      </button>
-
-      <CategoryLegend />
+    <div className={`relative overflow-hidden rounded-xl border border-[hsl(var(--border))] ${fullscreen ? "fixed inset-0 z-50 rounded-none" : ""}`}>
+      <div className="absolute left-2 top-2 z-10 flex flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={fitBounds}
+          className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+          title="Fit all points"
+        >
+          ⊡ Fit all
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapStyle((s) => (s === "streets" ? "satellite" : "streets"))}
+          className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+        >
+          {mapStyle === "streets" ? "🛰 Satellite" : "🗺 Streets"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { setFullscreen((v) => !v); setTimeout(() => mapRef.current?.resize(), 50); }}
+          className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+        >
+          {fullscreen ? "✕ Exit" : "⛶ Fullscreen"}
+        </button>
+      </div>
 
       <MapGL
         ref={mapRef}
         mapboxAccessToken={token}
         initialViewState={{ longitude: first.longitude, latitude: first.latitude, zoom: 12 }}
-        style={{ width: "100%", height: "clamp(360px, 50vh, 600px)" }}
+        style={{ width: "100%", height: fullscreen ? "100vh" : "clamp(500px, 70vh, 825px)" }}
         mapStyle={MAP_STYLES[mapStyle]}
-        onLoad={fitBounds}
+        onLoad={() => { setMapReady(true); fitBounds(); }}
         onZoomEnd={(e) => setZoom(e.viewState.zoom)}
         onMoveEnd={(e) => setZoom(e.viewState.zoom)}
-        onClick={(e) => {
+        onContextMenu={(e) => {
           if (onAddAtLocation) {
             setDropPin({ lat: e.lngLat.lat, lng: e.lngLat.lng });
             setActiveId(null);
-          } else {
-            setActiveId(null);
-            setDropPin(null);
           }
+        }}
+        onClick={(e) => {
+          setActiveId(null);
+          if (!onAddAtLocation) setDropPin(null);
         }}
       >
         <NavigationControl position="top-right" />
@@ -397,7 +415,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               <div
                 onMouseEnter={() => setHoverId(poi.id)}
                 onMouseLeave={() => setHoverId(null)}
-                className="cursor-pointer rounded-full border-2 border-white shadow transition-transform"
+                className={`cursor-pointer rounded-full border-2 border-white shadow transition-transform ${mapReady ? "marker-enter" : ""}`}
                 style={{
                   backgroundColor: CATEGORY_STYLES[poi.category].dot,
                   width: isActive ? 22 : 16,

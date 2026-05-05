@@ -25,6 +25,24 @@ const FIELD_MASK = [
   "places.editorialSummary",
 ].join(",");
 
+/**
+ * Lightweight result from a Google Places Text Search — no photo resolution.
+ * Cached as source "google-meta" in PoiEnrichCache and used for pre-scan scoring.
+ */
+export type GoogleMeta = {
+  googlePlaceId: string;
+  rating?: number;
+  userRatingCount?: number;
+  /** 0 = free, 1 = inexpensive, 2 = moderate, 3 = expensive, 4 = very expensive */
+  priceLevel?: number;
+  /** Photo resource path for later resolution ("places/{id}/photos/{ref}") */
+  photoName?: string;
+  openingHours?: string;
+  phoneNumber?: string;
+  website?: string;
+  editorialSummary?: string;
+};
+
 export type GoogleEnrichment = {
   googlePlaceId: string;
   /** 1.0–5.0 */
@@ -73,13 +91,6 @@ const PRICE_MAP: Record<string, number> = {
   PRICE_LEVEL_VERY_EXPENSIVE:4,
 };
 
-function buildPhotoUrl(photoName: string, apiKey: string): string {
-  return (
-    `${PHOTO_BASE}/${photoName}/media` +
-    `?maxHeightPx=800&maxWidthPx=1200&key=${apiKey}`
-  );
-}
-
 /**
  * Fetch the direct image URI from the Google Places photo endpoint.
  * The media endpoint with no skipHttpRedirect returns a 302 redirect;
@@ -102,21 +113,16 @@ async function resolvePhotoUri(photoName: string, apiKey: string): Promise<strin
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Enrich a POI with Google Places data.
- * Returns `null` if the API key is missing, the place is not found, or an
- * error occurs (handled gracefully upstream).
- *
- * @param name   Place name (used in text search query)
- * @param cityName  City name appended to improve match accuracy
- * @param lat    Latitude for location bias
- * @param lon    Longitude for location bias
+ * Lightweight Text Search — fetches rating, review count, price level, and
+ * photo resource name but does NOT resolve the photo URL.
+ * Used to pre-scan ALL discovery candidates before scoring.
  */
-export async function enrichWithGoogle(
+export async function fetchGoogleMeta(
   name: string,
   cityName: string,
   lat: number,
   lon: number,
-): Promise<GoogleEnrichment | null> {
+): Promise<GoogleMeta | null> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return null;
 
@@ -148,25 +154,56 @@ export async function enrichWithGoogle(
     const place = data.places?.[0];
     if (!place?.id) return null;
 
-    // Build photo URL for the first available photo
-    let photoUrl: string | undefined;
-    if (place.photos?.[0]?.name) {
-      photoUrl = await resolvePhotoUri(place.photos[0].name, apiKey);
-    }
-
-    // Hours: join weekday descriptions into one readable string
-    const openingHours = place.regularOpeningHours?.weekdayDescriptions?.join(" | ");
-
     return {
       googlePlaceId: place.id,
       rating:          place.rating,
       userRatingCount: place.userRatingCount,
       priceLevel:      place.priceLevel ? PRICE_MAP[place.priceLevel] : undefined,
-      photoUrl,
-      openingHours,
+      photoName:       place.photos?.[0]?.name,
+      openingHours:    place.regularOpeningHours?.weekdayDescriptions?.join(" | "),
       phoneNumber:     place.internationalPhoneNumber,
       website:         place.websiteUri,
       editorialSummary: place.editorialSummary?.text,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Full enrichment for top-N POIs — resolves the photo URL.
+ * Accepts pre-scanned GoogleMeta to skip the Text Search call.
+ */
+export async function enrichWithGoogle(
+  name: string,
+  cityName: string,
+  lat: number,
+  lon: number,
+  prefetchedMeta?: GoogleMeta | null,
+): Promise<GoogleEnrichment | null> {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const meta = prefetchedMeta ?? await fetchGoogleMeta(name, cityName, lat, lon);
+    if (!meta) return null;
+
+    // Resolve photo only here (top-N enrichment phase)
+    let photoUrl: string | undefined;
+    if (meta.photoName) {
+      photoUrl = await resolvePhotoUri(meta.photoName, apiKey);
+    }
+
+    return {
+      googlePlaceId:   meta.googlePlaceId,
+      rating:          meta.rating,
+      userRatingCount: meta.userRatingCount,
+      priceLevel:      meta.priceLevel,
+      photoUrl,
+      openingHours:    meta.openingHours,
+      phoneNumber:     meta.phoneNumber,
+      website:         meta.website,
+      editorialSummary: meta.editorialSummary,
     };
   } catch {
     return null;

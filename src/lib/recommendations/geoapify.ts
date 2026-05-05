@@ -8,13 +8,13 @@
  * Note: filter uses lon,lat order (GeoJSON convention).
  */
 import type { RecommendableCategory } from "./index";
-import { geocodeCity } from "./_shared";
+import { geocodeCity, haversineKm } from "./_shared";
 
 const GEOAPIFY_BASE = "https://api.geoapify.com/v2/places";
 
 // ─── Category mappings ────────────────────────────────────────────────────────
 
-const CATEGORY_CATEGORIES: Record<RecommendableCategory, string> = {
+export const CATEGORY_CATEGORIES: Record<RecommendableCategory, string> = {
   CULTURE:   "entertainment.museum,entertainment.culture,tourism.sights.memorial,tourism.sights.castle,tourism.sights.fort,tourism.sights.ruines,tourism.sights.archaeological_site,tourism.sights.place_of_worship,heritage,building.historic",
   FOOD:      "catering.restaurant,catering.cafe,catering.fast_food,catering.ice_cream",
   NATURE:    "leisure.park,natural.forest,natural.water,natural.mountain,national_park,beach,leisure.park.garden,leisure.park.nature_reserve",
@@ -67,6 +67,8 @@ export type DiscoveredPlace = {
   latitude: number;
   longitude: number;
   placeCategory: string;
+  /** Raw Geoapify category strings, e.g. ["entertainment.museum", "tourism.sights"] */
+  categories: string[];
   sourceRating?: number;
   priceLevel?: number;
   description?: string;
@@ -75,6 +77,8 @@ export type DiscoveredPlace = {
   openingHours?: string;
   photoUrl?: string;
   address?: string;
+  /** Raw cuisine tag from OSM data (e.g. "italian;pizza") — FOOD only. */
+  cuisine?: string;
 };
 
 // Raw Geoapify Places feature shape
@@ -100,6 +104,7 @@ type GeoFeature = {
         opening_hours?: string;
         "addr:street"?: string;
         "addr:housenumber"?: string;
+        cuisine?: string;
       };
     };
   };
@@ -117,6 +122,9 @@ export async function searchPlaces(
   if (!apiKey) throw new Error("GEOAPIFY_API_KEY is not set");
 
   const center = await geocodeCity(cityName);
+
+  // Adaptive search radius based on city type
+  const radiusM = await estimateSearchRadius(cityName, apiKey);
 
   // Build category param
   let categories: string;
@@ -137,7 +145,7 @@ export async function searchPlaces(
   const url = new URL(GEOAPIFY_BASE);
   url.searchParams.set("categories", categories);
   // Geoapify filter uses lon,lat order
-  url.searchParams.set("filter", `circle:${center.lon},${center.lat},10000`);
+  url.searchParams.set("filter", `circle:${center.lon},${center.lat},${radiusM}`);
   url.searchParams.set("bias", `proximity:${center.lon},${center.lat}`);
   url.searchParams.set("limit", String(Math.min(limit, 500)));
   url.searchParams.set("lang", "en");
@@ -166,7 +174,7 @@ export async function searchPlaces(
   const blockPrefixes = CROSS_FILTERS[category];
 
   return (data.features ?? [])
-    .filter((f) => f.properties.name && f.geometry?.coordinates)
+    .filter((f) => typeof f.properties.name === "string" && f.properties.name.trim() && f.geometry?.coordinates)
     .filter((f) => !blockPrefixes || !hasCatPrefix(f, blockPrefixes))
     .reduce<GeoFeature[]>((acc, f) => {
       // Deduplicate by place_id and by name (case-insensitive)
@@ -194,12 +202,44 @@ export async function searchPlaces(
         latitude:     p.lat ?? lat,
         longitude:    p.lon ?? lon,
         placeCategory,
+        categories:   p.categories ?? [],
         description:  undefined,
         tel:          p.phone ?? raw?.phone ?? undefined,
         website:      p.website ?? raw?.website ?? undefined,
         openingHours: p.opening_hours ?? raw?.opening_hours ?? undefined,
         photoUrl:     undefined,      // enriched by Wikidata/Google step
         address:      p.formatted ?? p.address_line1 ?? undefined,
+        cuisine:      raw?.cuisine ?? undefined,
       };
     });
+}
+
+// ─── Adaptive radius ──────────────────────────────────────────────────────────
+
+/** Estimate a search radius in metres based on city bounding box size. */
+async function estimateSearchRadius(cityName: string, apiKey: string): Promise<number> {
+  try {
+    const url =
+      `https://api.geoapify.com/v1/geocode/search` +
+      `?text=${encodeURIComponent(cityName)}&type=city&limit=1&apiKey=${apiKey}`;
+    const res = await fetch(url);
+    if (!res.ok) return 10_000;
+    const data = (await res.json()) as {
+      features: Array<{
+        bbox?: [number, number, number, number];
+        properties?: { city?: string; result_type?: string; population?: number };
+      }>;
+    };
+    const feat = data.features[0];
+    if (feat?.bbox) {
+      const [lonMin, latMin, lonMax, latMax] = feat.bbox;
+      const diagKm = haversineKm(latMin, lonMin, latMax, lonMax);
+      // Use half the diagonal as radius, clamped between 5–25 km
+      const radiusKm = Math.max(5, Math.min(25, diagKm / 2));
+      return Math.round(radiusKm * 1000);
+    }
+    return 10_000;
+  } catch {
+    return 10_000; // fallback 10 km
+  }
 }

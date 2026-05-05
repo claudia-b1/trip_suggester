@@ -15,6 +15,11 @@ export async function PATCH(
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if (body.startDate) data.startDate = new Date(body.startDate);
   if (body.endDate) data.endDate = new Date(body.endDate);
+  if (typeof body.country === "string") data.country = body.country;
+  if (typeof body.countryCode === "string") data.countryCode = body.countryCode;
+  if (typeof body.latitude === "number") data.latitude = body.latitude;
+  if (typeof body.longitude === "number") data.longitude = body.longitude;
+  if (typeof body.timezone === "string") data.timezone = body.timezone;
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }

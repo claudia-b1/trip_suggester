@@ -57,7 +57,7 @@ async function fetchFood(cityName: string, subcats: string[], cuisineFilter?: st
   if (!res.ok) throw new Error(`Geoapify places error: ${res.status}`);
 
   const data = (await res.json()) as { features: GeoapifyFeature[] };
-  let features = data.features.filter((f) => f.properties.name);
+  let features = data.features.filter((f) => typeof f.properties.name === "string" && f.properties.name.trim());
 
   // Post-fetch filters for special subcategories
   if (specials.has("vegetarian")) {

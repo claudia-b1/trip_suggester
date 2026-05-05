@@ -14,6 +14,54 @@ const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
 const ENTITY_SEARCH   = "https://www.wikidata.org/w/api.php";
 const USER_AGENT      = "TripPlanner/1.0 (educational project)";
 
+/**
+ * Lightweight Wikidata result for pre-scan scoring — only entity identity and
+ * UNESCO status. Fetched for all candidates before scoring and cached as
+ * source "wikidata-mini" (30 days) in PoiEnrichCache.
+ */
+export type WikidataMini = {
+  wikidataId: string;
+  isUnescoSite: boolean;
+};
+
+const MINI_SPARQL = (qId: string) => `
+SELECT DISTINCT ?heritageSite WHERE {
+  BIND(wd:${qId} AS ?item)
+  OPTIONAL { ?item wdt:P1435 ?heritageSite }
+}
+LIMIT 5
+`.trim();
+
+/**
+ * Lightweight pre-scan: entity search + UNESCO-only SPARQL.
+ * Returns null when no Wikidata entry can be found.
+ */
+export async function fetchWikidataMini(
+  name: string,
+  cityName?: string,
+): Promise<WikidataMini | null> {
+  try {
+    const searchQuery = cityName ? `${name} ${cityName}` : name;
+    const qId = await findQId(searchQuery) ?? await findQId(name);
+    if (!qId) return null;
+
+    type MiniSparqlResponse = { results: { bindings: Array<{ heritageSite?: { value: string } }> } };
+    const res = await fetch(
+      `${SPARQL_ENDPOINT}?query=${encodeURIComponent(MINI_SPARQL(qId))}&format=json`,
+      { headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" } },
+    );
+    if (!res.ok) return { wikidataId: qId, isUnescoSite: false };
+
+    const data = (await res.json()) as MiniSparqlResponse;
+    const heritageUris = data.results.bindings.map((r) => r.heritageSite?.value ?? "");
+    const unescoSite = heritageUris.some(isUnesco);
+
+    return { wikidataId: qId, isUnescoSite: unescoSite };
+  } catch {
+    return null;
+  }
+}
+
 export type WikidataEnrichment = {
   wikidataId: string;
   description?: string;
@@ -99,9 +147,12 @@ function isUnesco(heritageSite?: string): boolean {
 
 export async function enrichWithWikidata(
   name: string,
+  cityName?: string,
 ): Promise<WikidataEnrichment | null> {
   try {
-    const qId = await findQId(name);
+    // Append city name to improve entity search accuracy
+    const searchQuery = cityName ? `${name} ${cityName}` : name;
+    const qId = await findQId(searchQuery) ?? await findQId(name);
     if (!qId) return null;
 
     const sparql = SPARQL_QUERY(qId);

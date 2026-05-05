@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CATEGORY_STYLES, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -9,6 +9,7 @@ import type { PoiDTO } from "./pois-section";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { PoiMap } from "./poi-map";
+import { PoiHoverCard, type HoverPoiData } from "@/components/ui/poi-hover-card";
 
 export type DayActivityDTO = {
   id: number;
@@ -25,9 +26,15 @@ export type DayPlanDTO = {
 };
 
 const SLOT_LABELS: Record<TimeSlot, string> = {
-  MORNING: "Morning",
-  AFTERNOON: "Afternoon",
-  EVENING: "Evening",
+  MORNING: "🌅 Morning",
+  AFTERNOON: "☀️ Afternoon",
+  EVENING: "🌙 Evening",
+};
+
+const SLOT_CSS: Record<TimeSlot, string> = {
+  MORNING: "slot-morning",
+  AFTERNOON: "slot-afternoon",
+  EVENING: "slot-evening",
 };
 
 function formatDay(iso: string) {
@@ -224,11 +231,15 @@ export function DailyPlan({
   pois,
   dayPlans,
   setDayPlans,
+  scrollToActivity,
+  onScrollComplete,
 }: {
   cityId: number;
   pois: PoiDTO[];
   dayPlans: DayPlanDTO[];
   setDayPlans: React.Dispatch<React.SetStateAction<DayPlanDTO[]>>;
+  scrollToActivity?: { date: string; activityId: number } | null;
+  onScrollComplete?: () => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -256,6 +267,22 @@ export function DailyPlan({
 
   const currentDayPlan = dayPlans.find((dp) => dp.date === selectedDate) ?? dayPlans[0] ?? null;
   const currentDayIndex = dayPlans.findIndex((dp) => dp.date === selectedDate);
+
+  // Handle scroll-to-activity from timeline sidebar
+  useEffect(() => {
+    if (!scrollToActivity) return;
+    setSelectedDate(scrollToActivity.date);
+    // Wait for DOM to update, then scroll & highlight
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-activity-id="${scrollToActivity.activityId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-[hsl(var(--primary))]");
+        setTimeout(() => el.classList.remove("ring-2", "ring-[hsl(var(--primary))]"), 1500);
+      }
+      onScrollComplete?.();
+    });
+  }, [scrollToActivity, onScrollComplete]);
 
   const assignedIds = new Set(
     dayPlans.flatMap((dp) => dp.activities.map((a) => a.poiId)),
@@ -435,6 +462,22 @@ export function DailyPlan({
   }
 
   const totalActivities = dayPlans.reduce((s, dp) => s + dp.activities.length, 0);
+
+  // Lookup map for hover cards
+  const poiLookup = useMemo(() => {
+    const map = new Map<number, HoverPoiData>();
+    for (const p of pois) {
+      map.set(p.id, {
+        name: p.name,
+        category: p.category,
+        description: p.description,
+        photoUrl: p.photoUrl,
+        rating: p.rating,
+        estimatedDurationMinutes: p.estimatedDurationMinutes,
+      });
+    }
+    return map;
+  }, [pois]);
 
   // Drag & Drop handlers
   function handleDragStart(e: React.DragEvent, activityId: number, dayPlanId: number, slot: TimeSlot) {
@@ -689,7 +732,7 @@ export function DailyPlan({
               className="w-full"
             >
               {autoPlanning
-                ? "Planning…"
+                ? <><span className="spinner mr-1.5" /> Planning…</>
                 : autoPlanMode === "all"
                   ? "Plan all days"
                   : `Plan ${selectedDayIds.size} selected day${selectedDayIds.size !== 1 ? "s" : ""}`}
@@ -842,8 +885,8 @@ export function DailyPlan({
                   return (
                     <div
                       key={slot}
-                      className={`space-y-2 rounded-md p-2 transition-colors ${
-                        isDropTarget ? "bg-blue-50 border-2 border-dashed border-blue-300" : "bg-[hsl(var(--muted))]"
+                      className={`space-y-2 rounded-lg p-3 transition-colors ${SLOT_CSS[slot]} ${
+                        isDropTarget ? "ring-2 ring-dashed ring-blue-300" : ""
                       }`}
                       onDragOver={handleDragOver}
                       onDrop={(e) => handleDrop(e, currentDayPlan.id, slot)}
@@ -851,24 +894,34 @@ export function DailyPlan({
                       <div className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_LABELS[slot]}
                       </div>
+                      {items.length === 0 && !selectedPoi && (
+                        <div className="rounded-lg border-2 border-dashed border-[hsl(var(--border))] px-3 py-4 text-center text-xs text-[hsl(var(--muted-foreground))]">
+                          Drag a POI here
+                        </div>
+                      )}
                       <ul className="space-y-1">
                         {items.map((a, idx) => (
                           <li
                             key={a.id}
+                            data-activity-id={a.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, a.id, currentDayPlan.id, slot)}
                             onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                             onDrop={(e) => handleDropOnItem(e, currentDayPlan.id, slot, idx)}
                             onDragEnd={handleDragEnd}
-                            className="flex items-center justify-between gap-1 rounded bg-[hsl(var(--background))] px-2 py-1.5 text-sm cursor-grab active:cursor-grabbing shadow-sm border border-[hsl(var(--border))] hover:shadow-md transition-shadow"
+                            className="flex items-center justify-between gap-1 rounded-lg bg-[hsl(var(--background))] px-2.5 py-2 text-sm cursor-grab active:cursor-grabbing shadow-sm border border-[hsl(var(--border))] hover:shadow-md transition-all"
                           >
-                            <div className="flex min-w-0 items-center gap-1.5">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-40 group-hover:opacity-100 transition-opacity" title="Drag to reorder">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
+                              </span>
                               <span
                                 className="h-2 w-2 shrink-0 rounded-full"
                                 style={{ backgroundColor: CATEGORY_STYLES[a.poiCategory].dot }}
                               />
-                              <span className="truncate">{a.poiName}</span>
+                              <PoiHoverCard poi={poiLookup.get(a.poiId) ?? null}>
+                                <span className="truncate">{a.poiName}</span>
+                              </PoiHoverCard>
                             </div>
                             <button
                               type="button"

@@ -20,6 +20,14 @@ const CATEGORY_ICONS: Record<RecommendableCategory, string> = {
   OUTDOORS: "🏔️",
 };
 
+const CATEGORY_DESCRIPTIONS: Record<RecommendableCategory, string> = {
+  CULTURE: "Museums, landmarks, historic sites & galleries",
+  FOOD: "Restaurants, cafés, street food & local cuisine",
+  NATURE: "Parks, gardens, scenic viewpoints & wildlife",
+  NIGHTLIFE: "Bars, clubs, live music & entertainment",
+  OUTDOORS: "Hiking, beaches, adventure & sports",
+};
+
 const PREFERENCES = [
   { id: "kid_friendly", label: "👨‍👩‍👧 Kid-friendly" },
   { id: "budget_friendly", label: "💰 Budget-friendly" },
@@ -28,12 +36,13 @@ const PREFERENCES = [
   { id: "romantic", label: "💑 Romantic" },
   { id: "wheelchair_accessible", label: "♿ Accessible" },
   { id: "local_favourite", label: "🏠 Local favourite" },
+  { id: "nearby_trips", label: "🚗 Nearby day trips" },
 ] as const;
 
 type PreferenceId = (typeof PREFERENCES)[number]["id"];
 type Failure = { category: RecommendableCategory; error: string };
 
-export function RecommendationsPanel({ cityId }: { cityId: number }) {
+export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; poisCount: number }) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -59,13 +68,16 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
   const [cuisineFilter, setCuisineFilter] = useState("");
 
   const [preferences, setPreferences] = useState<Set<PreferenceId>>(new Set());
-  const [nearbyTrips, setNearbyTrips] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [progressStep, setProgressStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{
     created: number;
     failures: Failure[];
   } | null>(null);
+  // overwrite confirmation: null = not asked, "pending" = waiting for choice
+  const [overwriteMode, setOverwriteMode] = useState<"pending" | null>(null);
 
   function toggleCat(cat: RecommendableCategory) {
     setSelected((prev) => {
@@ -105,9 +117,22 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
 
   async function onGenerate() {
     if (selected.size === 0 || generating) return;
+    // If there are existing POIs and we haven't asked yet, show the choice
+    if (poisCount > 0 && overwriteMode === null) {
+      setOverwriteMode("pending");
+      return;
+    }
+    // No existing POIs — run directly (add mode)
+    await runGenerate(false);
+  }
+
+  async function runGenerate(overwrite: boolean) {
+    setOverwriteMode(null);
+    if (selected.size === 0 || generating) return;
     setGenerating(true);
     setError(null);
     setResult(null);
+    setProgressStep("🔍 Discovering places…");
 
     // Build subcategories map: only include non-empty selections
     const subcategoriesPayload: Record<string, string[]> = {};
@@ -115,6 +140,8 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
       const ids = Array.from(subcats[cat]);
       if (ids.length > 0) subcategoriesPayload[cat] = ids;
     }
+
+    setProgressStep("📊 Scoring & ranking…");
 
     const res = await fetch(`/api/cities/${cityId}/recommendations`, {
       method: "POST",
@@ -126,11 +153,16 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
         ),
         subcategories: subcategoriesPayload,
         cuisineFilter: cuisineFilter.trim() || undefined,
-        preferences: Array.from(preferences),
-        nearbyTrips,
+        preferences: Array.from(preferences).filter((p) => p !== "nearby_trips"),
+        nearbyTrips: preferences.has("nearby_trips"),
+        overwrite,
       }),
     });
+
+    setProgressStep("✨ Enriching results…");
+
     setGenerating(false);
+    setProgressStep(null);
     if (!res.ok) {
       const body: { error?: string } = await res.json().catch(() => ({}));
       const msg = body.error ?? "Failed to run Discover";
@@ -150,27 +182,58 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Discover</CardTitle>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle>🧭 Discover</CardTitle>
+          <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]">
+            ⓘ
+            <span className="pointer-events-none absolute right-0 top-6 z-20 w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
+              Pulls from <strong>Geoapify Places</strong> (discovery) with enrichment via <strong>Wikidata</strong> &amp; <strong>Google Places</strong>. A rule-based engine ranks results by proximity, notability and category match.
+            </span>
+          </span>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        {/* Source attribution */}
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          Pulls from{" "}
-          <span className="font-medium text-[hsl(var(--foreground))]">Geoapify Places</span>{" "}
-          (discovery) with enrichment via{" "}
-          <span className="font-medium text-[hsl(var(--foreground))]">Wikidata</span>{" "}
-          &amp;{" "}
-          <span className="font-medium text-[hsl(var(--foreground))]">Google Places</span>.
-          A rule-based engine ranks results by proximity, notability and category match.
-        </p>
+      <CardContent className="space-y-4">
+        {/* Categories — compact pill row */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+            Categories
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {RECOMMENDABLE_CATEGORIES.map((cat) => {
+              const active = selected.has(cat);
+              const styles = CATEGORY_STYLES[cat];
+              const selectedSubs = subcats[cat];
+              const subDesc = selectedSubs.size > 0
+                ? `${selectedSubs.size} filter${selectedSubs.size > 1 ? "s" : ""}`
+                : CATEGORY_DESCRIPTIONS[cat];
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => !generating && toggleCat(cat)}
+                  disabled={generating}
+                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    active
+                      ? `${styles.badge} border-transparent ring-1 ring-[hsl(var(--primary))]/20`
+                      : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-50 hover:opacity-80"
+                  }`}
+                >
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: active ? styles.dot : "#9ca3af" }} />
+                  {CATEGORY_ICONS[cat]} {cat}
+                  <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-        {/* Preferences */}
-        <div className="space-y-2">
+        {/* Preferences — pill row (includes nearby trips) */}
+        <div className="space-y-1.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
             Preferences
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {PREFERENCES.map((pref) => {
               const active = preferences.has(pref.id);
               return (
@@ -179,7 +242,7 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
                   type="button"
                   onClick={() => togglePref(pref.id)}
                   disabled={generating}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
                     active
                       ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                       : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
@@ -192,191 +255,169 @@ export function RecommendationsPanel({ cityId }: { cityId: number }) {
           </div>
         </div>
 
-        {/* Categories + subcategories + per-category count */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
-              Categories
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (selected.size === RECOMMENDABLE_CATEGORIES.length) {
-                  setSelected(new Set());
-                } else {
-                  setSelected(new Set(RECOMMENDABLE_CATEGORIES));
-                }
-              }}
-              disabled={generating}
-              className="text-xs text-[hsl(var(--primary))] hover:underline disabled:opacity-40"
-            >
-              {selected.size === RECOMMENDABLE_CATEGORIES.length ? "Deselect all" : "Select all"}
-            </button>
-          </div>
-          <div className="flex flex-col gap-1">
-            {RECOMMENDABLE_CATEGORIES.map((cat) => {
-              const active = selected.has(cat);
-              const isExpanded = expanded.has(cat);
-              const styles = CATEGORY_STYLES[cat];
-              const catSubcats = SUBCATEGORIES[cat];
-              const selectedSubs = subcats[cat];
-              const hasSubcatSelection = selectedSubs.size > 0;
+        {/* Advanced filters — single collapsible section */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+          >
+            <span className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>▶</span>
+            Advanced filters
+            {Object.values(subcats).some((s) => s.size > 0) && (
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">active</span>
+            )}
+          </button>
 
-              return (
-                <div key={cat}>
-                  {/* Main row: category pill | filter icon */}
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleCat(cat)}
-                      disabled={generating}
-                      className={`flex w-40 shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                        active
-                          ? `${styles.badge} border-transparent`
-                          : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-50"
-                      }`}
-                    >
-                      <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: active ? styles.dot : "#9ca3af" }}
+          {advancedOpen && (
+            <div className="mt-2 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
+              {RECOMMENDABLE_CATEGORIES.map((cat) => {
+                const active = selected.has(cat);
+                if (!active) return null;
+                const styles = CATEGORY_STYLES[cat];
+                const catSubcats = SUBCATEGORIES[cat];
+                const selectedSubs = subcats[cat];
+
+                return (
+                  <div key={cat} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">{CATEGORY_ICONS[cat]}</span>
+                      <span className="text-xs font-semibold">{cat}</span>
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                        max:
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={counts[cat]}
+                        onChange={(e) =>
+                          setCounts((prev) => ({
+                            ...prev,
+                            [cat]: Math.max(1, Math.min(100, Number(e.target.value) || 1)),
+                          }))
+                        }
+                        disabled={generating}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs disabled:opacity-40"
                       />
-                      {CATEGORY_ICONS[cat]} {cat}
-                    </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {catSubcats.map((sub) => {
+                        const subActive = selectedSubs.has(sub.id);
+                        return (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => toggleSubcat(cat, sub.id)}
+                            disabled={generating}
+                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              subActive
+                                ? `${styles.badge} border-transparent`
+                                : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
+                            }`}
+                          >
+                            <span className="text-[10px]">{sub.emoji}</span>
+                            {sub.label}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => toggleExpand(cat)}
-                      disabled={!active || generating}
-                      title={isExpanded ? "Hide filters" : "Show filters"}
-                      className={`relative flex items-center justify-center rounded-md border p-1.5 transition-colors disabled:opacity-30 ${
-                        isExpanded
-                          ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]"
-                          : hasSubcatSelection
-                          ? "border-amber-400 bg-amber-50 text-amber-700"
-                          : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                      }`}
-                    >
-                      {/* Funnel / filter icon */}
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-                      </svg>
-                      {hasSubcatSelection && !isExpanded && (
-                        <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-400 text-[9px] font-bold text-white">
-                          {selectedSubs.size}
-                        </span>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Subcategory chips — shown when expanded */}
-                  {isExpanded && active && (
-                    <div className="ml-2 mt-1.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/40 p-3 space-y-3">
-                      {/* Result limit */}
+                    {/* Cuisine keyword input — only for FOOD */}
+                    {cat === "FOOD" && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">Max results:</label>
+                        <label className="text-[11px] text-[hsl(var(--muted-foreground))] shrink-0">
+                          Cuisine:
+                        </label>
                         <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={counts[cat]}
-                          onChange={(e) =>
-                            setCounts((prev) => ({
-                              ...prev,
-                              [cat]: Math.max(1, Math.min(100, Number(e.target.value) || 1)),
-                            }))
-                          }
+                          type="text"
+                          placeholder="e.g. italian, thai, sushi…"
+                          value={cuisineFilter}
+                          onChange={(e) => setCuisineFilter(e.target.value)}
                           disabled={generating}
-                          className="w-16 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-sm disabled:opacity-40"
+                          className="flex-1 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-xs disabled:opacity-40"
                         />
                       </div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
-                        Include only · leave all unselected to include everything
-                      </p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {catSubcats.map((sub) => {
-                          const subActive = selectedSubs.has(sub.id);
-                          return (
-                            <button
-                              key={sub.id}
-                              type="button"
-                              onClick={() => toggleSubcat(cat, sub.id)}
-                              disabled={generating}
-                              className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                                subActive
-                                  ? `${styles.badge} border-transparent`
-                                  : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
-                              }`}
-                            >
-                              <span className="text-[11px]">{sub.emoji}</span>
-                              {sub.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {/* Cuisine keyword input — only for FOOD */}
-                      {cat === "FOOD" && (
-                        <div className="flex items-center gap-2 pt-1">
-                          <label className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">
-                            Cuisine:
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="e.g. italian, thai, sushi…"
-                            value={cuisineFilter}
-                            onChange={(e) => setCuisineFilter(e.target.value)}
-                            disabled={generating}
-                            className="flex-1 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-xs disabled:opacity-40"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+              {selected.size === 0 && (
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">Select at least one category above.</p>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Nearby day trips toggle */}
-        <button
-          type="button"
-          onClick={() => setNearbyTrips((v) => !v)}
-          disabled={generating}
-          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors ${
-            nearbyTrips
-              ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]"
-              : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-          }`}
-        >
-          <span
-            className={`h-2.5 w-2.5 rounded-full border-2 transition-colors ${
-              nearbyTrips
-                ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]"
-                : "border-gray-400"
-            }`}
-          />
-          🚗 Include nearby day trips
-          <span className="text-xs text-[hsl(var(--muted-foreground))]">
-            (renders driving routes on map)
-          </span>
-        </button>
+        {/* Action row — centered 1/3 width button */}
+        <div className="flex flex-col items-center gap-2">
 
-        {/* Action row */}
-        <div className="flex items-center gap-3 flex-wrap">
+          {/* Overwrite / Add confirmation prompt */}
+          {overwriteMode === "pending" && (
+            <div className="w-full rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300 mb-2">
+                ⚠️ You already have {poisCount} POI{poisCount === 1 ? "" : "s"} in this city. What would you like to do?
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => runGenerate(false)}
+                  className="flex-1 text-xs"
+                >
+                  ➕ Add to list
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => runGenerate(true)}
+                  className="flex-1 text-xs bg-red-600 hover:bg-red-700"
+                >
+                  🗑️ Overwrite all
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOverwriteMode(null)}
+                  className="text-xs"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
           <Button
             type="button"
             onClick={onGenerate}
             disabled={generating || selected.size === 0}
+            className="w-1/3 min-w-[180px]"
           >
-            {generating ? `Discovering ${selected.size}…` : "Run Discover"}
+            {generating && <span className="spinner mr-1.5" />}
+            {generating ? "Discovering…" : `🔍 Discover places`}
           </Button>
+
+          {/* Progress steps */}
+          {generating && progressStep && (
+            <div className="flex items-center gap-2 text-sm text-[hsl(var(--primary))] animate-pulse">
+              <span className="spinner" />
+              {progressStep}
+            </div>
+          )}
+
           {error && <span className="text-sm text-red-600">{error}</span>}
+
+          {/* Result summary card */}
           {result && !error && (
-            <span className="text-sm text-[hsl(var(--muted-foreground))]">
-              Added {result.created} POI{result.created === 1 ? "" : "s"}
-              {result.failures.length > 0 ? ` · ${result.failures.length} failed` : ""}
-            </span>
+            <div className="w-full rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-900/20">
+              <p className="text-sm font-medium text-green-800 dark:text-green-300">
+                ✅ Added {result.created} POI{result.created === 1 ? "" : "s"} to your collection
+              </p>
+              {result.failures.length > 0 && (
+                <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                  ⚠️ {result.failures.length} categor{result.failures.length === 1 ? "y" : "ies"} had issues
+                </p>
+              )}
+            </div>
           )}
         </div>
 

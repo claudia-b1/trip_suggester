@@ -12,6 +12,8 @@ import { DailyPlan, type DayPlanDTO } from "./daily-plan";
 import { TimelineSidebar } from "./timeline-sidebar";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { PoiAutocomplete, type PoiSuggestion } from "@/components/ui/poi-autocomplete";
 
 export type PoiDTO = {
   id: number;
@@ -90,6 +92,7 @@ function PoiCard({
   const [tipsOpen, setTipsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const hasCoords = poi.latitude != null && poi.longitude != null;
   const isDeleting = deletingId === poi.id;
   const longDesc = (poi.description?.length ?? 0) > 110;
@@ -123,12 +126,15 @@ function PoiCard({
 
       {/* Photo header */}
       {poi.photoUrl && !imgError && (
-        <div className="relative h-36 w-full overflow-hidden">
+        <div
+          className="relative h-36 w-full overflow-hidden cursor-zoom-in"
+          onClick={() => setLightboxOpen(true)}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={poi.photoUrl}
             alt={poi.name}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
             onError={() => setImgError(true)}
           />
           {poi.isUnescoSite && (
@@ -137,6 +143,11 @@ function PoiCard({
             </span>
           )}
         </div>
+      )}
+
+      {/* Image lightbox */}
+      {lightboxOpen && poi.photoUrl && (
+        <ImageLightbox src={poi.photoUrl} alt={poi.name} onClose={() => setLightboxOpen(false)} />
       )}
 
       <div className="flex flex-1 flex-col p-4">
@@ -160,7 +171,7 @@ function PoiCard({
       </div>
 
       {/* Meta badges */}
-      {(poi.rating != null || poi.estimatedDurationMinutes != null || timeInfo || poi.priceLevel != null || (!poi.photoUrl && poi.isUnescoSite)) && (
+      {(poi.rating != null || poi.estimatedDurationMinutes != null || timeInfo || poi.priceLevel != null || poi.isUnescoSite) && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5">
           {poi.rating != null && (
             <span className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -182,7 +193,7 @@ function PoiCard({
               {timeInfo.emoji} {timeInfo.label}
             </span>
           )}
-          {!poi.photoUrl && poi.isUnescoSite && (
+          {poi.isUnescoSite && (
             <span className="rounded-full bg-blue-50 border border-blue-200 px-2 py-0.5 text-xs font-semibold text-blue-700">
               🏛 UNESCO
             </span>
@@ -475,10 +486,14 @@ export function PoisSection({
   cityId,
   pois,
   dayPlans,
+  cityLat,
+  cityLon,
 }: {
   cityId: number;
   pois: PoiDTO[];
   dayPlans: DayPlanDTO[];
+  cityLat?: number;
+  cityLon?: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -497,6 +512,7 @@ export function PoisSection({
   const [addOpen, setAddOpen] = useState(false);
   const [listLayout, setListLayout] = useState<ListLayout>("grid");
   const [mapPopupPoi, setMapPopupPoi] = useState<PoiDTO | null>(null);
+  const [scrollToActivity, setScrollToActivity] = useState<{ date: string; activityId: number } | null>(null);
 
   // Live day plans — single source of truth, shared with DailyPlan and TimelineSidebar
   const [liveDayPlans, setLiveDayPlans] = useState(dayPlans);
@@ -535,7 +551,7 @@ export function PoisSection({
 
   // Filter state — applies to list + map views only.
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
-    () => new Set(),
+    () => new Set(CATEGORIES),
   );
   const [search, setSearch] = useState("");
   type StatusFilter = "all" | "assigned" | "unassigned" | "visited" | "unvisited";
@@ -550,15 +566,16 @@ export function PoisSection({
     });
   }
   function clearFilters() {
-    setActiveCategories(new Set());
+    setActiveCategories(new Set(CATEGORIES));
     setSearch("");
     setStatusFilter("all");
   }
-  const hasFilters = activeCategories.size > 0 || search.trim().length > 0 || statusFilter !== "all";
+  const allCategoriesSelected = activeCategories.size === CATEGORIES.length;
+  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilter !== "all";
   const searchLower = search.trim().toLowerCase();
   const filteredPois = pois.filter(
     (p) =>
-      (activeCategories.size === 0 || activeCategories.has(p.category)) &&
+      activeCategories.has(p.category) &&
       (searchLower === "" || p.name.toLowerCase().includes(searchLower)) &&
       (statusFilter === "all" ||
         (statusFilter === "assigned" && assignedPoiIds.has(p.id)) ||
@@ -658,7 +675,7 @@ export function PoisSection({
   const hasActivities = liveDayPlans.some((dp) => dp.activities.length > 0);
 
   return (
-    <div className={hasActivities ? "grid gap-6 lg:grid-cols-[4fr_1fr]" : ""}>
+    <div className={hasActivities ? "grid gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
       <Card className="min-w-0">
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div className="flex items-center gap-3">
@@ -672,32 +689,34 @@ export function PoisSection({
               onClick={onClearAll}
               className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
             >
+              {clearingAll ? <span className="spinner mr-1" /> : null}
               {clearingAll ? "Clearing…" : "Clear all"}
             </Button>
           )}
         </div>
         <div
           role="tablist"
-          className="inline-flex rounded-md border border-[hsl(var(--border))] p-1"
+          className="inline-flex rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-1 gap-0.5"
         >
           {(
             [
-              ["map", "Map View"],
-              ["list", "List View"],
-              ["plan", "Daily Plan"],
+              ["map", "🗺️", "Map"],
+              ["list", "📋", "List"],
+              ["plan", "📅", "Plan"],
             ] as const
-          ).map(([key, label]) => (
+          ).map(([key, icon, label]) => (
             <button
               key={key}
               role="tab"
               aria-selected={view === key}
               onClick={() => setView(key)}
-              className={`rounded px-3 py-1 text-sm ${
+              className={`relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
                 view === key
-                  ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                  : "text-[hsl(var(--muted-foreground))]"
+                  ? "bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm"
+                  : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
               }`}
             >
+              <span className="text-xs">{icon}</span>
               {label}
             </button>
           ))}
@@ -706,43 +725,6 @@ export function PoisSection({
       <CardContent className="space-y-6">
         {view !== "plan" && (
           <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeCategories.size === 0) {
-                    setActiveCategories(new Set(CATEGORIES));
-                  } else {
-                    setActiveCategories(new Set());
-                  }
-                }}
-                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
-                  activeCategories.size === 0
-                    ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                    : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                }`}
-              >
-                All
-              </button>
-              {CATEGORIES.map((c) => {
-                const active = activeCategories.has(c);
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => toggleCategory(c)}
-                    aria-pressed={active}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
-                      active
-                        ? `${CATEGORY_STYLES[c].badge} ring-2 ring-offset-1 ring-[hsl(var(--ring))]`
-                        : `${CATEGORY_STYLES[c].badge} opacity-50 hover:opacity-100`
-                    }`}
-                  >
-                    {c}
-                  </button>
-                );
-              })}
-            </div>
             <div className="flex items-center gap-2">
               <Input
                 type="search"
@@ -762,24 +744,66 @@ export function PoisSection({
                 </span>
               )}
             </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (allCategoriesSelected) {
+                    setActiveCategories(new Set());
+                  } else {
+                    setActiveCategories(new Set(CATEGORIES));
+                  }
+                }}
+                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                  allCategoriesSelected
+                    ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                    : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
+                }`}
+              >
+                All ({pois.length})
+              </button>
+              {CATEGORIES.map((c) => {
+                const active = activeCategories.has(c);
+                const count = pois.filter((p) => p.category === c).length;
+                if (count === 0) return null;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => toggleCategory(c)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
+                      active
+                        ? `${CATEGORY_STYLES[c].badge} ring-2 ring-offset-1 ring-[hsl(var(--ring))]`
+                        : `${CATEGORY_STYLES[c].badge} opacity-50 hover:opacity-100`
+                    }`}
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CATEGORY_STYLES[c].dot }} />
+                    {CATEGORY_ICONS[c]} {c} ({count})
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {view === "map" ? (
-          <>
+          <div className="space-y-2">
             <p className="text-xs text-[hsl(var(--muted-foreground))]">
-              💡 Click anywhere on the map to drop a pin and add a POI at that location.
+              💡 Right-click anywhere on the map to drop a pin and add a POI at that location.
             </p>
-            <PoiMap
-              pois={filteredPois}
-              cityId={cityId}
-              dayPlans={dayPlans.map((dp) => ({ id: dp.id, label: new Date(dp.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) } satisfies DayPlanOption))}
-              focusPoiId={focusPoiId}
-              onAddAtLocation={handleAddAtLocation}
-            />
-          </>
+            <div className="relative min-h-[500px] lg:min-h-[600px]">
+              <PoiMap
+                pois={filteredPois}
+                cityId={cityId}
+                dayPlans={dayPlans.map((dp) => ({ id: dp.id, label: new Date(dp.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }) } satisfies DayPlanOption))}
+                focusPoiId={focusPoiId}
+                onAddAtLocation={handleAddAtLocation}
+              />
+            </div>
+          </div>
         ) : view === "plan" ? (
-          <DailyPlan cityId={cityId} pois={pois} dayPlans={liveDayPlans} setDayPlans={setLiveDayPlans} />
+          <DailyPlan cityId={cityId} pois={pois} dayPlans={liveDayPlans} setDayPlans={setLiveDayPlans} scrollToActivity={scrollToActivity} onScrollComplete={() => setScrollToActivity(null)} />
         ) : filteredPois.length === 0 ? (
           <p className="text-sm text-[hsl(var(--muted-foreground))]">
             {pois.length === 0 ? "No POIs yet." : "No POIs match the current filters."}
@@ -824,9 +848,9 @@ export function PoisSection({
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortKey)}
-                    className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
+                    className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
                   >
-                    <option value="name">Name</option>
+                    <option value="name">Name A→Z</option>
                     <option value="category">Category</option>
                     <option value="rating">Rating ↓</option>
                     <option value="price">Price ↑</option>
@@ -918,12 +942,20 @@ export function PoisSection({
             <form onSubmit={onAdd} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="poi-name">Name</Label>
-            <Input
+            <PoiAutocomplete
               id="poi-name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={setName}
+              onSelect={(s: PoiSuggestion) => {
+                setName(s.name);
+                setAddLat(s.latitude.toFixed(6));
+                setAddLng(s.longitude.toFixed(6));
+                if (s.description) setDescription(s.description);
+              }}
+              cityLat={cityLat}
+              cityLon={cityLon}
+              placeholder="Search places or type a name…"
               required
-              placeholder="Some museum"
             />
           </div>
           <div className="space-y-2">
@@ -984,9 +1016,9 @@ export function PoisSection({
           {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <Button type="submit" disabled={submitting}>
-              {submitting ? "Adding…" : "Add POI"}
+              {submitting ? <><span className="spinner mr-1.5" /> Adding…</> : "Add POI"}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setAddOpen(false)} disabled={submitting}>
+            <Button type="button" variant="outline" onClick={() => { setName(""); setCategory("CULTURE"); setDescription(""); setAddLat(""); setAddLng(""); setError(null); setAddOpen(false); }} disabled={submitting}>
               Cancel
             </Button>
           </div>
@@ -997,7 +1029,13 @@ export function PoisSection({
     </Card>
     {hasActivities && (
       <aside className="hidden lg:block">
-        <TimelineSidebar dayPlans={liveDayPlans} />
+        <TimelineSidebar
+          dayPlans={liveDayPlans}
+          onActivityClick={(dayDate, activityId) => {
+            setScrollToActivity({ date: dayDate, activityId });
+            setView("plan");
+          }}
+        />
       </aside>
     )}
     </div>

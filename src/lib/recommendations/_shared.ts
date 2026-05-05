@@ -39,6 +39,8 @@ export type RecommendedPoi = {
   inceptionYear?: number;
   /** Wikidata Q-identifier */
   wikidataId?: string;
+  /** Google user rating count — used for re-ranking, not persisted */
+  userRatingCount?: number;
 };
 
 export type CityCoords = { lat: number; lon: number };

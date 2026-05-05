@@ -18,16 +18,21 @@ model Trip {
 }
 
 model City {
-  id        Int       @id @default(autoincrement())
-  name      String
-  startDate DateTime
-  endDate   DateTime
-  order     Int
-  tripId    Int
-  trip      Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  pois      Poi[]
-  dayPlans  DayPlan[]
-  createdAt DateTime  @default(now())
+  id          Int       @id @default(autoincrement())
+  name        String
+  startDate   DateTime
+  endDate     DateTime
+  order       Int
+  country     String?
+  countryCode String?
+  latitude    Float?
+  longitude   Float?
+  timezone    String?
+  tripId      Int
+  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  pois        Poi[]
+  dayPlans    DayPlan[]
+  createdAt   DateTime  @default(now())
 }
 
 // SQLite + Prisma does not support native enums — `category` and `timeSlot`

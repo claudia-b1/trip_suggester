@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
+import { CityAutocomplete, type CityDetails } from "@/components/ui/city-autocomplete";
 
 function toInputDate(iso: string) {
   return iso.slice(0, 10);
@@ -25,11 +26,13 @@ export function EditCityButton({
   const [startDate, setStartDate] = useState(toInputDate(city.startDate));
   const [endDate, setEndDate] = useState(toInputDate(city.endDate));
   const [saving, setSaving] = useState(false);
+  const [cityMeta, setCityMeta] = useState<CityDetails | null>(null);
 
   function onCancel() {
     setName(city.name);
     setStartDate(toInputDate(city.startDate));
     setEndDate(toInputDate(city.endDate));
+    setCityMeta(null);
     setOpen(false);
   }
 
@@ -44,7 +47,18 @@ export function EditCityButton({
     const res = await fetch(`/api/trips/${tripId}/cities/${city.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), startDate, endDate }),
+      body: JSON.stringify({
+        name: name.trim(),
+        startDate,
+        endDate,
+        ...(cityMeta && {
+          country: cityMeta.country,
+          countryCode: cityMeta.countryCode,
+          latitude: cityMeta.latitude,
+          longitude: cityMeta.longitude,
+          timezone: cityMeta.timezone,
+        }),
+      }),
     });
     setSaving(false);
     if (!res.ok) {
@@ -67,7 +81,13 @@ export function EditCityButton({
     <form onSubmit={onSave} className="space-y-3 rounded-md border border-[hsl(var(--border))] p-4">
       <div className="space-y-1">
         <Label htmlFor="edit-city-name">Name</Label>
-        <Input id="edit-city-name" value={name} onChange={(e) => setName(e.target.value)} required />
+        <CityAutocomplete
+          id="edit-city-name"
+          value={name}
+          onChange={setName}
+          onSelect={(d) => { setName(d.name); setCityMeta(d); }}
+          required
+        />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">

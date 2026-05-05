@@ -9,7 +9,7 @@
  */
 import { withEnrichCache } from "./cache";
 import { enrichWithWikidata, type WikidataEnrichment } from "./wikidata";
-import { enrichWithGoogle, type GoogleEnrichment } from "./google-places";
+import { enrichWithGoogle, type GoogleEnrichment, type GoogleMeta } from "./google-places";
 import type { DiscoveredPlace } from "./geoapify";
 import type { RecommendedPoi } from "./_shared";
 import type { Category } from "@/lib/categories";
@@ -66,9 +66,9 @@ const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"] as const;
 
 // ─── Core enrichment functions ────────────────────────────────────────────────
 
-async function getWikidata(placeId: string, name: string): Promise<WikidataEnrichment | null> {
+async function getWikidata(placeId: string, name: string, cityName?: string): Promise<WikidataEnrichment | null> {
   return withEnrichCache<WikidataEnrichment>(placeId, "wikidata", () =>
-    enrichWithWikidata(name),
+    enrichWithWikidata(name, cityName),
   );
 }
 
@@ -78,9 +78,10 @@ async function getGoogle(
   cityName: string,
   lat: number,
   lon: number,
+  prefetchedMeta?: GoogleMeta | null,
 ): Promise<GoogleEnrichment | null> {
   return withEnrichCache<GoogleEnrichment>(placeId, "google", () =>
-    enrichWithGoogle(name, cityName, lat, lon),
+    enrichWithGoogle(name, cityName, lat, lon, prefetchedMeta),
   );
 }
 
@@ -96,10 +97,11 @@ export async function enrichPlace(
   place: DiscoveredPlace,
   category: Category,
   cityName: string,
+  googleMeta?: GoogleMeta | null,
 ): Promise<RecommendedPoi> {
   const [wiki, google] = await Promise.allSettled([
-    getWikidata(place.placeId, place.name),
-    getGoogle(place.placeId, place.name, cityName, place.latitude, place.longitude),
+    getWikidata(place.placeId, place.name, cityName),
+    getGoogle(place.placeId, place.name, cityName, place.latitude, place.longitude, googleMeta),
   ]);
 
   const w = wiki.status === "fulfilled" ? wiki.value : null;
@@ -148,6 +150,7 @@ export async function enrichPlace(
     isUnescoSite:    w?.isUnescoSite ?? false,
     inceptionYear:   w?.inceptionYear,
     wikidataId:      w?.wikidataId,
+    userRatingCount: g?.userRatingCount,
   };
 }
 
