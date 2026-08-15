@@ -9,7 +9,7 @@ const SLOT_ICONS = { MORNING: "🌅", AFTERNOON: "☀️", EVENING: "🌙" } as 
 
 function formatDay(iso: string, idx: number) {
   const d = new Date(iso);
-  return `Day ${idx + 1} · ${d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}`;
+  return `Day ${idx + 1} · ${d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}`;
 }
 
 export function TimelineSidebar({

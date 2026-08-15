@@ -100,6 +100,9 @@ body {
   display: inline-block;
 }
 
+/* Clip map canvas to rounded corners; popup is rendered outside the map DOM */
+.poi-map-outer .mapboxgl-canvas-container { overflow: hidden; border-radius: 0.75rem; }
+
 /* Mapbox popup readability */
 .mapboxgl-popup-content {
   background: hsl(var(--background));

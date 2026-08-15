@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CATEGORY_STYLES, type Category } from "@/lib/categories";
+import { CATEGORY_STYLES, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
 import type { PoiDTO } from "./pois-section";
 import { useToast } from "@/components/ui/toast";
@@ -38,7 +38,7 @@ const SLOT_CSS: Record<TimeSlot, string> = {
 };
 
 function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
@@ -54,7 +54,7 @@ function CategoryBadge({ category }: { category: Category }) {
     <span
       className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_STYLES[category].badge}`}
     >
-      {category}
+      {CATEGORY_LABELS[category]}
     </span>
   );
 }
@@ -103,7 +103,7 @@ function MiniCalendar({
 
   const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
-  const monthLabel = viewMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const monthLabel = viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
@@ -253,6 +253,15 @@ export function DailyPlan({
   const [catFilter, setCatFilter] = useState<Category | null>(null);
   const [mapDayPlan, setMapDayPlan] = useState<DayPlanDTO | null>(null);
   const [dragActivity, setDragActivity] = useState<{ activityId: number; fromDayPlanId: number; fromSlot: TimeSlot } | null>(null);
+
+  // Cross-slot rearrangement suggestion shown after route optimisation
+  type CrossSlotSuggestion = {
+    activityId: number;
+    poiName: string;
+    fromSlot: TimeSlot;
+    toSlot: TimeSlot;
+  };
+  const [crossSlotSuggestion, setCrossSlotSuggestion] = useState<CrossSlotSuggestion | null>(null);
 
   // Calendar: default selected date
   const [selectedDate, setSelectedDate] = useState<string>(() => {
@@ -563,43 +572,163 @@ export function DailyPlan({
     router.refresh();
   }
 
-  async function optimizeRoute(dayPlanId: number) {
-    const dp = dayPlans.find((d) => d.id === dayPlanId);
-    if (!dp) return;
-    setBusy(true);
+  /** Nearest-neighbour heuristic fallback (used when Mapbox API is unavailable or >12 POIs). */
+  function nearestNeighbourSort(activities: DayActivityDTO[]): DayActivityDTO[] {
+    type CoordItem = { activity: DayActivityDTO; lat: number; lng: number };
+    const items: CoordItem[] = activities.map((a) => {
+      const poi = pois.find((p) => p.id === a.poiId);
+      return { activity: a, lat: poi?.latitude ?? 0, lng: poi?.longitude ?? 0 };
+    });
+    const ordered: CoordItem[] = [];
+    const remaining = [...items];
+    let current = remaining.shift()!;
+    ordered.push(current);
+    while (remaining.length > 0) {
+      let nearest = 0;
+      let nearestDist = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const dist = (remaining[i].lat - current.lat) ** 2 + (remaining[i].lng - current.lng) ** 2;
+        if (dist < nearestDist) { nearestDist = dist; nearest = i; }
+      }
+      current = remaining.splice(nearest, 1)[0];
+      ordered.push(current);
+    }
+    return ordered.map((o) => o.activity);
+  }
 
-    // Nearest-neighbor within each slot
+  /** Compute Euclidean centroid of a set of activities (lat/lon average). */
+  function centroid(activities: DayActivityDTO[]): { lat: number; lon: number } | null {
+    const coords = activities
+      .map((a) => pois.find((p) => p.id === a.poiId))
+      .filter((p): p is PoiDTO => p != null && p.latitude != null && p.longitude != null);
+    if (coords.length === 0) return null;
+    return {
+      lat: coords.reduce((s, p) => s + p.latitude!, 0) / coords.length,
+      lon: coords.reduce((s, p) => s + p.longitude!, 0) / coords.length,
+    };
+  }
+
+  /** After optimising each slot, detect the single best cross-slot move (if any). */
+  function detectCrossSlotSuggestion(
+    activitiesBySlot: Record<TimeSlot, DayActivityDTO[]>,
+  ): CrossSlotSuggestion | null {
+    let bestGain = 0;
+    let best: CrossSlotSuggestion | null = null;
+
+    for (const fromSlot of TIME_SLOTS) {
+      const fromItems = activitiesBySlot[fromSlot] ?? [];
+      if (fromItems.length < 2) continue; // need ≥2 so we don't empty the slot
+      const fromCentroid = centroid(fromItems);
+      if (!fromCentroid) continue;
+
+      for (const toSlot of TIME_SLOTS) {
+        if (toSlot === fromSlot) continue;
+        const toItems = activitiesBySlot[toSlot] ?? [];
+        const toCentroid = centroid(toItems);
+        if (!toCentroid) continue;
+
+        for (const activity of fromItems) {
+          const poi = pois.find((p) => p.id === activity.poiId);
+          if (!poi?.latitude || !poi?.longitude) continue;
+
+          // Distance from this POI to its current slot centroid (excluding itself)
+          const otherFrom = fromItems.filter((a) => a.id !== activity.id);
+          const otherFromCentroid = centroid(otherFrom);
+          if (!otherFromCentroid) continue;
+
+          const distFrom = (poi.latitude - otherFromCentroid.lat) ** 2 + (poi.longitude! - otherFromCentroid.lon) ** 2;
+          const distTo = (poi.latitude - toCentroid.lat) ** 2 + (poi.longitude! - toCentroid.lon) ** 2;
+
+          // Suggest only if moving reduces distance by >30%
+          const gain = distFrom - distTo;
+          if (gain > 0 && distFrom > 0 && gain / distFrom > 0.30 && gain > bestGain) {
+            bestGain = gain;
+            best = {
+              activityId: activity.id,
+              poiName: activity.poiName,
+              fromSlot,
+              toSlot,
+            };
+          }
+        }
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Core optimization engine. Takes an explicit activities array so it never
+   * reads from the stale dayPlans closure — both optimizeRoute and
+   * applyCrossSlotSuggestion call this after preparing the correct list.
+   */
+  async function optimizeActivities(
+    dayPlanId: number,
+    activities: DayActivityDTO[],
+  ): Promise<void> {
     const optimized: DayActivityDTO[] = [];
+    const activitiesBySlot: Record<TimeSlot, DayActivityDTO[]> = {
+      MORNING: [],
+      AFTERNOON: [],
+      EVENING: [],
+    };
+
     for (const slot of TIME_SLOTS) {
-      const slotActivities: DayActivityDTO[] = dp.activities.filter((a) => a.timeSlot === slot);
+      const slotActivities = activities.filter((a) => a.timeSlot === slot);
       if (slotActivities.length <= 1) {
         optimized.push(...slotActivities);
+        activitiesBySlot[slot] = slotActivities;
         continue;
       }
-      type CoordItem = { activity: DayActivityDTO; lat: number; lng: number };
-      const withCoords: CoordItem[] = slotActivities.map((a) => {
+
+      const withCoords = slotActivities.filter((a) => {
         const poi = pois.find((p) => p.id === a.poiId);
-        return { activity: a, lat: poi?.latitude ?? 0, lng: poi?.longitude ?? 0 };
+        return poi?.latitude != null && poi?.longitude != null;
       });
-      // Nearest-neighbor starting from first item
-      const ordered: CoordItem[] = [];
-      const remaining = [...withCoords];
-      let current = remaining.shift()!;
-      ordered.push(current);
-      while (remaining.length > 0) {
-        let nearest = 0;
-        let nearestDist = Infinity;
-        for (let i = 0; i < remaining.length; i++) {
-          const dist = (remaining[i].lat - current.lat) ** 2 + (remaining[i].lng - current.lng) ** 2;
-          if (dist < nearestDist) { nearestDist = dist; nearest = i; }
+      const noCoords = slotActivities.filter((a) => {
+        const poi = pois.find((p) => p.id === a.poiId);
+        return poi?.latitude == null || poi?.longitude == null;
+      });
+
+      let orderedSlot = slotActivities;
+
+      if (withCoords.length >= 2 && withCoords.length <= 12) {
+        try {
+          const res = await fetch(`/api/cities/${cityId}/optimize-route`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              waypoints: withCoords.map((a) => {
+                const poi = pois.find((p) => p.id === a.poiId)!;
+                return { id: String(a.id), lat: poi.latitude, lon: poi.longitude };
+              }),
+            }),
+          });
+
+          if (res.ok) {
+            const data = (await res.json()) as { orderedIds: string[] };
+            const idToActivity = new Map(withCoords.map((a) => [String(a.id), a]));
+            orderedSlot = [
+              ...data.orderedIds
+                .map((id) => idToActivity.get(id))
+                .filter((a): a is DayActivityDTO => a != null),
+              ...noCoords,
+            ];
+          }
+        } catch {
+          // Network error — fall through to heuristic
         }
-        current = remaining.splice(nearest, 1)[0];
-        ordered.push(current);
       }
-      optimized.push(...ordered.map((o) => o.activity));
+
+      // Fallback: nearest-neighbour if Mapbox didn't produce a result
+      if (orderedSlot === slotActivities && withCoords.length >= 2) {
+        orderedSlot = nearestNeighbourSort(slotActivities);
+      }
+
+      optimized.push(...orderedSlot);
+      activitiesBySlot[slot] = orderedSlot;
     }
 
-    // Optimistic update
+    // Optimistic UI update
     setDayPlans((prev) =>
       prev.map((d) => (d.id === dayPlanId ? { ...d, activities: optimized } : d)),
     );
@@ -614,9 +743,54 @@ export function DailyPlan({
         }),
       ),
     );
+
+    // Surface cross-slot suggestion based on freshly optimised slots
+    setCrossSlotSuggestion(detectCrossSlotSuggestion(activitiesBySlot));
+
     setBusy(false);
-    toast("Route optimized for the day.");
+    toast("Route optimized per time slot.");
     router.refresh();
+  }
+
+  async function optimizeRoute(dayPlanId: number) {
+    const dp = dayPlans.find((d) => d.id === dayPlanId);
+    if (!dp) return;
+    setBusy(true);
+    setCrossSlotSuggestion(null);
+    await optimizeActivities(dayPlanId, dp.activities);
+  }
+
+  /** Apply the cross-slot suggestion: move the activity to the target slot, then re-optimise. */
+  async function applyCrossSlotSuggestion() {
+    if (!crossSlotSuggestion) return;
+    const { activityId, toSlot } = crossSlotSuggestion;
+
+    // Find the day plan that owns this activity
+    const dp = dayPlans.find((d) => d.activities.some((a) => a.id === activityId));
+    if (!dp) return;
+
+    setCrossSlotSuggestion(null);
+    setBusy(true);
+
+    // Build updated activities with the activity in its new slot (in-memory, no stale state)
+    const updatedActivities: DayActivityDTO[] = dp.activities.map((a) =>
+      a.id === activityId ? { ...a, timeSlot: toSlot } : a,
+    );
+
+    // Optimistic UI: show the activity in the new slot immediately
+    setDayPlans((prev) =>
+      prev.map((d) => (d.id === dp.id ? { ...d, activities: updatedActivities } : d)),
+    );
+
+    // Persist the slot change
+    await fetch(`/api/day-activities/${activityId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeSlot: toSlot }),
+    });
+
+    // Now optimise using the already-updated activities array (no stale closure issue)
+    await optimizeActivities(dp.id, updatedActivities);
   }
 
   // Map modal data
@@ -775,7 +949,7 @@ export function DailyPlan({
                       : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
                   }`}
                 >
-                  {cat}
+                  {CATEGORY_LABELS[cat]}
                 </button>
               ))}
             </div>
@@ -786,7 +960,7 @@ export function DailyPlan({
             </p>
           ) : filteredUnassigned.length === 0 ? (
             <p className="text-sm text-[hsl(var(--muted-foreground))]">
-              No {catFilter} POIs unassigned.
+              No {catFilter ? CATEGORY_LABELS[catFilter] : ""} POIs unassigned.
             </p>
           ) : (
             <ul className="space-y-1 max-h-[400px] overflow-y-auto">
@@ -876,6 +1050,34 @@ export function DailyPlan({
                   </span>
                 </div>
               </div>
+
+              {/* Cross-slot rearrangement suggestion */}
+              {crossSlotSuggestion && currentDayPlan.activities.some((a) => a.id === crossSlotSuggestion.activityId) && (
+                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <span className="shrink-0">💡</span>
+                  <span className="flex-1">
+                    Consider moving <strong>{crossSlotSuggestion.poiName}</strong> from{" "}
+                    <strong>{SLOT_LABELS[crossSlotSuggestion.fromSlot].replace(/^[^\s]+ /, "")}</strong> →{" "}
+                    <strong>{SLOT_LABELS[crossSlotSuggestion.toSlot].replace(/^[^\s]+ /, "")}</strong> for a shorter walking route.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={applyCrossSlotSuggestion}
+                    disabled={busy}
+                    className="shrink-0 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                  >
+                    Apply
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCrossSlotSuggestion(null)}
+                    className="shrink-0 text-amber-500 hover:text-amber-700 text-base leading-none"
+                    aria-label="Dismiss suggestion"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* Time slots grid with drag & drop */}
               <div className="grid gap-3 sm:grid-cols-3">

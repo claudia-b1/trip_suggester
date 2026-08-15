@@ -36,12 +36,13 @@ type Assignment = {
 };
 
 const CATEGORY_SORT: Record<string, number> = {
-  CULTURE: 0,
-  NATURE: 1,
-  OUTDOORS: 2,
-  SHOPPING: 3,
-  FOOD: 4,
-  NIGHTLIFE: 5,
+  CULTURE:    0,
+  NATURE:     1,
+  ENTERTAINMENT: 2,
+  SHOPPING:   3,
+  WELLNESS:   4,
+  FOOD:       5,
+  NIGHTLIFE:  6,
 };
 
 function preferredSlots(poi: PlanPoi): TimeSlot[] {

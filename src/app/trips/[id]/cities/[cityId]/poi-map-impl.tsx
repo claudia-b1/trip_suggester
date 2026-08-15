@@ -24,29 +24,43 @@ type LocatedPoi = {
   description: string | null;
   latitude: number;
   longitude: number;
+  rating?: number | null;
   photoUrl?: string | null;
+  userRatingCount?: number | null;
 };
 
 export type DayPlanOption = { id: number; label: string };
 
 export type PoiMapProps = {
-  pois: { id: number; name: string; category: Category; description: string | null; latitude: number | null; longitude: number | null; photoUrl?: string | null }[];
+  pois: { id: number; name: string; category: Category; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null }[];
   cityId?: number;
+  cityLat?: number;
+  cityLon?: number;
+  radiusKm?: number;
+  nearbyRadiusKm?: number;
   dayPlans?: DayPlanOption[];
   focusPoiId?: number | null;
   onAddAtLocation?: (lat: number, lng: number) => void;
+  onViewInList?: (poiId: number) => void;
   routeGeoJson?: GeoJSON.FeatureCollection | null;
+  userRatings?: Record<number, number>;
+  notInterested?: Set<number>;
+  onRatePoi?: (poiId: number, rating: number | null) => void;
+  onToggleNotInterested?: (poiId: number) => void;
+  /** Called once after flyTo completes so the parent can clear focusPoiId */
+  onFocusConsumed?: () => void;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORY_ICONS: Record<Category, string> = {
-  CULTURE: "🏛️",
-  FOOD: "🍽️",
-  NATURE: "🌿",
-  NIGHTLIFE: "🌙",
-  SHOPPING: "🛍️",
-  OUTDOORS: "🏔️",
+  CULTURE:    "🏛️",
+  FOOD:       "🍽️",
+  NATURE:     "🌳",
+  ENTERTAINMENT: "🎡",
+  NIGHTLIFE:  "🌃",
+  SHOPPING:   "🛍️",
+  WELLNESS:   "🧘",
 };
 
 const MAP_STYLES = {
@@ -74,6 +88,19 @@ function clusterPois(pois: LocatedPoi[], zoom: number): ClusterCell[] {
     lat: cell.reduce((s, p) => s + p.latitude, 0) / cell.length,
     lng: cell.reduce((s, p) => s + p.longitude, 0) / cell.length,
   }));
+}
+
+/** Approximate a circle as a GeoJSON polygon (equirectangular projection — fine for ≤50 km). */
+function makeRadiusCircle(lat: number, lon: number, radiusKm: number): GeoJSON.Feature<GeoJSON.Polygon> {
+  const STEPS = 72;
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const angle = (i / STEPS) * 2 * Math.PI;
+    const dLat = (radiusKm * Math.sin(angle)) / 111.32;
+    const dLon = (radiusKm * Math.cos(angle)) / (111.32 * Math.cos((lat * Math.PI) / 180));
+    pts.push([lon + dLon, lat + dLat]);
+  }
+  return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [pts] } };
 }
 
 function ClusterPie({ pois }: { pois: LocatedPoi[] }) {
@@ -148,11 +175,21 @@ function PopupContent({
   cityId,
   dayPlans,
   onClose,
+  onViewInList,
+  userRatings,
+  notInterested,
+  onRatePoi,
+  onToggleNotInterested,
 }: {
   poi: LocatedPoi;
   cityId: number;
   dayPlans: DayPlanOption[];
   onClose: () => void;
+  onViewInList?: (poiId: number) => void;
+  userRatings?: Record<number, number>;
+  notInterested?: Set<number>;
+  onRatePoi?: (poiId: number, rating: number | null) => void;
+  onToggleNotInterested?: (poiId: number) => void;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -161,6 +198,7 @@ function PopupContent({
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot>("MORNING");
   const [assigning, setAssigning] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [hoverStar, setHoverStar] = useState<number | null>(null);
 
   async function assign() {
     if (!selectedDay) return;
@@ -180,8 +218,17 @@ function PopupContent({
     onClose();
   }
 
+  const currentRating = userRatings?.[poi.id];
+  const displayStars = hoverStar ?? currentRating ?? 0;
+
+  function formatCount(n: number) {
+    if (n >= 10000) return `${Math.round(n / 1000)}K`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return `${n}`;
+  }
+
   return (
-    <div className="min-w-[200px] max-w-[260px] max-h-[300px] overflow-y-auto space-y-2 text-sm">
+    <div className="min-w-[200px] max-w-[260px] space-y-2 text-sm">
       {poi.photoUrl && !imgError && (
         <img
           src={poi.photoUrl}
@@ -207,6 +254,41 @@ function PopupContent({
             </button>
           )}
         </p>
+      )}
+      {(poi.rating != null || poi.userRatingCount != null) && (
+        <p className="flex items-center gap-1 text-xs text-gray-500">
+          {poi.rating != null && (
+            <span className="text-amber-500 font-medium">⭐ {poi.rating.toFixed(1)}</span>
+          )}
+          {poi.userRatingCount != null && (
+            <span>({formatCount(poi.userRatingCount)} reviews)</span>
+          )}
+        </p>
+      )}
+      {onRatePoi && (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-500">My rating:</span>
+          <div className="flex gap-0.5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onMouseEnter={() => setHoverStar(star)}
+                onMouseLeave={() => setHoverStar(null)}
+                onClick={(e) => { e.stopPropagation(); onRatePoi(poi.id, currentRating === star ? null : star); }}
+                className={`text-base leading-none transition-colors ${star <= displayStars ? "text-amber-400" : "text-gray-300"}`}
+              >★</button>
+            ))}
+          </div>
+          {onToggleNotInterested && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poi.id); }}
+              className={`rounded px-1 py-0.5 text-[10px] ${notInterested?.has(poi.id) ? "text-red-500" : "text-gray-400 hover:text-red-400"}`}
+              title={notInterested?.has(poi.id) ? "Remove not interested" : "Not interested"}
+            >✕</button>
+          )}
+        </div>
       )}
       {dayPlans.length > 0 && (
         <details className="group" onClick={(e) => e.stopPropagation()}>
@@ -245,6 +327,15 @@ function PopupContent({
           </div>
         </details>
       )}
+      {onViewInList && (
+        <button
+          type="button"
+          onClick={() => { onViewInList(poi.id); onClose(); }}
+          className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+        >
+          📋 View full details
+        </button>
+      )}
     </div>
   );
 }
@@ -252,10 +343,21 @@ function PopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, dayPlans = [], focusPoiId, onAddAtLocation } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed } = props;
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeId, setActiveId] = useState<number | null>(focusPoiId ?? null);
+  const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
+
+  function scheduleHoverClose() {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = setTimeout(() => setHoverId(null), 400);
+  }
+  function cancelHoverClose() {
+    if (hoverCloseTimer.current) { clearTimeout(hoverCloseTimer.current); hoverCloseTimer.current = null; }
+  }
   const [hoverId, setHoverId] = useState<number | null>(null);
   const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
   const [zoom, setZoom] = useState(12);
@@ -263,14 +365,47 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
 
+  useEffect(() => {
+    function onFullscreenChange() {
+      setFullscreen(!!document.fullscreenElement);
+      setTimeout(() => mapRef.current?.resize(), 100);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
   const located: LocatedPoi[] = useMemo(
     () => pois.flatMap((p) =>
       p.latitude != null && p.longitude != null
-        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, photoUrl: p.photoUrl }]
+        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, rating: p.rating, photoUrl: p.photoUrl, userRatingCount: p.userRatingCount }]
         : [],
     ),
     [pois],
   );
+
+  // Floor to integer so sub-pixel zoom differences don't re-trigger clustering
+  const clusterZoom = Math.floor(zoom);
+  const clusters = useMemo(() => clusterPois(located, clusterZoom), [located, clusterZoom]);
+
+  const visibleId = hoverId ?? activeId;
+  const visiblePoi = visibleId != null ? located.find((p) => p.id === visibleId) : null;
+
+  // Track the screen position of the visible POI so we can render the popup
+  // outside the map's overflow-hidden container.
+  useEffect(() => {
+    if (!visiblePoi || !mapRef.current || !mapReady) { setPopupPos(null); return; }
+    function updatePos() {
+      if (!mapRef.current || !visiblePoi) return;
+      const pt = mapRef.current.project([visiblePoi.longitude, visiblePoi.latitude]);
+      setPopupPos({ x: pt.x, y: pt.y });
+    }
+    updatePos();
+    const mapInstance = mapRef.current.getMap();
+    mapInstance.on("move", updatePos);
+    mapInstance.on("zoom", updatePos);
+    return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visiblePoi, mapReady]);
 
   const fitBounds = useCallback(() => {
     const map = mapRef.current;
@@ -294,14 +429,10 @@ export function PoiMapImpl(props: PoiMapProps) {
     // Offset downward so the popup above the marker is fully visible
     mapRef.current.flyTo({ center: [poi.longitude, poi.latitude], zoom: 15, duration: 800, offset: [0, 60] });
     setActiveId(focusPoiId);
+    // Tell parent to clear focusPoiId so later interactions don't snap back to this POI
+    onFocusConsumed?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusPoiId, located]);
-
-  // Floor to integer so sub-pixel zoom differences don't re-trigger clustering
-  const clusterZoom = Math.floor(zoom);
-  const clusters = useMemo(() => clusterPois(located, clusterZoom), [located, clusterZoom]);
-
-  const visibleId = hoverId ?? activeId;
-  const visiblePoi = visibleId != null ? located.find((p) => p.id === visibleId) : null;
 
   if (!token) {
     return (
@@ -311,14 +442,31 @@ export function PoiMapImpl(props: PoiMapProps) {
     );
   }
 
-  if (located.length === 0) {
+  // Determine the initial map centre: use first POI, or fall back to city centre
+  const hasLocated = located.length > 0;
+  const hasCityCenter = cityLat != null && cityLon != null;
+
+  if (!hasLocated && !hasCityCenter) {
     return <p className="text-sm text-[hsl(var(--muted-foreground))]">No POIs with coordinates yet.</p>;
   }
 
-  const first = located[0];
+  const centerLat = hasLocated ? located[0].latitude  : cityLat!;
+  const centerLon = hasLocated ? located[0].longitude : cityLon!;
+
+  // GeoJSON circle for city radius (only when city centre + radius are known)
+  const circleData: GeoJSON.Feature<GeoJSON.Polygon> | null =
+    hasCityCenter && radiusKm != null && radiusKm > 0
+      ? makeRadiusCircle(cityLat!, cityLon!, radiusKm)
+      : null;
+
+  // GeoJSON circle for nearby radius (orange dotted, different style)
+  const nearbyCircleData: GeoJSON.Feature<GeoJSON.Polygon> | null =
+    hasCityCenter && nearbyRadiusKm != null && nearbyRadiusKm > 0
+      ? makeRadiusCircle(cityLat!, cityLon!, nearbyRadiusKm)
+      : null;
 
   return (
-    <div className={`relative overflow-hidden rounded-xl border border-[hsl(var(--border))] ${fullscreen ? "fixed inset-0 z-50 rounded-none" : ""}`}>
+    <div ref={containerRef} className="poi-map-outer relative rounded-xl border border-[hsl(var(--border))]">
       <div className="absolute left-2 top-2 z-10 flex flex-col gap-1.5">
         <button
           type="button"
@@ -337,20 +485,43 @@ export function PoiMapImpl(props: PoiMapProps) {
         </button>
         <button
           type="button"
-          onClick={() => { setFullscreen((v) => !v); setTimeout(() => mapRef.current?.resize(), 50); }}
+          onClick={() => {
+            if (!document.fullscreenElement) {
+              containerRef.current?.requestFullscreen();
+            } else {
+              document.exitFullscreen();
+            }
+          }}
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
         >
-          {fullscreen ? "✕ Exit" : "⛶ Fullscreen"}
+          {fullscreen ? "✕ Exit fullscreen" : "⛶ Fullscreen"}
         </button>
       </div>
 
       <MapGL
         ref={mapRef}
         mapboxAccessToken={token}
-        initialViewState={{ longitude: first.longitude, latitude: first.latitude, zoom: 12 }}
-        style={{ width: "100%", height: fullscreen ? "100vh" : "clamp(500px, 70vh, 825px)" }}
+        initialViewState={{ longitude: centerLon, latitude: centerLat, zoom: 12 }}
+        style={{ width: "100%", height: fullscreen ? "100dvh" : "clamp(500px, 70vh, 825px)" }}
         mapStyle={MAP_STYLES[mapStyle]}
-        onLoad={() => { setMapReady(true); fitBounds(); }}
+        onLoad={() => {
+          setMapReady(true);
+          if (hasLocated) {
+            fitBounds();
+          } else if (hasCityCenter) {
+            // Fit to a 20 km context (or nearbyRadiusKm if larger), so the
+            // city radius circle sits well within view
+            const fitKm = Math.max(20, nearbyRadiusKm ?? 0);
+            const fitCircle = makeRadiusCircle(cityLat!, cityLon!, fitKm);
+            const coords = fitCircle.geometry.coordinates[0];
+            const lngs = coords.map((c) => c[0]);
+            const lats = coords.map((c) => c[1]);
+            mapRef.current?.fitBounds(
+              [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+              { padding: 40, duration: 0 },
+            );
+          }
+        }}
         onZoomEnd={(e) => setZoom(e.viewState.zoom)}
         onMoveEnd={(e) => setZoom(e.viewState.zoom)}
         onContextMenu={(e) => {
@@ -365,6 +536,55 @@ export function PoiMapImpl(props: PoiMapProps) {
         }}
       >
         <NavigationControl position="top-right" />
+        {fullscreen && <CategoryLegend />}
+
+        {/* City radius circle — grey dashed */}
+        {circleData && (
+          <Source id="radius-circle" type="geojson" data={circleData}>
+            <Layer
+              id="radius-circle-line"
+              type="line"
+              paint={{
+                "line-color": "#94a3b8",
+                "line-width": 1.5,
+                "line-dasharray": [4, 3],
+                "line-opacity": 0.7,
+              }}
+            />
+            <Layer
+              id="radius-circle-fill"
+              type="fill"
+              paint={{
+                "fill-color": "#94a3b8",
+                "fill-opacity": 0.04,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Nearby attractions radius circle — orange dotted, wider gaps */}
+        {nearbyCircleData && (
+          <Source id="nearby-circle" type="geojson" data={nearbyCircleData}>
+            <Layer
+              id="nearby-circle-line"
+              type="line"
+              paint={{
+                "line-color": "#f97316",
+                "line-width": 1.5,
+                "line-dasharray": [2, 4],
+                "line-opacity": 0.65,
+              }}
+            />
+            <Layer
+              id="nearby-circle-fill"
+              type="fill"
+              paint={{
+                "fill-color": "#f97316",
+                "fill-opacity": 0.03,
+              }}
+            />
+          </Source>
+        )}
 
         {clusters.map((cell) => {
           const isCluster = cell.pois.length > 1;
@@ -390,6 +610,8 @@ export function PoiMapImpl(props: PoiMapProps) {
             );
           }
 
+          const isHovered = hoverId === poi.id;
+
           return (
             <Marker
               key={poi.id}
@@ -401,11 +623,9 @@ export function PoiMapImpl(props: PoiMapProps) {
                 const newId = activeId === poi.id ? null : poi.id;
                 setActiveId(newId);
                 if (newId != null && mapRef.current) {
-                  // Pan map so popup (above marker) is fully visible
                   const map = mapRef.current;
                   const point = map.project([poi.longitude, poi.latitude]);
                   const mapHeight = map.getContainer().clientHeight;
-                  // If the marker is in the top 40% of the viewport, pan down
                   if (point.y < mapHeight * 0.4) {
                     map.easeTo({ center: [poi.longitude, poi.latitude], offset: [0, 100], duration: 300 });
                   }
@@ -413,39 +633,30 @@ export function PoiMapImpl(props: PoiMapProps) {
               }}
             >
               <div
-                onMouseEnter={() => setHoverId(poi.id)}
-                onMouseLeave={() => setHoverId(null)}
-                className={`cursor-pointer rounded-full border-2 border-white shadow transition-transform ${mapReady ? "marker-enter" : ""}`}
-                style={{
-                  backgroundColor: CATEGORY_STYLES[poi.category].dot,
-                  width: isActive ? 22 : 16,
-                  height: isActive ? 22 : 16,
-                  transform: isActive ? "scale(1.3)" : "scale(1)",
-                }}
-                aria-label={poi.name}
-              />
+                onMouseEnter={() => { cancelHoverClose(); setHoverId(poi.id); if (activeId !== null && activeId !== poi.id) setActiveId(null); }}
+                onMouseLeave={() => scheduleHoverClose()}
+                className="relative flex flex-col items-center cursor-pointer"
+              >
+                {isHovered && (
+                  <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none">
+                    {poi.name}
+                  </div>
+                )}
+                <div
+                  className={`rounded-full border-2 border-white shadow transition-transform ${mapReady ? "marker-enter" : ""}`}
+                  style={{
+                    backgroundColor: CATEGORY_STYLES[poi.category].dot,
+                    width: isActive ? 22 : 16,
+                    height: isActive ? 22 : 16,
+                    transform: isActive ? "scale(1.3)" : "scale(1)",
+                  }}
+                />
+              </div>
             </Marker>
           );
         })}
 
-        {visiblePoi && (
-          <Popup
-            longitude={visiblePoi.longitude}
-            latitude={visiblePoi.latitude}
-            anchor="bottom"
-            onClose={() => { setActiveId(null); setHoverId(null); }}
-            closeButton={hoverId == null}
-            closeOnClick={false}
-            offset={16}
-          >
-            <PopupContent
-              poi={visiblePoi}
-              cityId={cityId ?? 0}
-              dayPlans={dayPlans}
-              onClose={() => setActiveId(null)}
-            />
-          </Popup>
-        )}
+        {/* Popup is rendered outside MapGL — see below */}
 
         {props.routeGeoJson && (
           <Source id="walking-route" type="geojson" data={props.routeGeoJson}>
@@ -504,6 +715,62 @@ export function PoiMapImpl(props: PoiMapProps) {
           </>
         )}
       </MapGL>
+
+      {/* Empty-state overlay when no POIs yet but city centre is known */}
+      {!hasLocated && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 px-4 py-2.5 text-center shadow backdrop-blur-sm">
+            <p className="text-sm font-medium text-[hsl(var(--muted-foreground))]">No POIs yet</p>
+            {circleData && (
+              <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-0.5">
+                <span className="text-slate-400">●</span> {radiusKm} km city radius
+                {nearbyCircleData && (
+                  <> · <span className="text-orange-400">●</span> {nearbyRadiusKm} km nearby</>
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Custom popup rendered OUTSIDE MapGL so it can overflow the map's overflow:hidden */}
+      {visiblePoi && popupPos && (
+        <div
+          className="absolute z-30 pointer-events-auto"
+          style={{ left: popupPos.x, top: popupPos.y, transform: "translate(-50%, calc(-100% - 18px))" }}
+          onMouseEnter={() => cancelHoverClose()}
+          onMouseLeave={() => { if (activeId !== visiblePoi.id) setHoverId(null); }}
+        >
+          <div className="relative rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-xl p-3">
+            {activeId === visiblePoi.id && (
+              <button
+                type="button"
+                onClick={() => { setActiveId(null); setHoverId(null); cancelHoverClose(); }}
+                className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs"
+                aria-label="Close"
+              >✕</button>
+            )}
+            <PopupContent
+              poi={visiblePoi}
+              cityId={cityId ?? 0}
+              dayPlans={dayPlans}
+              onClose={() => { setActiveId(null); setHoverId(null); }}
+              onViewInList={onViewInList}
+              userRatings={userRatings}
+              notInterested={notInterested}
+              onRatePoi={onRatePoi}
+              onToggleNotInterested={onToggleNotInterested}
+            />
+          </div>
+          {/* Arrow tip pointing down at the marker */}
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid hsl(var(--border))" }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

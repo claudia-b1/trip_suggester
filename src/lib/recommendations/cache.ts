@@ -48,12 +48,19 @@ export async function withCache<T>(
   return data;
 }
 
-/** Per-POI enrichment cache — keyed by (placeId, source). */
+/**
+ * Per-POI enrichment cache — keyed by (placeId, source).
+ *
+ * @param skipCachedNull  When true, a cached `null` is treated as a cache
+ *   miss so the fetcher is retried. Use this for nearby-only places whose
+ *   previous null was produced by a wrong city-name query.
+ */
 export async function withEnrichCache<T>(
   placeId: string,
   source: string,
   fetcher: () => Promise<T | null>,
   ttlDays = ENRICHMENT_TTL_DAYS,
+  skipCachedNull = false,
 ): Promise<T | null> {
   const key = { placeId, source };
 
@@ -64,7 +71,10 @@ export async function withEnrichCache<T>(
   if (existing) {
     const ageMs = Date.now() - existing.cachedAt.getTime();
     if (ageMs < ttlDays * 24 * 60 * 60 * 1000) {
-      return JSON.parse(existing.payload) as T;
+      const parsed = JSON.parse(existing.payload) as T | null;
+      // If skipCachedNull and the cached value is null, fall through to re-fetch.
+      // This handles nearby places whose null was cached via a wrong city-name query.
+      if (!skipCachedNull || parsed !== null) return parsed;
     }
   }
 

@@ -8,12 +8,13 @@ import type { Category } from "@/lib/categories";
 import { CATEGORY_STYLES } from "@/lib/categories";
 
 const CATEGORY_ICONS: Record<Category, string> = {
-  CULTURE: "🏛️",
-  FOOD: "🍽️",
-  NATURE: "🌿",
-  NIGHTLIFE: "🌙",
-  SHOPPING: "🛍️",
-  OUTDOORS: "🏔️",
+  CULTURE:    "🏛️",
+  FOOD:       "🍽️",
+  NATURE:     "🌳",
+  ENTERTAINMENT: "🎡",
+  NIGHTLIFE:  "🌃",
+  SHOPPING:   "🛍️",
+  WELLNESS:   "🧘",
 };
 
 function countryCodeToFlag(code: string): string {
@@ -73,6 +74,7 @@ export type CityHeaderProps = {
   totalCities: number;
   prevCityId: number | null;
   nextCityId: number | null;
+  cities: { id: number; name: string }[];
   poiCounts: Record<Category, number>;
   plannedCount: number;
   totalPois: number;
@@ -91,6 +93,7 @@ export function CityHeader({
   totalCities,
   prevCityId,
   nextCityId,
+  cities,
   poiCounts,
   plannedCount,
   totalPois,
@@ -114,7 +117,7 @@ export function CityHeader({
         method: "POST",
       });
       if (!res.ok) throw new Error();
-      toast("Auto-plan complete!", { variant: "success" });
+      toast("Auto-plan complete!", { variant: "default" });
       router.refresh();
     } catch {
       toast("Auto-plan failed", { variant: "error" });
@@ -150,44 +153,24 @@ export function CityHeader({
             </h1>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {/* City stepper + nav buttons */}
-          {totalCities > 1 && (
-            <div className="flex items-center gap-2">
+        {totalCities > 1 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {cities.map((c) => (
               <button
-                onClick={() => prevCityId && router.push(`/trips/${tripId}/cities/${prevCityId}`)}
-                disabled={!prevCityId}
-                aria-label="Previous city"
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-[hsl(var(--border))] text-sm transition-colors hover:bg-[hsl(var(--muted))] disabled:pointer-events-none disabled:opacity-30"
+                key={c.id}
+                onClick={() => c.id !== cityId && router.push(`/trips/${tripId}/cities/${c.id}`)}
+                aria-current={c.id === cityId ? "page" : undefined}
+                className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                  c.id === cityId
+                    ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] cursor-default"
+                    : "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
+                }`}
               >
-                ‹
+                {c.name}
               </button>
-              <div className="flex items-center gap-1.5">
-                {Array.from({ length: totalCities }, (_, i) => (
-                  <span
-                    key={i}
-                    className={`h-2 rounded-full transition-all ${
-                      i === cityOrder
-                        ? "w-6 bg-[hsl(var(--primary))]"
-                        : "w-2 bg-[hsl(var(--muted-foreground))]/30"
-                    }`}
-                  />
-                ))}
-                <span className="ml-1 text-xs text-[hsl(var(--muted-foreground))]">
-                  {cityOrder + 1}/{totalCities}
-                </span>
-              </div>
-              <button
-                onClick={() => nextCityId && router.push(`/trips/${tripId}/cities/${nextCityId}`)}
-                disabled={!nextCityId}
-                aria-label="Next city"
-                className="flex h-7 w-7 items-center justify-center rounded-full border border-[hsl(var(--border))] text-sm transition-colors hover:bg-[hsl(var(--muted))] disabled:pointer-events-none disabled:opacity-30"
-              >
-                ›
-              </button>
-            </div>
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Row 2: Dates + duration + timezone */}

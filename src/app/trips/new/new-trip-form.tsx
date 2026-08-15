@@ -80,8 +80,13 @@ export function NewTripForm() {
                 type="date"
                 value={startDate}
                 onChange={(e) => {
-                  setStartDate(e.target.value);
-                  setDateError(validateDates(e.target.value, endDate));
+                  const newStartDate = e.target.value;
+                  setStartDate(newStartDate);
+                  setDateError(validateDates(newStartDate, endDate));
+                  // If end date is before new start date, update it to match
+                  if (endDate && endDate < newStartDate) {
+                    setEndDate(newStartDate);
+                  }
                 }}
                 required
               />

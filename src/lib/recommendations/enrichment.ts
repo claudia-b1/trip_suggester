@@ -56,7 +56,8 @@ function inferTip(category: Category, placeCategory: string): string {
   if (c.includes("park"))         return "Early morning visits avoid midday crowds and heat.";
   if (c.includes("beach"))        return "Arrive before 10 AM for the best spots.";
   if (c.includes("viewpoint") || c.includes("lookout")) return "Golden hour just after sunrise offers the most dramatic light.";
-  if (category === "OUTDOORS")    return "Check opening hours and bring sturdy shoes.";
+  if (category === "ENTERTAINMENT")  return "Check opening hours and any booking requirements.";
+  if (category === "WELLNESS")    return "Book treatments in advance, especially at weekends.";
   return "Check opening times and any admission fees before visiting.";
 }
 
@@ -147,9 +148,10 @@ export async function enrichPlace(
     phoneNumber,
     openingHours,
     photoUrl,
-    isUnescoSite:    w?.isUnescoSite ?? false,
+    isUnescoSite:    w?.isUnescoSite ?? place.isUnescoSite ?? false,
     inceptionYear:   w?.inceptionYear,
-    wikidataId:      w?.wikidataId,
+    wikidataId:      w?.wikidataId ?? place.wikidataId,
+    fee:             place.fee,
     userRatingCount: g?.userRatingCount,
   };
 }

@@ -39,6 +39,8 @@ export type RecommendedPoi = {
   inceptionYear?: number;
   /** Wikidata Q-identifier */
   wikidataId?: string;
+  /** OSM fee tag, e.g. "yes", "no", "5 EUR" */
+  fee?: string;
   /** Google user rating count — used for re-ranking, not persisted */
   userRatingCount?: number;
 };
@@ -68,6 +70,33 @@ export async function geocodeCity(cityName: string): Promise<CityCoords> {
 
   const [lon, lat] = data.features[0].geometry.coordinates;
   return { lat, lon };
+}
+
+/**
+ * Offset a lat/lon point by a given distance and compass bearing.
+ * bearingDeg: 0 = North, 90 = East, 180 = South, 270 = West.
+ */
+export function offsetLatLon(
+  lat: number,
+  lon: number,
+  distanceKm: number,
+  bearingDeg: number,
+): CityCoords {
+  const R = 6371;
+  const d = distanceKm / R;
+  const b = (bearingDeg * Math.PI) / 180;
+  const lat1 = (lat * Math.PI) / 180;
+  const lon1 = (lon * Math.PI) / 180;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(b),
+  );
+  const lon2 =
+    lon1 +
+    Math.atan2(
+      Math.sin(b) * Math.sin(d) * Math.cos(lat1),
+      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  return { lat: (lat2 * 180) / Math.PI, lon: (lon2 * 180) / Math.PI };
 }
 
 /** Haversine distance in km between two lat/lon points. */

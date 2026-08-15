@@ -38,7 +38,7 @@ export function PoiAutocomplete({
 }) {
   const [suggestions, setSuggestions] = useState<PoiSuggestion[]>([]);
   const [open, setOpen] = useState(false);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

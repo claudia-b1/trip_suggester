@@ -5,11 +5,51 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { isCategory, CATEGORIES, type Category } from "@/lib/categories";
 import { isTimeSlot, type TimeSlot } from "@/lib/slots";
 import { ensureDayPlans } from "@/lib/day-plans";
-import { PoisSection, type PoiDTO } from "./pois-section";
+import type { PoiDTO } from "./pois-section";
 import type { DayPlanDTO } from "./daily-plan";
-import { RecommendationsPanel } from "./recommendations-panel";
+import { CityPlanningSection } from "./city-planning-section";
 import { EditCityButton } from "./edit-city-button";
 import { CityHeader } from "./city-header";
+import { CityInfoSection, type CityWikiInfo } from "./city-info";
+import type { GeneratedCityInfo } from "@/lib/city-info";
+
+async function fetchCityWikiInfo(cityName: string, countryName?: string | null): Promise<CityWikiInfo | null> {
+  const query = countryName ? `${cityName}, ${countryName}` : cityName;
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`,
+      { next: { revalidate: 86400 } },
+    );
+    if (!res.ok) {
+      // Retry with just the city name if the combined query fails
+      if (countryName) {
+        const res2 = await fetch(
+          `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cityName)}`,
+          { next: { revalidate: 86400 } },
+        );
+        if (!res2.ok) return null;
+        return parseWikiResponse(await res2.json());
+      }
+      return null;
+    }
+    return parseWikiResponse(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+function parseWikiResponse(data: Record<string, unknown>): CityWikiInfo | null {
+  const extract = typeof data.extract === "string" ? data.extract.trim() : null;
+  if (!extract) return null;
+  const thumbnail = data.thumbnail as { source?: string } | undefined;
+  const urls = data.content_urls as { desktop?: { page?: string } } | undefined;
+  return {
+    extract: extract.length > 600 ? extract.slice(0, 600).replace(/\s\S+$/, "") + "…" : extract,
+    description: typeof data.description === "string" ? data.description : undefined,
+    thumbnailUrl: thumbnail?.source,
+    wikiUrl: urls?.desktop?.page,
+  };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -45,12 +85,22 @@ export default async function CityDetailPage({
   const siblingCities = await prisma.city.findMany({
     where: { tripId },
     orderBy: { order: "asc" },
-    select: { id: true, order: true },
+    select: { id: true, order: true, name: true },
   });
   const totalCities = siblingCities.length;
   const currentIdx = siblingCities.findIndex((c) => c.id === cityIdNum);
   const prevCityId = currentIdx > 0 ? siblingCities[currentIdx - 1].id : null;
   const nextCityId = currentIdx < siblingCities.length - 1 ? siblingCities[currentIdx + 1].id : null;
+
+  const wikiInfo = await fetchCityWikiInfo(city.name, city.country);
+
+  // Load AI-generated city info from DB cache (if available)
+  const cityInfoCacheRow = await prisma.cityInfoCache.findUnique({
+    where: { cityId: city.id },
+  });
+  const cachedCityInfo: GeneratedCityInfo | null = cityInfoCacheRow
+    ? (JSON.parse(cityInfoCacheRow.data) as GeneratedCityInfo)
+    : null;
 
   await ensureDayPlans(city.id, city.startDate, city.endDate);
 
@@ -82,9 +132,12 @@ export default async function CityDetailPage({
     phoneNumber: p.phoneNumber,
     openingHours: p.openingHours,
     photoUrl: p.photoUrl,
+    fee: p.fee,
     isUnescoSite: p.isUnescoSite,
     inceptionYear: p.inceptionYear,
     wikidataId: p.wikidataId,
+    userRatingCount: p.userRatingCount ?? null,
+    subcategory: p.subcategory ?? null,
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -136,9 +189,17 @@ export default async function CityDetailPage({
         totalCities={totalCities}
         prevCityId={prevCityId}
         nextCityId={nextCityId}
+        cities={siblingCities.map((c) => ({ id: c.id, name: c.name }))}
         poiCounts={poiCounts}
         plannedCount={plannedCount}
         totalPois={pois.length}
+      />
+
+      <CityInfoSection
+        cityId={city.id}
+        cityName={city.name}
+        info={wikiInfo}
+        initialGenerated={cachedCityInfo}
       />
 
       <div id="edit-section">
@@ -150,16 +211,18 @@ export default async function CityDetailPage({
             startDate: city.startDate.toISOString(),
             endDate: city.endDate.toISOString(),
           }}
+          tripStartDate={city.trip.startDate.toISOString()}
+          tripEndDate={city.trip.endDate.toISOString()}
         />
       </div>
 
-      <div id="discover-section">
-        <RecommendationsPanel cityId={city.id} poisCount={pois.length} />
-      </div>
-
-      <div id="pois-section">
-        <PoisSection cityId={city.id} pois={pois} dayPlans={dayPlans} cityLat={city.latitude ?? undefined} cityLon={city.longitude ?? undefined} />
-      </div>
+      <CityPlanningSection
+        cityId={city.id}
+        pois={pois}
+        dayPlans={dayPlans}
+        cityLat={city.latitude ?? undefined}
+        cityLon={city.longitude ?? undefined}
+      />
     </div>
   );
 }

@@ -7,25 +7,30 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import {
   RECOMMENDABLE_CATEGORIES,
+  CATEGORY_LABELS,
   type RecommendableCategory,
 } from "@/lib/recommendations";
 import { CATEGORY_STYLES } from "@/lib/categories";
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 
 const CATEGORY_ICONS: Record<RecommendableCategory, string> = {
-  CULTURE: "🏛️",
-  FOOD: "🍽️",
-  NATURE: "🌿",
-  NIGHTLIFE: "🌙",
-  OUTDOORS: "🏔️",
+  CULTURE:    "🏛️",
+  FOOD:       "🍽️",
+  NATURE:     "🌳",
+  ENTERTAINMENT: "🎡",
+  NIGHTLIFE:  "🌃",
+  SHOPPING:   "🛍️",
+  WELLNESS:   "🧘",
 };
 
-const CATEGORY_DESCRIPTIONS: Record<RecommendableCategory, string> = {
-  CULTURE: "Museums, landmarks, historic sites & galleries",
-  FOOD: "Restaurants, cafés, street food & local cuisine",
-  NATURE: "Parks, gardens, scenic viewpoints & wildlife",
-  NIGHTLIFE: "Bars, clubs, live music & entertainment",
-  OUTDOORS: "Hiking, beaches, adventure & sports",
+const DEFAULT_COUNTS: Record<RecommendableCategory, number> = {
+  CULTURE:    20,
+  FOOD:       10,
+  NATURE:     10,
+  ENTERTAINMENT: 10,
+  NIGHTLIFE:  10,
+  SHOPPING:   10,
+  WELLNESS:   10,
 };
 
 const PREFERENCES = [
@@ -42,7 +47,28 @@ const PREFERENCES = [
 type PreferenceId = (typeof PREFERENCES)[number]["id"];
 type Failure = { category: RecommendableCategory; error: string };
 
-export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; poisCount: number }) {
+export function RecommendationsPanel({
+  cityId,
+  poisCount,
+  radiusKm,
+  onRadiusChange,
+  nearbyEnabled,
+  onNearbyEnabledChange,
+  nearbyRadiusKm,
+  onNearbyRadiusChange,
+  onNearbyRan,
+}: {
+  cityId: number;
+  poisCount: number;
+  radiusKm: number;
+  onRadiusChange: (km: number) => void;
+  nearbyEnabled: boolean;
+  onNearbyEnabledChange: (v: boolean) => void;
+  nearbyRadiusKm: number;
+  onNearbyRadiusChange: (km: number) => void;
+  /** Called after a successful discover run that included nearby search. */
+  onNearbyRan?: (km: number) => void;
+}) {
   const router = useRouter();
   const { toast } = useToast();
 
@@ -50,16 +76,13 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
     () => new Set(RECOMMENDABLE_CATEGORIES),
   );
   const [counts, setCounts] = useState<Record<RecommendableCategory, number>>(
-    () =>
-      Object.fromEntries(
-        RECOMMENDABLE_CATEGORIES.map((c) => [c, 10]),
-      ) as Record<RecommendableCategory, number>,
+    () => ({ ...DEFAULT_COUNTS }),
   );
-  // Which subcategory IDs are toggled ON per category (empty = all)
+  // Which subcategory IDs are selected per category (all selected by default — opt-out model)
   const [subcats, setSubcats] = useState<Record<RecommendableCategory, Set<string>>>(
     () =>
       Object.fromEntries(
-        RECOMMENDABLE_CATEGORIES.map((c) => [c, new Set<string>()]),
+        RECOMMENDABLE_CATEGORIES.map((c) => [c, new Set(SUBCATEGORIES[c].map((s) => s.id))]),
       ) as Record<RecommendableCategory, Set<string>>,
   );
   // Which category rows have their subcategory panel expanded
@@ -134,11 +157,15 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
     setResult(null);
     setProgressStep("🔍 Discovering places…");
 
-    // Build subcategories map: only include non-empty selections
+    // Build subcategories map: only include when a subset is selected (some deselected)
     const subcategoriesPayload: Record<string, string[]> = {};
     for (const cat of selected) {
-      const ids = Array.from(subcats[cat]);
-      if (ids.length > 0) subcategoriesPayload[cat] = ids;
+      const allIds = SUBCATEGORIES[cat].map((s) => s.id);
+      const selectedIds = Array.from(subcats[cat]);
+      // Only send to API when fewer than all subcategories are selected
+      if (selectedIds.length < allIds.length) {
+        subcategoriesPayload[cat] = selectedIds;
+      }
     }
 
     setProgressStep("📊 Scoring & ranking…");
@@ -156,6 +183,9 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
         preferences: Array.from(preferences).filter((p) => p !== "nearby_trips"),
         nearbyTrips: preferences.has("nearby_trips"),
         overwrite,
+        radiusKm,
+        nearbyEnabled,
+        nearbyRadiusKm: nearbyEnabled ? nearbyRadiusKm : undefined,
       }),
     });
 
@@ -172,6 +202,7 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
     }
     const body: { created: number; failures: Failure[] } = await res.json();
     setResult(body);
+    if (nearbyEnabled) onNearbyRan?.(nearbyRadiusKm);
     toast(
       `Added ${body.created} POI${body.created === 1 ? "" : "s"}${
         body.failures.length > 0 ? ` · ${body.failures.length} failed` : ""
@@ -204,9 +235,12 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
               const active = selected.has(cat);
               const styles = CATEGORY_STYLES[cat];
               const selectedSubs = subcats[cat];
-              const subDesc = selectedSubs.size > 0
-                ? `${selectedSubs.size} filter${selectedSubs.size > 1 ? "s" : ""}`
-                : CATEGORY_DESCRIPTIONS[cat];
+              const catSubDefs = SUBCATEGORIES[cat];
+              const allSelected = selectedSubs.size >= catSubDefs.length;
+              // When all are selected (default), show nothing; when some are deselected show what remains
+              const subDesc = allSelected
+                ? ""
+                : catSubDefs.filter((s) => selectedSubs.has(s.id)).map((s) => s.label).join(", ");
               return (
                 <button
                   key={cat}
@@ -220,8 +254,8 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
                   }`}
                 >
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: active ? styles.dot : "#9ca3af" }} />
-                  {CATEGORY_ICONS[cat]} {cat}
-                  <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>
+                  {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
+                  {subDesc && <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>}
                 </button>
               );
             })}
@@ -264,13 +298,44 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
           >
             <span className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>▶</span>
             Advanced filters
-            {Object.values(subcats).some((s) => s.size > 0) && (
+            {(Object.entries(subcats).some(
+              ([cat, s]) => s.size < SUBCATEGORIES[cat as RecommendableCategory].length,
+            ) || radiusKm !== 5) && (
               <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">active</span>
             )}
           </button>
 
           {advancedOpen && (
             <div className="mt-2 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
+              {/* City search radius */}
+              <div className="space-y-1.5 border-b border-[hsl(var(--border))] pb-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-[hsl(var(--foreground))]">
+                    🔵 City search radius
+                  </p>
+                  <span className="text-xs font-semibold tabular-nums text-[hsl(var(--foreground))]">
+                    {radiusKm} km
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">1</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={30}
+                    step={1}
+                    value={radiusKm}
+                    onChange={(e) => onRadiusChange(Number(e.target.value))}
+                    disabled={generating}
+                    className="flex-1 accent-[hsl(var(--primary))] disabled:opacity-40"
+                  />
+                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
+                </div>
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                  Only include places within {radiusKm} km of the city centre
+                </p>
+              </div>
+
               {RECOMMENDABLE_CATEGORIES.map((cat) => {
                 const active = selected.has(cat);
                 if (!active) return null;
@@ -280,7 +345,7 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
 
                 return (
                   <div key={cat} className="space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm">{CATEGORY_ICONS[cat]}</span>
                       <span className="text-xs font-semibold">{cat}</span>
                       <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
@@ -345,6 +410,49 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
               {selected.size === 0 && (
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">Select at least one category above.</p>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Include nearby attractions */}
+        <div className="space-y-2">
+          <label className="flex items-center gap-2.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={nearbyEnabled}
+              onChange={(e) => onNearbyEnabledChange(e.target.checked)}
+              disabled={generating}
+              className="h-4 w-4 rounded accent-[hsl(var(--primary))] disabled:opacity-40 cursor-pointer"
+            />
+            <span className="text-sm font-medium">🗺️ Include nearby attractions</span>
+          </label>
+          <p className="text-[11px] text-[hsl(var(--muted-foreground))] pl-6">
+            Add culture &amp; nature highlights from beyond the city centre (≥ 4.0 stars &amp; 1K+ reviews). Up to 30 per category, independent of the max filter above.
+          </p>
+          {nearbyEnabled && (
+            <div className="pl-6 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-[hsl(var(--foreground))]">
+                  🟠 Nearby search radius
+                </p>
+                <span className="text-xs font-semibold tabular-nums text-[hsl(var(--foreground))]">
+                  {nearbyRadiusKm} km
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">5</span>
+                <input
+                  type="range"
+                  min={5}
+                  max={60}
+                  step={5}
+                  value={nearbyRadiusKm}
+                  onChange={(e) => onNearbyRadiusChange(Number(e.target.value))}
+                  disabled={generating}
+                  className="flex-1 accent-orange-500 disabled:opacity-40"
+                />
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">60</span>
+              </div>
             </div>
           )}
         </div>
@@ -425,7 +533,7 @@ export function RecommendationsPanel({ cityId, poisCount }: { cityId: number; po
           <ul className="text-xs text-red-600">
             {result.failures.map((f) => (
               <li key={f.category}>
-                {f.category}: {f.error}
+                {CATEGORY_LABELS[f.category]}: {f.error}
               </li>
             ))}
           </ul>

@@ -20,6 +20,7 @@ export async function PATCH(
   if (typeof body.latitude === "number") data.latitude = body.latitude;
   if (typeof body.longitude === "number") data.longitude = body.longitude;
   if (typeof body.timezone === "string") data.timezone = body.timezone;
+  if (typeof body.order === "number") data.order = body.order;
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }

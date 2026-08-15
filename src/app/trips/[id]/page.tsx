@@ -118,7 +118,12 @@ export default async function TripDetailPage({
           name: c.name,
           startDate: c.startDate.toISOString(),
           endDate: c.endDate.toISOString(),
+          latitude: c.latitude ?? null,
+          longitude: c.longitude ?? null,
+          order: c.order,
         }))}
+        tripStartDate={trip.startDate.toISOString()}
+        tripEndDate={trip.endDate.toISOString()}
       />
     </div>
   );

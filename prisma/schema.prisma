@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -18,26 +18,25 @@ model Trip {
 }
 
 model City {
-  id          Int       @id @default(autoincrement())
-  name        String
-  startDate   DateTime
-  endDate     DateTime
-  order       Int
-  country     String?
-  countryCode String?
-  latitude    Float?
-  longitude   Float?
-  timezone    String?
-  tripId      Int
-  trip        Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  pois        Poi[]
-  dayPlans    DayPlan[]
-  createdAt   DateTime  @default(now())
+  id            Int             @id @default(autoincrement())
+  name          String
+  startDate     DateTime
+  endDate       DateTime
+  order         Int
+  country       String?
+  countryCode   String?
+  latitude      Float?
+  longitude     Float?
+  timezone      String?
+  tripId        Int
+  trip          Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  pois          Poi[]
+  dayPlans      DayPlan[]
+  candidates    PoiCandidate[]
+  cityInfoCache CityInfoCache?
+  createdAt     DateTime        @default(now())
 }
 
-// SQLite + Prisma does not support native enums — `category` and `timeSlot`
-// are Strings constrained at the app layer (see src/lib/categories.ts and
-// src/lib/slots.ts).
 model Poi {
   id                       Int           @id @default(autoincrement())
   name                     String
@@ -57,9 +56,14 @@ model Poi {
   phoneNumber              String?
   openingHours             String?       // human-readable display string
   photoUrl                 String?       // primary photo URL
+  fee                      String?       // OSM fee tag, e.g. "yes", "no", "5 EUR"
   isUnescoSite             Boolean?      @default(false)
   inceptionYear            Int?
   wikidataId               String?
+  score                    Float?        // final ranking score (0–100+)
+  scoreBreakdown           String?       // JSON: {rating,proximity,notability,categoryMatch,hiddenGem,unesco,photo,preferences,total}
+  userRatingCount          Int?
+  subcategory              String?
   cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities  DayActivity[]
@@ -81,11 +85,35 @@ model DayActivity {
   id        Int      @id @default(autoincrement())
   dayPlanId Int
   dayPlan   DayPlan  @relation(fields: [dayPlanId], references: [id], onDelete: Cascade)
-  poiId     Int      @unique
+  poiId     Int
   poi       Poi      @relation(fields: [poiId], references: [id], onDelete: Cascade)
   timeSlot  String
   order     Int
   createdAt DateTime @default(now())
+}
+
+// All scored candidates from a Discover run — selected and rejected alike.
+// Cleared and repopulated on each run so you always see the latest state.
+model PoiCandidate {
+  id             Int      @id @default(autoincrement())
+  cityId         Int
+  city           City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  name           String
+  category       String
+  placeId        String?
+  latitude       Float?
+  longitude      Float?
+  distanceKm     Float?
+  googleRating   Float?   // Google pre-scan rating
+  reviewCount    Int?
+  score          Float?   // pre-enrichment ranking score
+  scoreBreakdown String?  // JSON breakdown
+  subcategory    String?
+  selected       Boolean  @default(false)
+  rejectedReason String?  // "quality_filter" | "not_top_n" | "duplicate" | "existing" | "low_score"
+  createdAt      DateTime @default(now())
+
+  @@index([cityId])
 }
 
 // Per-POI enrichment cache keyed by place ID + source.
@@ -99,6 +127,15 @@ model PoiEnrichCache {
 
   @@unique([placeId, source])
 }
+// AI-generated city information cache (one row per city, upserted on regenerate).
+model CityInfoCache {
+  id          Int      @id @default(autoincrement())
+  cityId      Int      @unique
+  city        City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  data        String   // JSON: GeneratedCityInfo (categories + generatedAt)
+  generatedAt DateTime @default(now())
+}
+
 model PoiCache {
   id        Int      @id @default(autoincrement())
   cityName  String

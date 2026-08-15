@@ -15,6 +15,7 @@ const PHOTO_BASE        = "https://places.googleapis.com/v1";
 const FIELD_MASK = [
   "places.id",
   "places.displayName",
+  "places.location",
   "places.rating",
   "places.userRatingCount",
   "places.priceLevel",
@@ -41,6 +42,9 @@ export type GoogleMeta = {
   phoneNumber?: string;
   website?: string;
   editorialSummary?: string;
+  /** Google's reported lat/lon for coordinate cross-validation. */
+  latitude?: number;
+  longitude?: number;
 };
 
 export type GoogleEnrichment = {
@@ -69,6 +73,7 @@ type GPlacePhoto = {
 type GPlace = {
   id?: string;
   displayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
   rating?: number;
   userRatingCount?: number;
   priceLevel?: string; // e.g. "PRICE_LEVEL_MODERATE"
@@ -122,13 +127,22 @@ export async function fetchGoogleMeta(
   cityName: string,
   lat: number,
   lon: number,
+  tourism?: string,
+  streetName?: string,
 ): Promise<GoogleMeta | null> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return null;
 
   try {
+    // Build query: name + tourism type + street + city
+    // tourism values like "yes" / "attraction" are too generic — skip them
+    const SKIP_TOURISM = new Set(["yes", "attraction", "no"]);
+    const queryParts = [name];
+    if (tourism && !SKIP_TOURISM.has(tourism)) queryParts.push(tourism);
+    if (streetName) queryParts.push(streetName);
+    queryParts.push(cityName);
     const body = {
-      textQuery: `${name} ${cityName}`,
+      textQuery: queryParts.join(" "),
       locationBias: {
         circle: {
           center: { latitude: lat, longitude: lon },
@@ -164,6 +178,8 @@ export async function fetchGoogleMeta(
       phoneNumber:     place.internationalPhoneNumber,
       website:         place.websiteUri,
       editorialSummary: place.editorialSummary?.text,
+      latitude:        place.location?.latitude,
+      longitude:       place.location?.longitude,
     };
   } catch {
     return null;

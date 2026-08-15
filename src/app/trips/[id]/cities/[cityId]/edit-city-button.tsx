@@ -15,9 +15,13 @@ function toInputDate(iso: string) {
 export function EditCityButton({
   tripId,
   city,
+  tripStartDate,
+  tripEndDate,
 }: {
   tripId: number;
   city: { id: number; name: string; startDate: string; endDate: string };
+  tripStartDate: string;
+  tripEndDate: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -92,11 +96,34 @@ export function EditCityButton({
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label htmlFor="edit-city-start">Start date</Label>
-          <Input id="edit-city-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+          <Input 
+            id="edit-city-start" 
+            type="date" 
+            value={startDate} 
+            min={tripStartDate.slice(0, 10)}
+            max={tripEndDate.slice(0, 10)}
+            onChange={(e) => {
+              const newStartDate = e.target.value;
+              setStartDate(newStartDate);
+              // If end date is before new start date, update it to match
+              if (endDate < newStartDate) {
+                setEndDate(newStartDate);
+              }
+            }} 
+            required 
+          />
         </div>
         <div className="space-y-1">
           <Label htmlFor="edit-city-end">End date</Label>
-          <Input id="edit-city-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+          <Input 
+            id="edit-city-end" 
+            type="date" 
+            value={endDate} 
+            min={startDate || tripStartDate.slice(0, 10)}
+            max={tripEndDate.slice(0, 10)}
+            onChange={(e) => setEndDate(e.target.value)} 
+            required 
+          />
         </div>
       </div>
       <div className="flex gap-2">

@@ -20,20 +20,22 @@ export function PoiHoverCard({
   children: React.ReactNode;
 }) {
   const [visible, setVisible] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   function handleEnter() {
-    clearTimeout(timeoutRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setVisible(true), 400);
   }
 
   function handleLeave() {
-    clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setVisible(false), 150);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setVisible(false), 200);
   }
 
-  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+  useEffect(() => () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }, []);
 
   if (!poi) return <>{children}</>;
 
