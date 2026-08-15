@@ -48,10 +48,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             role={t.variant === "error" ? "alert" : "status"}
             data-testid="toast"
             data-variant={t.variant}
-            className={`pointer-events-auto rounded-md border p-3 text-sm shadow-lg ${
+            className={`pointer-events-auto toast-enter rounded-lg border p-3 text-sm shadow-lg backdrop-blur-sm ${
               t.variant === "error"
-                ? "border-red-300 bg-red-50 text-red-900"
-                : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--foreground))]"
+                ? "border-red-300 bg-red-50 text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
+                : "border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))]"
             }`}
           >
             {t.message}

@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTimeSlot } from "@/lib/slots";
 
+/** DELETE /api/day-plans/:id/activities — remove all activities for this day plan */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  await prisma.dayActivity.deleteMany({ where: { dayPlanId: Number(id) } });
+  return new NextResponse(null, { status: 204 });
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },

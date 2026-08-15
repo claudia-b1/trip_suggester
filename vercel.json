@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "src/app/api/cities/[cityId]/recommendations/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

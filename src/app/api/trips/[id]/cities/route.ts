@@ -19,7 +19,7 @@ export async function POST(
 ) {
   const { id } = await params;
   const tripId = Number(id);
-  const { name, startDate, endDate } = await req.json();
+  const { name, startDate, endDate, country, countryCode, latitude, longitude, timezone } = await req.json();
 
   const last = await prisma.city.findFirst({
     where: { tripId },
@@ -35,6 +35,11 @@ export async function POST(
       endDate: new Date(endDate),
       order: nextOrder,
       tripId,
+      ...(country && { country }),
+      ...(countryCode && { countryCode }),
+      ...(latitude != null && { latitude }),
+      ...(longitude != null && { longitude }),
+      ...(timezone && { timezone }),
     },
   });
   return NextResponse.json(city, { status: 201 });
