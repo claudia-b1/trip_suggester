@@ -6,6 +6,7 @@ export const CATEGORIES = [
   "NIGHTLIFE",
   "SHOPPING",
   "WELLNESS",
+  "ACCOMMODATION",
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -19,6 +20,19 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   NIGHTLIFE:     "Nightlife",
   SHOPPING:      "Shopping",
   WELLNESS:      "Wellness",
+  ACCOMMODATION: "Accommodation",
+};
+
+/** Emoji icon for each category. Single source of truth — import from here. */
+export const CATEGORY_ICONS: Record<Category, string> = {
+  CULTURE:       "🏛️",
+  FOOD:          "🍽️",
+  NATURE:        "🌳",
+  ENTERTAINMENT: "🎡",
+  NIGHTLIFE:     "🌙",
+  SHOPPING:      "🛍️",
+  WELLNESS:      "💆",
+  ACCOMMODATION: "🏠",
 };
 
 export const CATEGORY_STYLES: Record<Category, { badge: string; dot: string }> = {
@@ -28,7 +42,8 @@ export const CATEGORY_STYLES: Record<Category, { badge: string; dot: string }> =
   ENTERTAINMENT: { badge: "bg-sky-100 text-sky-800",       dot: "#0284c7" },
   NIGHTLIFE:  { badge: "bg-purple-100 text-purple-800", dot: "#9333ea" },
   SHOPPING:   { badge: "bg-pink-100 text-pink-800",     dot: "#db2777" },
-  WELLNESS:   { badge: "bg-teal-100 text-teal-800",     dot: "#0d9488" },
+  WELLNESS:      { badge: "bg-teal-100 text-teal-800",     dot: "#0d9488" },
+  ACCOMMODATION: { badge: "bg-indigo-100 text-indigo-800", dot: "#6366f1" },
 };
 
 export function isCategory(v: unknown): v is Category {

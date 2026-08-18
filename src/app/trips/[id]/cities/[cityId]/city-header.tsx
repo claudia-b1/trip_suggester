@@ -4,18 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
-import type { Category } from "@/lib/categories";
-import { CATEGORY_STYLES } from "@/lib/categories";
-
-const CATEGORY_ICONS: Record<Category, string> = {
-  CULTURE:    "🏛️",
-  FOOD:       "🍽️",
-  NATURE:     "🌳",
-  ENTERTAINMENT: "🎡",
-  NIGHTLIFE:  "🌃",
-  SHOPPING:   "🛍️",
-  WELLNESS:   "🧘",
-};
+import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
 
 function countryCodeToFlag(code: string): string {
   return [...code.toUpperCase()]

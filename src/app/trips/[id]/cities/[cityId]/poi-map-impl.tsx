@@ -10,10 +10,12 @@ import MapGL, {
   type MapRef,
 } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { CATEGORIES, CATEGORY_STYLES, type Category } from "@/lib/categories";
+import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, isCategory, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
+import { ACCOMMODATION_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +23,7 @@ type LocatedPoi = {
   id: number;
   name: string;
   category: Category;
+  subcategory?: string | null;
   description: string | null;
   latitude: number;
   longitude: number;
@@ -32,7 +35,7 @@ type LocatedPoi = {
 export type DayPlanOption = { id: number; label: string };
 
 export type PoiMapProps = {
-  pois: { id: number; name: string; category: Category; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null }[];
+  pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null }[];
   cityId?: number;
   cityLat?: number;
   cityLon?: number;
@@ -49,19 +52,24 @@ export type PoiMapProps = {
   onToggleNotInterested?: (poiId: number) => void;
   /** Called once after flyTo completes so the parent can clear focusPoiId */
   onFocusConsumed?: () => void;
+  /** Favourite items to display on the map with heart-ring markers */
+  favouriteItems?: FavouriteItemDTO[];
+  /** Add a POI to favourites */
+  onFavourite?: (poi: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number; longitude: number; photoUrl?: string | null; placeId?: string | null; website?: string | null }) => void;
+  /** Check if a POI is already favourited */
+  isPoiFavourited?: (poi: { id: number; name: string; placeId?: string | null }) => boolean;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const CATEGORY_ICONS: Record<Category, string> = {
-  CULTURE:    "🏛️",
-  FOOD:       "🍽️",
-  NATURE:     "🌳",
-  ENTERTAINMENT: "🎡",
-  NIGHTLIFE:  "🌃",
-  SHOPPING:   "🛍️",
-  WELLNESS:   "🧘",
-};
+/** Resolve the emoji for a marker based on category + optional subcategory */
+function getMarkerEmoji(category: Category, subcategory?: string | null): string {
+  if (category === "ACCOMMODATION" && subcategory) {
+    const sub = ACCOMMODATION_SUBCATEGORIES.find((s) => s.id === subcategory);
+    if (sub) return sub.emoji;
+  }
+  return CATEGORY_ICONS[category];
+}
 
 const MAP_STYLES = {
   streets: "mapbox://styles/mapbox/light-v11",
@@ -154,18 +162,33 @@ function ClusterPie({ pois }: { pois: LocatedPoi[] }) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function CategoryLegend() {
+function CategoryLegend({ showFavourites }: { showFavourites?: boolean }) {
   return (
     <div className="pointer-events-none absolute bottom-8 left-2 z-10 rounded-lg border border-[hsl(var(--border))] bg-white/90 p-2 shadow text-xs space-y-1 backdrop-blur-sm">
       {CATEGORIES.map((c) => (
         <div key={c} className="flex items-center gap-1.5">
           <span
-            className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full border border-white shadow-sm"
-            style={{ backgroundColor: CATEGORY_STYLES[c].dot }}
-          />
-          <span className="text-gray-700">{CATEGORY_ICONS[c]} {c}</span>
+            className="inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2"
+            style={{ borderColor: CATEGORY_STYLES[c].dot, backgroundColor: "white" }}
+          >
+            <span style={{ fontSize: 9 }}>{CATEGORY_ICONS[c]}</span>
+          </span>
+          <span className="text-gray-700">{c}</span>
         </div>
       ))}
+      {showFavourites && (
+        <div className="flex items-center gap-1.5 border-t border-gray-200 pt-1 mt-1">
+          <span className="relative inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-400 bg-white">
+            <span style={{ fontSize: 7 }}>🏛️</span>
+            <span className="absolute -bottom-0.5 -right-1 flex h-2 w-2 items-center justify-center rounded-full bg-pink-500">
+              <svg width="5" height="5" viewBox="0 0 24 24" fill="white" stroke="none">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+              </svg>
+            </span>
+          </span>
+          <span className="text-gray-700">Favourite</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -180,6 +203,8 @@ function PopupContent({
   notInterested,
   onRatePoi,
   onToggleNotInterested,
+  onFavourite,
+  isFavourited,
 }: {
   poi: LocatedPoi;
   cityId: number;
@@ -190,6 +215,8 @@ function PopupContent({
   notInterested?: Set<number>;
   onRatePoi?: (poiId: number, rating: number | null) => void;
   onToggleNotInterested?: (poiId: number) => void;
+  onFavourite?: (poi: LocatedPoi) => void;
+  isFavourited?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -280,6 +307,22 @@ function PopupContent({
               >★</button>
             ))}
           </div>
+          {onFavourite && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+              title={isFavourited ? "Already in favourites" : "Add to favourites"}
+              className={`flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                isFavourited
+                  ? "text-pink-500"
+                  : "text-gray-400 hover:text-pink-500"
+              }`}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill={isFavourited ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5">
+                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+              </svg>
+            </button>
+          )}
           {onToggleNotInterested && (
             <button
               type="button"
@@ -340,15 +383,138 @@ function PopupContent({
   );
 }
 
+// ─── Favourite marker & popup ─────────────────────────────────────────────────
+
+function FavouriteMarkerIcon({ category, subcategory, active }: { category: Category; subcategory?: string | null; active?: boolean }) {
+  const color = CATEGORY_STYLES[category].dot;
+  const size = active ? 34 : 28;
+  const emoji = getMarkerEmoji(category, subcategory);
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <div
+        className="flex items-center justify-center rounded-full shadow-md transition-transform"
+        style={{
+          width: size,
+          height: size,
+          backgroundColor: "white",
+          border: `${active ? 3 : 2.5}px solid ${color}`,
+          transform: active ? "scale(1.15)" : "scale(1)",
+          boxShadow: active
+            ? `0 3px 8px rgba(0,0,0,0.35), 0 0 0 2px ${color}40`
+            : "0 2px 6px rgba(0,0,0,0.3)",
+        }}
+      >
+        <span style={{ fontSize: active ? 17 : 14, lineHeight: 1 }}>{emoji}</span>
+      </div>
+      {/* Heart badge — bottom-right */}
+      <div
+        className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
+        style={{ bottom: 0, right: -3, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
+      >
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="white" stroke="none">
+          <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function FavouritePopupContent({
+  item,
+  cityId,
+  onClose,
+  onImported,
+}: {
+  item: FavouriteItemDTO;
+  cityId: number;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [importing, setImporting] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const cat = isCategory(item.category) ? item.category : "CULTURE";
+
+  async function handleImport() {
+    setImporting(true);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/pois`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: item.name,
+          category: item.category,
+          subcategory: item.subcategory || undefined,
+          description: item.description || undefined,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          photoUrl: item.photoUrl || undefined,
+          website: item.website || undefined,
+        }),
+      });
+      if (res.ok) {
+        toast(`"${item.name}" added as POI!`);
+        onImported();
+        onClose();
+      } else {
+        toast("Failed to add POI", { variant: "error" });
+      }
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="min-w-[200px] max-w-[260px] space-y-2 text-sm">
+      {item.photoUrl && !imgError && (
+        <img src={item.photoUrl} alt={item.name} onError={() => setImgError(true)}
+          className="w-full h-24 object-cover rounded-md" />
+      )}
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-semibold leading-tight">{item.name}</span>
+        <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[cat].badge}`}>
+          {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 text-xs text-pink-500 font-medium">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+        </svg>
+        Favourite{item.list ? ` · ${item.list.name}` : ""}
+      </div>
+      {item.description && (
+        <p className="text-xs text-gray-600 leading-snug line-clamp-3">{item.description}</p>
+      )}
+      {item.notes && (
+        <p className="text-xs text-gray-500 italic">📝 {item.notes}</p>
+      )}
+      {item.address && (
+        <p className="text-xs text-gray-500">📍 {item.address}</p>
+      )}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); handleImport(); }}
+        disabled={importing}
+        className="w-full rounded bg-pink-500 px-2 py-1 text-xs font-medium text-white hover:bg-pink-600 disabled:opacity-50"
+      >
+        {importing ? "Adding…" : "📌 Add as POI in this city"}
+      </button>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited } = props;
+  const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [activeId, setActiveId] = useState<number | null>(focusPoiId ?? null);
+  const [activeFavId, setActiveFavId] = useState<number | null>(null);
+  const [favPopupPos, setFavPopupPos] = useState<{ x: number; y: number } | null>(null);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
 
   function scheduleHoverClose() {
@@ -377,10 +543,49 @@ export function PoiMapImpl(props: PoiMapProps) {
   const located: LocatedPoi[] = useMemo(
     () => pois.flatMap((p) =>
       p.latitude != null && p.longitude != null
-        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, rating: p.rating, photoUrl: p.photoUrl, userRatingCount: p.userRatingCount }]
+        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, subcategory: p.subcategory, rating: p.rating, photoUrl: p.photoUrl, userRatingCount: p.userRatingCount }]
         : [],
     ),
     [pois],
+  );
+
+  // Favourite items that aren't already represented as POIs (by sourcePlaceId or name)
+  const poiPlaceIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of pois) if (p.placeId) ids.add(p.placeId);
+    return ids;
+  }, [pois]);
+
+  const poiNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const p of pois) names.add(p.name.toLowerCase());
+    return names;
+  }, [pois]);
+
+  const visibleFavourites = useMemo(
+    () => favouriteItems.filter((f) =>
+      f.latitude != null && f.longitude != null &&
+      !(f.sourcePlaceId && poiPlaceIds.has(f.sourcePlaceId)) &&
+      !poiNames.has(f.name.toLowerCase())
+    ),
+    [favouriteItems, poiPlaceIds, poiNames],
+  );
+
+  // Track which POIs are also favourited (for heart indicator on markers)
+  const favouritedPoiIds = useMemo(() => {
+    const ids = new Set<number>();
+    const favPlaceIds = new Set<string>();
+    const favNames = new Set<string>();
+    for (const fav of favouriteItems) {
+      if (fav.sourcePlaceId) favPlaceIds.add(fav.sourcePlaceId);
+      if (fav.name) favNames.add(fav.name.toLowerCase());
+    }
+    for (const poi of pois) {
+      if (poi.placeId && favPlaceIds.has(poi.placeId)) { ids.add(poi.id); continue; }
+      if (favNames.has(poi.name.toLowerCase())) ids.add(poi.id);
+    }
+    return ids;
+  }, [pois, favouriteItems],
   );
 
   // Floor to integer so sub-pixel zoom differences don't re-trigger clustering
@@ -389,6 +594,7 @@ export function PoiMapImpl(props: PoiMapProps) {
 
   const visibleId = hoverId ?? activeId;
   const visiblePoi = visibleId != null ? located.find((p) => p.id === visibleId) : null;
+  const activeFavItem = activeFavId != null ? visibleFavourites.find((f) => f.id === activeFavId) : null;
 
   // Track the screen position of the visible POI so we can render the popup
   // outside the map's overflow-hidden container.
@@ -407,20 +613,40 @@ export function PoiMapImpl(props: PoiMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visiblePoi, mapReady]);
 
+  // Track screen position of active favourite item popup
+  useEffect(() => {
+    if (!activeFavItem || !mapRef.current || !mapReady) { setFavPopupPos(null); return; }
+    function updatePos() {
+      if (!mapRef.current || !activeFavItem) return;
+      const pt = mapRef.current.project([activeFavItem.longitude, activeFavItem.latitude]);
+      setFavPopupPos({ x: pt.x, y: pt.y });
+    }
+    updatePos();
+    const mapInstance = mapRef.current.getMap();
+    mapInstance.on("move", updatePos);
+    mapInstance.on("zoom", updatePos);
+    return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFavItem, mapReady]);
+
   const fitBounds = useCallback(() => {
     const map = mapRef.current;
-    if (!map || located.length === 0) return;
-    if (located.length === 1) {
-      map.flyTo({ center: [located[0].longitude, located[0].latitude], zoom: 14, duration: 800 });
+    const allPoints = [
+      ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+      ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
+    ];
+    if (!map || allPoints.length === 0) return;
+    if (allPoints.length === 1) {
+      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
       return;
     }
-    const lngs = located.map((p) => p.longitude);
-    const lats = located.map((p) => p.latitude);
+    const lngs = allPoints.map((p) => p.lng);
+    const lats = allPoints.map((p) => p.lat);
     map.fitBounds(
       [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
       { padding: 60, duration: 800, maxZoom: 15 },
     );
-  }, [located]);
+  }, [located, visibleFavourites]);
 
   useEffect(() => {
     if (!focusPoiId) return;
@@ -442,16 +668,17 @@ export function PoiMapImpl(props: PoiMapProps) {
     );
   }
 
-  // Determine the initial map centre: use first POI, or fall back to city centre
+  // Determine the initial map centre: use first POI, or favourite, or fall back to city centre
   const hasLocated = located.length > 0;
+  const hasFavourites = visibleFavourites.length > 0;
   const hasCityCenter = cityLat != null && cityLon != null;
 
-  if (!hasLocated && !hasCityCenter) {
+  if (!hasLocated && !hasFavourites && !hasCityCenter) {
     return <p className="text-sm text-[hsl(var(--muted-foreground))]">No POIs with coordinates yet.</p>;
   }
 
-  const centerLat = hasLocated ? located[0].latitude  : cityLat!;
-  const centerLon = hasLocated ? located[0].longitude : cityLon!;
+  const centerLat = hasLocated ? located[0].latitude : hasFavourites ? visibleFavourites[0].latitude : cityLat!;
+  const centerLon = hasLocated ? located[0].longitude : hasFavourites ? visibleFavourites[0].longitude : cityLon!;
 
   // GeoJSON circle for city radius (only when city centre + radius are known)
   const circleData: GeoJSON.Feature<GeoJSON.Polygon> | null =
@@ -506,7 +733,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         mapStyle={MAP_STYLES[mapStyle]}
         onLoad={() => {
           setMapReady(true);
-          if (hasLocated) {
+          if (hasLocated || hasFavourites) {
             fitBounds();
           } else if (hasCityCenter) {
             // Fit to a 20 km context (or nearbyRadiusKm if larger), so the
@@ -528,15 +755,17 @@ export function PoiMapImpl(props: PoiMapProps) {
           if (onAddAtLocation) {
             setDropPin({ lat: e.lngLat.lat, lng: e.lngLat.lng });
             setActiveId(null);
+            setActiveFavId(null);
           }
         }}
-        onClick={(e) => {
+        onClick={() => {
           setActiveId(null);
+          setActiveFavId(null);
           if (!onAddAtLocation) setDropPin(null);
         }}
       >
         <NavigationControl position="top-right" />
-        {fullscreen && <CategoryLegend />}
+        {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
 
         {/* City radius circle — grey dashed */}
         {circleData && (
@@ -643,20 +872,61 @@ export function PoiMapImpl(props: PoiMapProps) {
                   </div>
                 )}
                 <div
-                  className={`rounded-full border-2 border-white shadow transition-transform ${mapReady ? "marker-enter" : ""}`}
+                  className={`flex items-center justify-center rounded-full shadow-md transition-transform ${mapReady ? "marker-enter" : ""}`}
                   style={{
-                    backgroundColor: CATEGORY_STYLES[poi.category].dot,
-                    width: isActive ? 22 : 16,
-                    height: isActive ? 22 : 16,
-                    transform: isActive ? "scale(1.3)" : "scale(1)",
+                    backgroundColor: "white",
+                    border: `${isActive ? 3 : 2.5}px solid ${CATEGORY_STYLES[poi.category].dot}`,
+                    width: isActive ? 34 : 28,
+                    height: isActive ? 34 : 28,
+                    transform: isActive ? "scale(1.15)" : "scale(1)",
+                    boxShadow: isActive
+                      ? `0 3px 8px rgba(0,0,0,0.35), 0 0 0 2px ${CATEGORY_STYLES[poi.category].dot}40`
+                      : "0 2px 6px rgba(0,0,0,0.3)",
                   }}
-                />
+                >
+                  <span style={{ fontSize: isActive ? 17 : 14, lineHeight: 1 }}>
+                    {getMarkerEmoji(poi.category, poi.subcategory)}
+                  </span>
+                </div>
+                {/* Favourite heart badge — bottom-right of the icon */}
+                {favouritedPoiIds.has(poi.id) && (
+                  <div
+                    className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
+                    style={{ bottom: 0, right: -3, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
+                  >
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="white" stroke="none">
+                      <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                    </svg>
+                  </div>
+                )}
               </div>
             </Marker>
           );
         })}
 
         {/* Popup is rendered outside MapGL — see below */}
+
+        {/* Favourite item markers — category emoji + heart badge */}
+        {visibleFavourites.map((fav) => {
+          const favCat = isCategory(fav.category) ? fav.category : "CULTURE" as Category;
+          return (
+            <Marker
+              key={`fav-${fav.id}`}
+              longitude={fav.longitude}
+              latitude={fav.latitude}
+              anchor="center"
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                setActiveFavId((prev) => prev === fav.id ? null : fav.id);
+                setActiveId(null);
+              }}
+            >
+              <div className="cursor-pointer">
+                <FavouriteMarkerIcon category={favCat} subcategory={fav.subcategory} active={activeFavId === fav.id} />
+              </div>
+            </Marker>
+          );
+        })}
 
         {props.routeGeoJson && (
           <Source id="walking-route" type="geojson" data={props.routeGeoJson}>
@@ -717,7 +987,7 @@ export function PoiMapImpl(props: PoiMapProps) {
       </MapGL>
 
       {/* Empty-state overlay when no POIs yet but city centre is known */}
-      {!hasLocated && (
+      {!hasLocated && !hasFavourites && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 px-4 py-2.5 text-center shadow backdrop-blur-sm">
             <p className="text-sm font-medium text-[hsl(var(--muted-foreground))]">No POIs yet</p>
@@ -760,11 +1030,43 @@ export function PoiMapImpl(props: PoiMapProps) {
               notInterested={notInterested}
               onRatePoi={onRatePoi}
               onToggleNotInterested={onToggleNotInterested}
+              onFavourite={onFavourite ? (p) => onFavourite({ ...p, placeId: pois.find((x) => x.id === p.id)?.placeId }) : undefined}
+              isFavourited={isPoiFavourited ? isPoiFavourited(visiblePoi) : false}
             />
           </div>
           {/* Arrow tip pointing down at the marker */}
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
             <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid hsl(var(--border))" }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Favourite item popup — rendered outside MapGL */}
+      {activeFavItem && favPopupPos && (
+        <div
+          className="absolute z-30 pointer-events-auto"
+          style={{ left: favPopupPos.x, top: favPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        >
+          <div className="relative rounded-lg border border-pink-200 bg-[hsl(var(--background))] shadow-xl p-3">
+            <button
+              type="button"
+              onClick={() => setActiveFavId(null)}
+              className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs"
+              aria-label="Close"
+            >✕</button>
+            <FavouritePopupContent
+              item={activeFavItem}
+              cityId={cityId ?? 0}
+              onClose={() => setActiveFavId(null)}
+              onImported={() => { setActiveFavId(null); router.refresh(); }}
+            />
+          </div>
+          {/* Arrow tip */}
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid rgb(251, 207, 232)" }} />
           </div>
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
             <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />

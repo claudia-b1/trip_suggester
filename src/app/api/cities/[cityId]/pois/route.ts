@@ -19,7 +19,7 @@ export async function POST(
   { params }: { params: Promise<{ cityId: string }> },
 ) {
   const { cityId } = await params;
-  const { name, category, description, latitude, longitude } = await req.json();
+  const { name, category, subcategory, description, latitude, longitude, photoUrl, website, placeId } = await req.json();
 
   if (!isCategory(category)) {
     return NextResponse.json({ error: "Invalid category" }, { status: 400 });
@@ -29,9 +29,13 @@ export async function POST(
     data: {
       name,
       category,
+      subcategory: typeof subcategory === "string" && subcategory.trim() ? subcategory.trim() : null,
       description: description || null,
       latitude: typeof latitude === "number" ? latitude : null,
       longitude: typeof longitude === "number" ? longitude : null,
+      photoUrl: typeof photoUrl === "string" && photoUrl ? photoUrl : null,
+      website: typeof website === "string" && website ? website : null,
+      placeId: typeof placeId === "string" && placeId ? placeId : null,
       cityId: Number(cityId),
     },
   });

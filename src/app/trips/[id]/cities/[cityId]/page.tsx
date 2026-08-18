@@ -12,6 +12,8 @@ import { EditCityButton } from "./edit-city-button";
 import { CityHeader } from "./city-header";
 import { CityInfoSection, type CityWikiInfo } from "./city-info";
 import type { GeneratedCityInfo } from "@/lib/city-info";
+import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
+import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
 async function fetchCityWikiInfo(cityName: string, countryName?: string | null): Promise<CityWikiInfo | null> {
   const query = countryName ? `${cityName}, ${countryName}` : cityName;
@@ -115,6 +117,71 @@ export default async function CityDetailPage({
     },
   });
 
+  // Fetch favourite items matching this city (case-insensitive)
+  const favouriteItemsRaw = await prisma.favouriteItem.findMany({
+    where: {
+      city: { equals: city.name, mode: "insensitive" },
+      ...(city.country ? { country: { equals: city.country, mode: "insensitive" } } : {}),
+    },
+    include: { list: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const favouriteItems: FavouriteItemDTO[] = favouriteItemsRaw.map((f) => ({
+    id: f.id,
+    name: f.name,
+    category: f.category,
+    subcategory: f.subcategory,
+    country: f.country,
+    city: f.city,
+    address: f.address,
+    latitude: f.latitude,
+    longitude: f.longitude,
+    description: f.description,
+    notes: f.notes,
+    photoUrl: f.photoUrl,
+    website: f.website,
+    sourcePlaceId: f.sourcePlaceId,
+    visited: f.visited,
+    personalRating: f.personalRating,
+    extraFields: f.extraFields as Record<string, unknown> | null,
+    order: f.order,
+    listId: f.listId,
+    list: f.list,
+    createdAt: f.createdAt.toISOString(),
+  }));
+
+  // Load persisted user ratings + visited from database
+  const ratingsRaw = await prisma.poiRating.findMany({
+    where: { poi: { cityId: city.id } },
+    select: { poiId: true, rating: true, notInterested: true, visited: true },
+  });
+  const initialUserRatings: Record<number, number> = {};
+  const initialNotInterested: number[] = [];
+  const initialVisitedPoiIds: number[] = [];
+  for (const r of ratingsRaw) {
+    if (r.rating) initialUserRatings[r.poiId] = r.rating;
+    if (r.notInterested) initialNotInterested.push(r.poiId);
+    if (r.visited) initialVisitedPoiIds.push(r.poiId);
+  }
+
+  // Load city-level note
+  const cityNote = await prisma.tripNote.findFirst({
+    where: { cityId: cityIdNum, tripId: null, dayPlanId: null },
+    select: { id: true, content: true },
+  });
+
+  // Load day-level notes for all day plans in this city
+  const dayPlanIds = dayPlansRaw.map((dp) => dp.id);
+  const dayNotesRaw = await prisma.tripNote.findMany({
+    where: { dayPlanId: { in: dayPlanIds }, tripId: null, cityId: null },
+    select: { id: true, content: true, dayPlanId: true },
+  });
+  const dayNotes: Record<number, { id: number; content: string }> = {};
+  for (const n of dayNotesRaw) {
+    if (n.dayPlanId) dayNotes[n.dayPlanId] = { id: n.id, content: n.content };
+  }
+
   const pois: PoiDTO[] = city.pois.map((p) => ({
     id: p.id,
     name: p.name,
@@ -202,6 +269,11 @@ export default async function CityDetailPage({
         initialGenerated={cachedCityInfo}
       />
 
+      <TripNoteEditor
+        initialNote={cityNote ?? null}
+        scope={{ cityId: city.id }}
+      />
+
       <div id="edit-section">
         <EditCityButton
           tripId={tripId}
@@ -222,6 +294,13 @@ export default async function CityDetailPage({
         dayPlans={dayPlans}
         cityLat={city.latitude ?? undefined}
         cityLon={city.longitude ?? undefined}
+        cityName={city.name}
+        country={city.country ?? undefined}
+        favouriteItems={favouriteItems}
+        initialUserRatings={initialUserRatings}
+        initialNotInterested={initialNotInterested}
+        initialVisitedPoiIds={initialVisitedPoiIds}
+        dayNotes={dayNotes}
       />
     </div>
   );

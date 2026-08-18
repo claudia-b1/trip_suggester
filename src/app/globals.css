@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -146,6 +145,15 @@ body {
 }
 .toast-enter {
   animation: toast-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Toast undo progress bar */
+@keyframes toast-progress-shrink {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.toast-progress {
+  animation: toast-progress-shrink var(--toast-duration, 4000ms) linear forwards;
 }
 
 /* Slot color tints */

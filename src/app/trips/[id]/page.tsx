@@ -5,6 +5,7 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DeleteTripButton } from "./delete-button";
 import { EditTripButton } from "./edit-trip-button";
 import { CitiesSection } from "./cities-section";
+import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,12 @@ export default async function TripDetailPage({
     include: { cities: { orderBy: { order: "asc" } } },
   });
   if (!trip) notFound();
+
+  // Load trip-level note (one per trip, not scoped to city/day)
+  const tripNote = await prisma.tripNote.findFirst({
+    where: { tripId, cityId: null, dayPlanId: null },
+    select: { id: true, content: true },
+  });
 
   return (
     <div className="space-y-6">
@@ -110,6 +117,11 @@ export default async function TripDetailPage({
           })()}
         </div>
       </div>
+
+      <TripNoteEditor
+        initialNote={tripNote ?? null}
+        scope={{ tripId: trip.id }}
+      />
 
       <CitiesSection
         tripId={trip.id}

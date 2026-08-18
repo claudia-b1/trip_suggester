@@ -8,13 +8,14 @@ datasource db {
 }
 
 model Trip {
-  id        Int      @id @default(autoincrement())
+  id        Int        @id @default(autoincrement())
   name      String
   startDate DateTime
   endDate   DateTime
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   cities    City[]
+  notes     TripNote[]
 }
 
 model City {
@@ -34,6 +35,7 @@ model City {
   dayPlans      DayPlan[]
   candidates    PoiCandidate[]
   cityInfoCache CityInfoCache?
+  notes         TripNote[]
   createdAt     DateTime        @default(now())
 }
 
@@ -67,6 +69,7 @@ model Poi {
   cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities  DayActivity[]
+  poiRating   PoiRating?
   createdAt   DateTime      @default(now())
 }
 
@@ -76,6 +79,7 @@ model DayPlan {
   cityId     Int
   city       City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities DayActivity[]
+  notes      TripNote[]
   createdAt  DateTime      @default(now())
 
   @@unique([cityId, date])
@@ -145,4 +149,78 @@ model PoiCache {
   cachedAt  DateTime @default(now())
 
   @@unique([cityName, category, source])
+}
+
+// ── Trip Notes / Journal ────────────────────────────────────────────────────
+
+model TripNote {
+  id        Int      @id @default(autoincrement())
+  tripId    Int?
+  trip      Trip?    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  cityId    Int?
+  city      City?    @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  dayPlanId Int?
+  dayPlan   DayPlan? @relation(fields: [dayPlanId], references: [id], onDelete: Cascade)
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([cityId])
+  @@index([dayPlanId])
+}
+
+// ── Favourites ──────────────────────────────────────────────────────────────
+
+model FavouriteList {
+  id        Int              @id @default(autoincrement())
+  name      String
+  order     Int              @default(0)
+  parentId  Int?
+  parent    FavouriteList?   @relation("ListSublist", fields: [parentId], references: [id], onDelete: Cascade)
+  sublists  FavouriteList[]  @relation("ListSublist")
+  items     FavouriteItem[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([parentId])
+}
+
+model FavouriteItem {
+  id             Int            @id @default(autoincrement())
+  name           String
+  category       String
+  subcategory    String?
+  country        String
+  city           String
+  address        String?
+  latitude       Float
+  longitude      Float
+  description    String?
+  notes          String?
+  photoUrl       String?
+  website        String?
+  sourcePlaceId  String?        // dedup link to Google placeId
+  visited        Boolean        @default(false)
+  personalRating Int?           // 1-5 personal star rating
+  extraFields    Json?
+  order          Int            @default(0)
+  listId         Int
+  list           FavouriteList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([listId])
+  @@index([city])
+}
+
+model PoiRating {
+  id            Int      @id @default(autoincrement())
+  poiId         Int      @unique
+  poi           Poi      @relation(fields: [poiId], references: [id], onDelete: Cascade)
+  rating        Int?     // 1-5 personal rating
+  notInterested Boolean  @default(false)
+  visited       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
