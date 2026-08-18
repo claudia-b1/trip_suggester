@@ -10,6 +10,7 @@ import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { PoiMap } from "./poi-map";
 import { PoiHoverCard, type HoverPoiData } from "@/components/ui/poi-hover-card";
+import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
 export type DayActivityDTO = {
   id: number;
@@ -160,6 +161,127 @@ function MiniCalendar({
   );
 }
 
+// ─── Multi-day Accommodation Assigner ────────────────────────────────────────
+
+function MultiDayAccommodation({
+  poi,
+  dayPlans,
+  busy,
+  onAssigned,
+}: {
+  poi: PoiDTO;
+  dayPlans: DayPlanDTO[];
+  busy: boolean;
+  onAssigned: () => void;
+}) {
+  const { toast } = useToast();
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
+  const [assigning, setAssigning] = useState(false);
+
+  // Days where this POI is already assigned
+  const alreadyAssigned = new Set(
+    dayPlans.filter((dp) => dp.activities.some((a) => a.poiId === poi.id)).map((dp) => dp.id),
+  );
+
+  function toggleDay(id: number) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelectedDays(new Set(dayPlans.filter((dp) => !alreadyAssigned.has(dp.id)).map((dp) => dp.id)));
+  }
+
+  async function handleAssign() {
+    if (selectedDays.size === 0) return;
+    setAssigning(true);
+    try {
+      const res = await fetch("/api/day-plans/batch-assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          poiId: poi.id,
+          dayPlanIds: [...selectedDays],
+          timeSlot: "EVENING",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast(`Assigned to ${data.created} day${data.created !== 1 ? "s" : ""}`);
+        onAssigned();
+      } else {
+        toast("Failed to assign", { variant: "error" });
+      }
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  const unassignedDays = dayPlans.filter((dp) => !alreadyAssigned.has(dp.id));
+
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-950/20 p-2 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+          🏠 Assign to multiple days
+        </span>
+        {unassignedDays.length > 0 && (
+          <button
+            type="button"
+            onClick={selectAll}
+            className="text-[10px] text-indigo-500 hover:text-indigo-700"
+          >
+            Select all
+          </button>
+        )}
+      </div>
+      <div className="max-h-[200px] overflow-y-auto space-y-0.5">
+        {dayPlans.map((dp, idx) => {
+          const isAssigned = alreadyAssigned.has(dp.id);
+          const isChecked = selectedDays.has(dp.id);
+          return (
+            <label
+              key={dp.id}
+              className={`flex items-center gap-1.5 rounded px-1.5 py-1 text-xs transition-colors ${
+                isAssigned
+                  ? "text-[hsl(var(--muted-foreground))] opacity-50"
+                  : "text-[hsl(var(--foreground))] hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={isAssigned || isChecked}
+                disabled={isAssigned || busy || assigning}
+                onChange={() => toggleDay(dp.id)}
+                className="rounded border-indigo-300"
+              />
+              <span className={isAssigned ? "line-through" : ""}>
+                Day {idx + 1} · {formatDay(dp.date)}
+              </span>
+              {isAssigned && <span className="text-[9px] text-indigo-400 ml-auto">assigned</span>}
+            </label>
+          );
+        })}
+      </div>
+      {selectedDays.size > 0 && (
+        <button
+          type="button"
+          onClick={handleAssign}
+          disabled={assigning || busy}
+          className="w-full rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+        >
+          {assigning
+            ? "Assigning..."
+            : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Day Map Modal ────────────────────────────────────────────────────────────
 
 const SLOT_ORDER: Record<TimeSlot, number> = { MORNING: 0, AFTERNOON: 1, EVENING: 2 };
@@ -233,6 +355,7 @@ export function DailyPlan({
   setDayPlans,
   scrollToActivity,
   onScrollComplete,
+  dayNotes,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -240,6 +363,7 @@ export function DailyPlan({
   setDayPlans: React.Dispatch<React.SetStateAction<DayPlanDTO[]>>;
   scrollToActivity?: { date: string; activityId: number } | null;
   onScrollComplete?: () => void;
+  dayNotes?: Record<number, { id: number; content: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -988,9 +1112,20 @@ export function DailyPlan({
             </ul>
           )}
           {selectedPoi && (
-            <p className="text-xs text-[hsl(var(--muted-foreground))]">
-              Selected: <strong>{selectedPoi.name}</strong>. Click a slot to assign.
-            </p>
+            <div className="space-y-2">
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                Selected: <strong>{selectedPoi.name}</strong>. Click a slot to assign.
+              </p>
+              {/* Multi-day assignment for accommodation */}
+              {selectedPoi.category === "ACCOMMODATION" && (
+                <MultiDayAccommodation
+                  poi={selectedPoi}
+                  dayPlans={dayPlans}
+                  busy={busy}
+                  onAssigned={() => { setSelectedPoiId(null); router.refresh(); }}
+                />
+              )}
+            </div>
           )}
         </aside>
 
@@ -1079,10 +1214,58 @@ export function DailyPlan({
                 </div>
               )}
 
+              {/* Accommodation section */}
+              {(() => {
+                const accommodationActivities = currentDayPlan.activities.filter(
+                  (a) => a.poiCategory === "ACCOMMODATION"
+                );
+                return (
+                  <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-950/20 p-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600 dark:text-indigo-400">
+                        🏠 Accommodation
+                      </span>
+                    </div>
+                    {accommodationActivities.length === 0 ? (
+                      <div className="rounded-lg border-2 border-dashed border-indigo-200 dark:border-indigo-800 px-3 py-2.5 text-center text-xs text-indigo-400">
+                        {selectedPoi?.category === "ACCOMMODATION"
+                          ? <button type="button" onClick={() => assign(currentDayPlan.id, "EVENING")} disabled={busy} className="text-indigo-500 hover:text-indigo-700 font-medium">+ Assign {selectedPoi.name}</button>
+                          : "No accommodation assigned"}
+                      </div>
+                    ) : (
+                      <ul className="space-y-1">
+                        {accommodationActivities.map((a) => (
+                          <li
+                            key={a.id}
+                            className="flex items-center justify-between gap-1 rounded-lg bg-[hsl(var(--background))] px-2.5 py-2 text-sm shadow-sm border border-indigo-100 dark:border-indigo-800"
+                          >
+                            <div className="flex min-w-0 items-center gap-2">
+                              <span className="text-indigo-500">🏠</span>
+                              <PoiHoverCard poi={poiLookup.get(a.poiId) ?? null}>
+                                <span className="truncate font-medium">{a.poiName}</span>
+                              </PoiHoverCard>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => remove(a.id)}
+                              disabled={busy}
+                              aria-label={`Remove ${a.poiName}`}
+                              className="text-xs text-[hsl(var(--muted-foreground))] hover:text-red-600"
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Time slots grid with drag & drop */}
               <div className="grid gap-3 sm:grid-cols-3">
                 {TIME_SLOTS.map((slot) => {
-                  const items = currentDayPlan.activities.filter((a) => a.timeSlot === slot);
+                  const items = currentDayPlan.activities.filter((a) => a.timeSlot === slot && a.poiCategory !== "ACCOMMODATION");
                   const isDropTarget = !!dragActivity;
                   return (
                     <div
@@ -1151,6 +1334,13 @@ export function DailyPlan({
                   );
                 })}
               </div>
+
+              {/* Day note */}
+              <TripNoteEditor
+                initialNote={dayNotes?.[currentDayPlan.id] ?? null}
+                scope={{ dayPlanId: currentDayPlan.id }}
+                compact
+              />
 
               {/* Day navigation arrows */}
               <div className="flex items-center justify-between pt-2 border-t border-[hsl(var(--border))]">

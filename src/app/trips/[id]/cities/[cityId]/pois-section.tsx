@@ -1,13 +1,14 @@
 "use client";
 
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
+import { ACCOMMODATION_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, type Category } from "@/lib/categories";
+import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
 import { PoiMap, type DayPlanOption } from "./poi-map";
 import { DailyPlan, type DayPlanDTO } from "./daily-plan";
@@ -15,6 +16,8 @@ import { TimelineSidebar } from "./timeline-sidebar";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
+import { useFavourites } from "@/components/favourites/favourites-provider";
+import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 export type PoiDTO = {
   id: number;
@@ -44,16 +47,6 @@ export type PoiDTO = {
 
 type View = "list" | "map" | "plan";
 type ListLayout = "grid" | "compact";
-
-const CATEGORY_ICONS: Record<Category, string> = {
-  CULTURE:    "🏛️",
-  FOOD:       "🍽️",
-  NATURE:     "🌳",
-  ENTERTAINMENT: "🎡",
-  NIGHTLIFE:  "🌃",
-  SHOPPING:   "🛍️",
-  WELLNESS:   "🧘",
-};
 
 /** Build a Google Maps URL that resolves to the actual place if found, otherwise falls back to coordinates */
 function googleMapsUrl(name: string, lat: number, lng: number) {
@@ -225,6 +218,16 @@ function StarRating({
 
 // ─── PoiCard (grid view) ──────────────────────────────────────────────────────
 
+function HeartIcon({ filled, className }: { filled: boolean; className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className ?? "h-3.5 w-3.5"} viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"
+      strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+    </svg>
+  );
+}
+
 function PoiCard({
   poi,
   onDelete,
@@ -238,6 +241,8 @@ function PoiCard({
   isNotInterested,
   onRate,
   onToggleNotInterested,
+  onFavourite,
+  isFavourited,
   dayPlans,
 }: {
   poi: PoiDTO;
@@ -252,6 +257,8 @@ function PoiCard({
   isNotInterested?: boolean;
   onRate: (id: number, r: number | null) => void;
   onToggleNotInterested: (id: number) => void;
+  onFavourite: (poi: PoiDTO) => void;
+  isFavourited: boolean;
   dayPlans: DayPlanOption[];
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -353,8 +360,16 @@ function PoiCard({
                 </button>
               ))}
             </div>
-            {/* Not interested + delete */}
+            {/* Favourite + Not interested + delete */}
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                type="button"
+                title={isFavourited ? "Already in favourites" : "Add to favourites"}
+                onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+                className={`transition-colors ${isFavourited ? "text-red-500" : "text-white/70 hover:text-red-400"}`}
+              >
+                <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
+              </button>
               <button
                 type="button"
                 title={isNotInterested ? "Remove 'not interested'" : "Mark as not interested"}
@@ -506,6 +521,8 @@ function CompactPoiCard({
   isNotInterested,
   onRate,
   onToggleNotInterested,
+  onFavourite,
+  isFavourited,
   dayPlans,
 }: {
   poi: PoiDTO;
@@ -519,6 +536,8 @@ function CompactPoiCard({
   isNotInterested?: boolean;
   onRate: (id: number, r: number | null) => void;
   onToggleNotInterested: (id: number) => void;
+  onFavourite: (poi: PoiDTO) => void;
+  isFavourited: boolean;
   dayPlans: DayPlanOption[];
 }) {
   const [open, setOpen] = useState(false);
@@ -608,15 +627,25 @@ function CompactPoiCard({
             </p>
           )}
 
-          <StarRating
-            poiId={poi.id}
-            rating={userRating}
-            notInterested={isNotInterested}
-            onRate={onRate}
-            onToggleNotInterested={onToggleNotInterested}
-            onDelete={() => onDelete(poi)}
-            isDeleting={isDeleting}
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              title={isFavourited ? "Already in favourites" : "Add to favourites"}
+              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+              className={`rounded-full p-1 transition-colors ${isFavourited ? "text-red-500" : "text-[hsl(var(--muted-foreground))] hover:text-red-400"}`}
+            >
+              <HeartIcon filled={isFavourited} className="h-4 w-4" />
+            </button>
+            <StarRating
+              poiId={poi.id}
+              rating={userRating}
+              notInterested={isNotInterested}
+              onRate={onRate}
+              onToggleNotInterested={onToggleNotInterested}
+              onDelete={() => onDelete(poi)}
+              isDeleting={isDeleting}
+            />
+          </div>
 
           {hasDetails && (
             <div className="rounded-md bg-slate-50 border border-slate-100 px-2.5 py-1.5 text-xs text-slate-700 space-y-0.5">
@@ -815,6 +844,13 @@ export function PoisSection({
   cityLon,
   radiusKm,
   nearbyRadiusKm,
+  cityName,
+  country,
+  favouriteItems,
+  initialUserRatings,
+  initialNotInterested,
+  initialVisitedPoiIds,
+  dayNotes,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -823,6 +859,13 @@ export function PoisSection({
   cityLon?: number;
   radiusKm?: number;
   nearbyRadiusKm?: number;
+  cityName?: string;
+  country?: string;
+  favouriteItems?: FavouriteItemDTO[];
+  initialUserRatings?: Record<number, number>;
+  initialNotInterested?: number[];
+  initialVisitedPoiIds?: number[];
+  dayNotes?: Record<number, { id: number; content: string }>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -830,11 +873,38 @@ export function PoisSection({
   const [view, setView] = useState<View>("map");
   const [name, setName] = useState("");
   const [category, setCategory] = useState<Category>("CULTURE");
+  const [addSubcategory, setAddSubcategory] = useState("");
   const [description, setDescription] = useState("");
   const [addLat, setAddLat] = useState("");
   const [addLng, setAddLng] = useState("");
   const [coordsInput, setCoordsInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const { showAddModal, favouritedPlaceIds, favouritedNameCityKeys, setCurrentCity, refreshLists } = useFavourites();
+
+  const isPoiFavourited = useCallback((poi: PoiDTO) => {
+    if (poi.placeId && favouritedPlaceIds.has(poi.placeId)) return true;
+    if (poi.name && cityName) {
+      return favouritedNameCityKeys.has(`${poi.name.toLowerCase()}|${cityName.toLowerCase()}`);
+    }
+    return false;
+  }, [favouritedPlaceIds, favouritedNameCityKeys, cityName]);
+
+  const handleFavourite = useCallback((poi: PoiDTO) => {
+    showAddModal({
+      name: poi.name,
+      category: poi.category,
+      subcategory: poi.subcategory ?? undefined,
+      country: country ?? "",
+      city: cityName ?? "",
+      latitude: poi.latitude ?? undefined,
+      longitude: poi.longitude ?? undefined,
+      description: poi.description ?? undefined,
+      photoUrl: poi.photoUrl ?? undefined,
+      website: poi.website ?? undefined,
+      sourcePlaceId: poi.placeId ?? undefined,
+    });
+  }, [showAddModal, country, cityName]);
 
   // Mapbox place/address search for "add POI manually"
   const [mapboxQuery, setMapboxQuery] = useState("");
@@ -869,6 +939,19 @@ export function PoisSection({
     [liveDayPlans],
   );
 
+  // Set current city context for favourites panel "Add to Day Plan"
+  useEffect(() => {
+    if (cityName) {
+      setCurrentCity({
+        id: cityId,
+        name: cityName,
+        country,
+        dayPlans: dayPlanOptions,
+      });
+    }
+    return () => setCurrentCity(null);
+  }, [cityId, cityName, country, dayPlanOptions, setCurrentCity]);
+
   // Called by PoiMap after focusPoiId flyTo so parent clears it
   const handleFocusConsumed = useCallback(() => setFocusPoiId(null), []);
 
@@ -881,60 +964,178 @@ export function PoisSection({
     return ids;
   }, [liveDayPlans]);
 
-  // Visited POI IDs (persisted in localStorage)
-  const [visitedIds, setVisitedIds] = useState<Set<number>>(() => new Set());
+  // Visited POI IDs (persisted in database via PoiRating)
+  const [visitedIds, setVisitedIds] = useState<Set<number>>(
+    () => new Set(initialVisitedPoiIds ?? []),
+  );
+
+  // One-time migration: move localStorage visited to database
   useEffect(() => {
+    const migKey = `visited-migrated-${cityId}`;
+    if (typeof window === "undefined" || localStorage.getItem(migKey)) return;
+    const stored = localStorage.getItem(`visited-pois-${cityId}`);
+    if (!stored) { localStorage.setItem(migKey, "1"); return; }
     try {
-      const stored = localStorage.getItem(`visited-pois-${cityId}`);
-      if (stored) setVisitedIds(new Set(JSON.parse(stored)));
-    } catch { /* ignore */ }
+      const ids: number[] = JSON.parse(stored);
+      if (ids.length === 0) { localStorage.setItem(migKey, "1"); return; }
+      // Migrate each visited POI to the database
+      Promise.all(
+        ids.map((id) =>
+          fetch(`/api/pois/${id}/rating`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ visited: true }),
+          }).catch(() => {})
+        )
+      ).then(() => {
+        localStorage.setItem(migKey, "1");
+        localStorage.removeItem(`visited-pois-${cityId}`);
+        setVisitedIds((prev) => {
+          const next = new Set(prev);
+          for (const id of ids) next.add(id);
+          return next;
+        });
+      });
+    } catch { localStorage.setItem(migKey, "1"); }
   }, [cityId]);
 
   const toggleVisited = useCallback((poiId: number) => {
     setVisitedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(poiId)) next.delete(poiId);
-      else next.add(poiId);
-      try { localStorage.setItem(`visited-pois-${cityId}`, JSON.stringify([...next])); } catch { /* ignore */ }
+      const newVal = !next.has(poiId);
+      if (newVal) next.add(poiId); else next.delete(poiId);
+      // Persist to database (also syncs to matching FavouriteItems)
+      fetch(`/api/pois/${poiId}/rating`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visited: newVal }),
+      }).then(() => refreshLists()).catch(() => {});
       return next;
     });
-  }, [cityId]);
+  }, [refreshLists]);
 
   type UserRating = 1 | 2 | 3 | 4 | 5;
-  const [userRatings, setUserRatingsState] = useState<Record<number, UserRating>>({});
-  const [notInterested, setNotInterestedState] = useState<Set<number>>(new Set());
+  const [userRatings, setUserRatingsState] = useState<Record<number, UserRating>>(
+    () => (initialUserRatings ?? {}) as Record<number, UserRating>,
+  );
+  const [notInterested, setNotInterestedState] = useState<Set<number>>(
+    () => new Set(initialNotInterested ?? []),
+  );
 
+  // One-time migration from localStorage to database
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(`user-ratings-${cityId}`);
-      if (s) setUserRatingsState(JSON.parse(s));
-    } catch { /* ignore */ }
-  }, [cityId]);
+    const migrationKey = `ratings-migrated-${cityId}`;
+    if (localStorage.getItem(migrationKey)) return;
 
-  useEffect(() => {
-    try {
-      const s = localStorage.getItem(`not-interested-${cityId}`);
-      if (s) setNotInterestedState(new Set(JSON.parse(s)));
-    } catch { /* ignore */ }
+    const storedRatings = localStorage.getItem(`user-ratings-${cityId}`);
+    const storedNI = localStorage.getItem(`not-interested-${cityId}`);
+    if (!storedRatings && !storedNI) {
+      localStorage.setItem(migrationKey, "1");
+      return;
+    }
+
+    const ratings = storedRatings ? JSON.parse(storedRatings) : {};
+    const ni = storedNI ? JSON.parse(storedNI) : [];
+
+    fetch(`/api/cities/${cityId}/ratings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ratings, notInterested: ni }),
+    }).then((res) => {
+      if (res.ok) {
+        localStorage.setItem(migrationKey, "1");
+        localStorage.removeItem(`user-ratings-${cityId}`);
+        localStorage.removeItem(`not-interested-${cityId}`);
+        // Merge migrated data into current state
+        const parsed = ratings as Record<string, number>;
+        setUserRatingsState((prev) => {
+          const next = { ...prev };
+          for (const [k, v] of Object.entries(parsed)) {
+            if (!(Number(k) in next)) next[Number(k)] = v as UserRating;
+          }
+          return next;
+        });
+        setNotInterestedState((prev) => {
+          const next = new Set(prev);
+          for (const id of ni) next.add(id);
+          return next;
+        });
+      }
+    }).catch(() => { /* silent */ });
   }, [cityId]);
 
   const setUserRating = useCallback((poiId: number, rating: number | null) => {
     setUserRatingsState((prev) => {
       const next = { ...prev };
       if (rating === null) delete next[poiId]; else next[poiId] = rating as UserRating;
-      try { localStorage.setItem(`user-ratings-${cityId}`, JSON.stringify(next)); } catch { /**/ }
       return next;
     });
-  }, [cityId]);
+    // Persist to database (also syncs to matching FavouriteItems)
+    fetch(`/api/pois/${poiId}/rating`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating }),
+    }).then(() => refreshLists()).catch(() => {});
+  }, [refreshLists]);
 
   const toggleNotInterested = useCallback((poiId: number) => {
     setNotInterestedState((prev) => {
       const next = new Set(prev);
-      if (next.has(poiId)) next.delete(poiId); else next.add(poiId);
-      try { localStorage.setItem(`not-interested-${cityId}`, JSON.stringify([...next])); } catch { /**/ }
+      const newVal = !next.has(poiId);
+      if (newVal) next.add(poiId); else next.delete(poiId);
+      // Persist to database
+      fetch(`/api/pois/${poiId}/rating`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notInterested: newVal }),
+      }).catch(() => { /* silent */ });
       return next;
     });
-  }, [cityId]);
+  }, []);
+
+  // Listen for rating/visited/category changes from the favourites panel
+  useEffect(() => {
+    function handleFavSync(e: Event) {
+      const detail = (e as CustomEvent).detail ?? {};
+
+      // New favourite added → auto-POI was created server-side, refresh to pick it up
+      if (detail.newFavourite) {
+        router.refresh();
+        return;
+      }
+
+      const { name, city, sourcePlaceId, rating, visited, category, subcategory } = detail;
+      // Find matching POI(s) by sourcePlaceId or name+city
+      for (const poi of pois) {
+        const matches =
+          (sourcePlaceId && poi.placeId === sourcePlaceId) ||
+          (name && city && poi.name.toLowerCase() === name.toLowerCase() && cityName?.toLowerCase() === city.toLowerCase());
+        if (!matches) continue;
+        if (rating !== undefined) {
+          setUserRatingsState((prev) => {
+            const next = { ...prev };
+            if (rating === null) delete next[poi.id];
+            else next[poi.id] = rating as UserRating;
+            return next;
+          });
+        }
+        if (visited !== undefined) {
+          setVisitedIds((prev) => {
+            const next = new Set(prev);
+            if (visited) next.add(poi.id); else next.delete(poi.id);
+            return next;
+          });
+        }
+        // Category/subcategory changes need a page refresh (POIs come from server props)
+        if (category !== undefined || subcategory !== undefined) {
+          router.refresh();
+          return; // refresh will reload all data
+        }
+      }
+    }
+    window.addEventListener("favourite-sync", handleFavSync);
+    return () => window.removeEventListener("favourite-sync", handleFavSync);
+  }, [pois, cityName, router]);
 
   const [sortBy, setSortBy] = useState<SortKey[]>(["rating"]);
 
@@ -1090,6 +1291,7 @@ export function PoisSection({
       body: JSON.stringify({
         name,
         category,
+        subcategory: addSubcategory || undefined,
         description,
         latitude: lat && !isNaN(lat) ? lat : undefined,
         longitude: lng && !isNaN(lng) ? lng : undefined,
@@ -1102,6 +1304,7 @@ export function PoisSection({
     }
     setName("");
     setCategory("CULTURE");
+    setAddSubcategory("");
     setDescription("");
     setAddLat("");
     setAddLng("");
@@ -1348,11 +1551,14 @@ export function PoisSection({
                 notInterested={notInterested}
                 onRatePoi={setUserRating}
                 onToggleNotInterested={toggleNotInterested}
+                favouriteItems={favouriteItems}
+                onFavourite={(poi) => handleFavourite(poi as PoiDTO)}
+                isPoiFavourited={(poi) => isPoiFavourited(poi as PoiDTO)}
               />
             </div>
           </div>
         ) : view === "plan" ? (
-          <DailyPlan cityId={cityId} pois={pois} dayPlans={liveDayPlans} setDayPlans={setLiveDayPlans} scrollToActivity={scrollToActivity} onScrollComplete={() => setScrollToActivity(null)} />
+          <DailyPlan cityId={cityId} pois={pois} dayPlans={liveDayPlans} setDayPlans={setLiveDayPlans} scrollToActivity={scrollToActivity} onScrollComplete={() => setScrollToActivity(null)} dayNotes={dayNotes} />
         ) : pois.length === 0 ? (
           <p className="text-sm text-[hsl(var(--muted-foreground))]">No POIs yet.</p>
         ) : (
@@ -1409,6 +1615,8 @@ export function PoisSection({
                     isNotInterested={notInterested.has(poi.id)}
                     onRate={setUserRating}
                     onToggleNotInterested={toggleNotInterested}
+                    onFavourite={handleFavourite}
+                    isFavourited={isPoiFavourited(poi)}
                     dayPlans={dayPlanOptions}
                   />
                 ))}
@@ -1430,6 +1638,8 @@ export function PoisSection({
                     isNotInterested={notInterested.has(poi.id)}
                     onRate={setUserRating}
                     onToggleNotInterested={toggleNotInterested}
+                    onFavourite={handleFavourite}
+                    isFavourited={isPoiFavourited(poi)}
                     dayPlans={dayPlanOptions}
                   />
                 ))}
@@ -1438,116 +1648,144 @@ export function PoisSection({
           </div>
         )}
 
-        <div className="border-t border-[hsl(var(--border))] pt-4">
-          {!addOpen ? (
-            <Button variant="outline" onClick={() => setAddOpen(true)}>
-              + Add POI manually
-            </Button>
-          ) : (
-            <form onSubmit={onAdd} className="space-y-4">
-          {/* Mapbox place/address search */}
-          <div className="space-y-2">
-            <Label htmlFor="poi-place-search">Search by name or address</Label>
-            <div className="relative">
-              <Input
-                id="poi-place-search"
-                type="text"
-                value={mapboxQuery}
-                onChange={(e) => handleMapboxSearch(e.target.value)}
-                onFocus={() => mapboxSuggestions.length > 0 && setMapboxOpen(true)}
-                onBlur={() => setTimeout(() => setMapboxOpen(false), 150)}
-                placeholder="e.g. Colosseum, Piazza Navona, Via Roma 10…"
-                autoComplete="off"
-              />
-              {mapboxOpen && mapboxSuggestions.length > 0 && (
-                <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-60 overflow-y-auto">
-                  {mapboxSuggestions.map((f) => (
-                    <li key={f.id}>
-                      <button
-                        type="button"
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-[hsl(var(--muted))] transition-colors"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => selectMapboxSuggestion(f)}
-                      >
-                        <span className="font-medium">{f.text}</span>
-                        <br />
-                        <span className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+        {/* Add POI Modal — triggered by right-click on map → "Add POI at this location" */}
+        {addOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/50" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} />
+            <div className="relative z-10 mx-4 w-full max-w-lg rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-[hsl(var(--foreground))]">Add POI</h3>
+                <button
+                  onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={onAdd} className="space-y-4">
+                {/* Mapbox place/address search */}
+                <div className="space-y-2">
+                  <Label htmlFor="poi-place-search">Search by name or address</Label>
+                  <div className="relative">
+                    <Input
+                      id="poi-place-search"
+                      type="text"
+                      value={mapboxQuery}
+                      onChange={(e) => handleMapboxSearch(e.target.value)}
+                      onFocus={() => mapboxSuggestions.length > 0 && setMapboxOpen(true)}
+                      onBlur={() => setTimeout(() => setMapboxOpen(false), 150)}
+                      placeholder="e.g. Colosseum, Piazza Navona, Via Roma 10…"
+                      autoComplete="off"
+                    />
+                    {mapboxOpen && mapboxSuggestions.length > 0 && (
+                      <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-60 overflow-y-auto">
+                        {mapboxSuggestions.map((f) => (
+                          <li key={f.id}>
+                            <button
+                              type="button"
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-[hsl(var(--muted))] transition-colors"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selectMapboxSuggestion(f)}
+                            >
+                              <span className="font-medium">{f.text}</span>
+                              <br />
+                              <span className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="poi-name">Name <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(auto-filled or type manually)</span></Label>
+                  <Input
+                    id="poi-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Place name"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="poi-category">Category</Label>
+                    <select
+                      id="poi-category"
+                      value={category}
+                      onChange={(e) => { setCategory(e.target.value as Category); setAddSubcategory(""); }}
+                      className="flex h-10 w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                    >
+                      {CATEGORIES.map((c) => (
+                        <option key={c} value={c}>
+                          {CATEGORY_LABELS[c]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="poi-subcategory">Subcategory <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
+                    <select
+                      id="poi-subcategory"
+                      value={addSubcategory}
+                      onChange={(e) => setAddSubcategory(e.target.value)}
+                      className="flex h-10 w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                    >
+                      <option value="">— None —</option>
+                      {(category === "ACCOMMODATION"
+                        ? ACCOMMODATION_SUBCATEGORIES
+                        : (SUBCATEGORIES as Record<string, { id: string; label: string; emoji: string }[]>)[category] ?? []
+                      ).map((s) => (
+                        <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="poi-description">Description</Label>
+                  <textarea
+                    id="poi-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={3}
+                    className="flex w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
+                    placeholder="Optional"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="poi-coords">
+                    Coordinates <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(auto-filled from map click or search)</span>
+                  </Label>
+                  <Input
+                    id="poi-coords"
+                    type="text"
+                    inputMode="decimal"
+                    value={coordsInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setCoordsInput(val);
+                      const parts = val.split(",").map((s) => s.trim());
+                      setAddLat(parts[0] ?? "");
+                      setAddLng(parts[1] ?? "");
+                    }}
+                    placeholder="e.g. 48.8566, 2.3522"
+                  />
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="outline" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} disabled={submitting}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={submitting}>
+                    {submitting ? <><span className="spinner mr-1.5" /> Adding…</> : "Add POI"}
+                  </Button>
+                </div>
+              </form>
             </div>
           </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="poi-name">Name <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(auto-filled or type manually)</span></Label>
-            <Input
-              id="poi-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Place name"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="poi-category">Category</Label>
-            <select
-              id="poi-category"
-              value={category}
-              onChange={(e) => setCategory(e.target.value as Category)}
-              className="flex h-10 w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-            >
-              {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {CATEGORY_LABELS[c]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="poi-description">Description</Label>
-            <textarea
-              id="poi-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="flex w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
-              placeholder="Optional"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="poi-coords">
-              Coordinates <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(auto-filled from search, or enter lat, lon)</span>
-            </Label>
-            <Input
-              id="poi-coords"
-              type="text"
-              inputMode="decimal"
-              value={coordsInput}
-              onChange={(e) => {
-                const val = e.target.value;
-                setCoordsInput(val);
-                const parts = val.split(",").map((s) => s.trim());
-                setAddLat(parts[0] ?? "");
-                setAddLng(parts[1] ?? "");
-              }}
-              placeholder="e.g. 48.8566, 2.3522"
-            />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-2">
-            <Button type="submit" disabled={submitting}>
-              {submitting ? <><span className="spinner mr-1.5" /> Adding…</> : "Add POI"}
-            </Button>
-            <Button type="button" variant="outline" onClick={() => { setName(""); setCategory("CULTURE"); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} disabled={submitting}>
-              Cancel
-            </Button>
-          </div>
-            </form>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
     {hasActivities && (
