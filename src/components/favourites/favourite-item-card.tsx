@@ -220,7 +220,7 @@ export function FavouriteItemCard({
         </div>
 
         {/* Edit + Delete buttons */}
-        <div className="mt-0.5 flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="mt-0.5 flex shrink-0 gap-0.5 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100">
           <button
             onClick={(e) => {
               e.stopPropagation();
