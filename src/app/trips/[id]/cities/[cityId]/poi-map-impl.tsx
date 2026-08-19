@@ -307,22 +307,6 @@ function PopupContent({
               >★</button>
             ))}
           </div>
-          {onFavourite && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
-              title={isFavourited ? "Already in favourites" : "Add to favourites"}
-              className={`flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
-                isFavourited
-                  ? "text-pink-500"
-                  : "text-gray-400 hover:text-pink-500"
-              }`}
-            >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill={isFavourited ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5">
-                <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
-              </svg>
-            </button>
-          )}
           {onToggleNotInterested && (
             <button
               type="button"
@@ -332,6 +316,23 @@ function PopupContent({
             >✕</button>
           )}
         </div>
+      )}
+      {/* Favourite button — large and tap-friendly for mobile */}
+      {onFavourite && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+          className={`flex w-full items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+            isFavourited
+              ? "bg-pink-50 text-pink-500 border border-pink-200"
+              : "bg-gray-50 text-gray-600 border border-gray-200 hover:border-pink-300 hover:text-pink-500"
+          }`}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={isFavourited ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5">
+            <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+          </svg>
+          {isFavourited ? "Saved to favourites" : "Add to favourites"}
+        </button>
       )}
       {dayPlans.length > 0 && (
         <details className="group" onClick={(e) => e.stopPropagation()}>

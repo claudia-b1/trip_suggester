@@ -472,6 +472,20 @@ function PoiCard({
 
         {/* Footer links */}
         <div className="mt-auto flex items-center gap-3 flex-wrap border-t border-[hsl(var(--border))] pt-2">
+          {/* Favourite button — always visible, especially important on mobile */}
+          <button
+            type="button"
+            onClick={() => onFavourite(poi)}
+            title={isFavourited ? "Already in favourites" : "Add to favourites"}
+            className={`flex items-center gap-1 text-xs font-medium transition-colors ${
+              isFavourited
+                ? "text-pink-500"
+                : "text-[hsl(var(--muted-foreground))] hover:text-pink-500"
+            }`}
+          >
+            <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
+            <span className="sm:hidden">{isFavourited ? "Saved" : "Save"}</span>
+          </button>
           {hasCoords && (
             <button
               type="button"
@@ -608,6 +622,18 @@ function CompactPoiCard({
           {CATEGORY_LABELS[poi.category]}
         </span>
 
+        {/* Favourite heart — always visible, tap-friendly for mobile */}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onFavourite(poi); } }}
+          title={isFavourited ? "Already in favourites" : "Add to favourites"}
+          className={`flex-shrink-0 p-1 transition-colors ${isFavourited ? "text-pink-500" : "text-gray-300 hover:text-pink-400"}`}
+        >
+          <HeartIcon filled={isFavourited} className="h-4 w-4" />
+        </span>
+
         {/* Expand chevron */}
         <span className={`flex-shrink-0 text-xs text-[hsl(var(--muted-foreground))] transition-transform ${open ? "rotate-180" : ""}`}>
           ▼
@@ -659,6 +685,20 @@ function CompactPoiCard({
           <DayPlanAssigner poiId={poi.id} poiName={poi.name} dayPlans={dayPlans} />
 
           <div className="flex items-center gap-3 flex-wrap pt-1">
+            {/* Favourite button — visible on mobile without needing to find it in overlays */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
+              title={isFavourited ? "Already in favourites" : "Add to favourites"}
+              className={`flex items-center gap-1 text-xs font-medium transition-colors ${
+                isFavourited
+                  ? "text-pink-500"
+                  : "text-[hsl(var(--muted-foreground))] hover:text-pink-500"
+              }`}
+            >
+              <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
+              {isFavourited ? "Saved" : "Save"}
+            </button>
             {hasCoords && (
               <button type="button" onClick={() => onViewOnMap(poi.id)} className="text-xs font-medium text-[hsl(var(--primary))] hover:underline">
                 🗺️ View on map
