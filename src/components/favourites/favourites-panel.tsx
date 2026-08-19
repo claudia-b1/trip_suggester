@@ -41,6 +41,7 @@ export function FavouritesPanel() {
   const [listFilter, setListFilter] = useState<number | null>(null);
   const [visitedFilter, setVisitedFilter] = useState<"all" | "visited" | "unvisited">("all");
   const [extraFieldFilters, setExtraFieldFilters] = useState<ExtraFieldFilter[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [expandedLists, setExpandedLists] = useState<Set<number>>(new Set());
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -310,8 +311,9 @@ export function FavouritesPanel() {
     setExtraFieldFilters((prev) => {
       const without = prev.filter((f) => f.key !== key);
       if (!value) return without;
-      if (type === "stars") return [...without, { key, value: Number(value) }];
-      return [...without, { key, value }];
+      if (type === "stars") return [...without, { key, value: Number(value), type: "stars" }];
+      if (type === "proximity") return [...without, { key, value, type: "proximity" }];
+      return [...without, { key, value, type: "select" }];
     });
   }
 
@@ -614,208 +616,235 @@ export function FavouritesPanel() {
 
             {/* Search + filters — hidden in map mode (map has its own) */}
             <div className={`space-y-2 border-b border-[hsl(var(--border))] px-4 py-3 ${viewMode === "map" ? "hidden" : ""}`}>
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search favourites..."
-                className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
-              />
-              {/* Category pills */}
-              <div className="flex flex-wrap gap-1">
-                {CATEGORIES.map((cat) => {
-                  const active = categoryFilter === cat;
-                  const styles = CATEGORY_STYLES[cat];
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => {
-                        setCategoryFilter(active ? null : cat);
-                        setSubcategoryFilter(null);
-                        setExtraFieldFilters([]);
-                      }}
-                      className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
-                        active
-                          ? `${styles.badge} border-transparent`
-                          : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
-                      }`}
-                    >
-                      {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Subcategory filter — only when ACCOMMODATION is selected */}
-              {categoryFilter === "ACCOMMODATION" && (
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    onClick={() => { setSubcategoryFilter(null); setExtraFieldFilters([]); }}
-                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
-                      !subcategoryFilter
-                        ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-                        : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
-                    }`}
-                  >
-                    All
-                  </button>
-                  {ACCOMMODATION_SUBCATEGORIES.map((sub) => (
-                    <button
-                      key={sub.id}
-                      onClick={() => {
-                        setSubcategoryFilter(subcategoryFilter === sub.id ? null : sub.id);
-                        setExtraFieldFilters([]);
-                      }}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
-                        subcategoryFilter === sub.id
-                          ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
-                          : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
-                      }`}
-                    >
-                      {sub.emoji} {sub.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* List + Visited — compact row */}
-              <div className="flex items-center gap-2">
-                {visibleLists.length > 1 && (
-                  <select
-                    value={listFilter ?? ""}
-                    onChange={(e) => setListFilter(e.target.value ? Number(e.target.value) : null)}
-                    className="max-w-[180px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs text-[hsl(var(--foreground))]"
-                  >
-                    <option value="">All lists</option>
-                    {visibleLists.map((l) => (
-                      <optgroup key={l.id} label={l.name}>
-                        <option value={l.id}>{l.name}</option>
-                        {l.sublists.map((sub) => (
-                          <option key={sub.id} value={sub.id}>&nbsp;&nbsp;{sub.name}</option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                )}
-                <div className="flex gap-1 ml-auto">
-                  {(["all", "visited", "unvisited"] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setVisitedFilter(v)}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
-                        visitedFilter === v
-                          ? "border-emerald-400 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
-                      }`}
-                    >
-                      {v === "all" ? "All" : v === "visited" ? "✓ Visited" : "○ Unvisited"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Extra field filters — shown when relevant defs exist (category selected or items have fields) */}
-              {activeExtraFieldDefs.length > 0 && (
-                <div className="space-y-1.5 border-t border-dashed border-[hsl(var(--border))]/50 pt-2">
-                  {/* Dropdown filters: select, proximity, stars */}
-                  {dropdownDefs.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {dropdownDefs.map((def) => {
-                        const isActive = !!extraFieldFilters.find((f) => f.key === def.key);
-                        if (def.type === "proximity") {
-                          return (
-                            <select
-                              key={def.key}
-                              value={getFilterDropdownValue(def.key)}
-                              onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "proximity")}
-                              className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
-                                isActive
-                                  ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
-                                  : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
-                              }`}
-                            >
-                              <option value="">{def.label}</option>
-                              {PROXIMITY_OPTIONS.filter((o) => o.value !== "-").map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                          );
-                        }
-                        if (def.type === "stars") {
-                          return (
-                            <select
-                              key={def.key}
-                              value={getFilterDropdownValue(def.key)}
-                              onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "stars")}
-                              className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
-                                isActive
-                                  ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
-                                  : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
-                              }`}
-                            >
-                              <option value="">{def.label}</option>
-                              {[1, 2, 3, 4, 5].map((n) => (
-                                <option key={n} value={n}>{"★".repeat(n)}+</option>
-                              ))}
-                            </select>
-                          );
-                        }
-                        if (def.type === "select" && "options" in def) {
-                          return (
-                            <select
-                              key={def.key}
-                              value={getFilterDropdownValue(def.key)}
-                              onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "select")}
-                              className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
-                                isActive
-                                  ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
-                                  : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
-                              }`}
-                            >
-                              <option value="">{def.label}</option>
-                              {def.options.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                          );
-                        }
-                        return null;
-                      })}
-                    </div>
+              <div className="flex gap-2">
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search favourites..."
+                  className="flex-1 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`relative flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-all ${
+                    showFilters
+                      ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]"
+                      : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  }`}
+                  title={showFilters ? "Hide filters" : "Show filters"}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                  </svg>
+                  {/* Active filter count badge */}
+                  {!showFilters && (categoryFilter !== null || subcategoryFilter !== null || listFilter !== null || visitedFilter !== "all" || extraFieldFilters.length > 0) && (
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-[9px] font-bold text-[hsl(var(--primary-foreground))]">
+                      {(categoryFilter ? 1 : 0) + (subcategoryFilter ? 1 : 0) + (listFilter ? 1 : 0) + (visitedFilter !== "all" ? 1 : 0) + extraFieldFilters.length}
+                    </span>
                   )}
+                </button>
+              </div>
 
-                  {/* Boolean toggle pills */}
-                  {booleanDefs.length > 0 && (
+              {showFilters && (
+                <>
+                  {/* Category pills */}
+                  <div className="flex flex-wrap gap-1">
+                    {CATEGORIES.map((cat) => {
+                      const active = categoryFilter === cat;
+                      const styles = CATEGORY_STYLES[cat];
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => {
+                            setCategoryFilter(active ? null : cat);
+                            setSubcategoryFilter(null);
+                            setExtraFieldFilters([]);
+                          }}
+                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                            active
+                              ? `${styles.badge} border-transparent`
+                              : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Subcategory filter — only when ACCOMMODATION is selected */}
+                  {categoryFilter === "ACCOMMODATION" && (
                     <div className="flex flex-wrap gap-1">
-                      {booleanDefs.map((def) => {
-                        const isActive = extraFieldFilters.some((f) => f.key === def.key);
-                        return (
-                          <button
-                            key={def.key}
-                            onClick={() => toggleBooleanFilter(def.key)}
-                            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
-                              isActive
-                                ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400"
-                                : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
-                            }`}
-                          >
-                            {isActive ? "✓ " : ""}{def.label}
-                          </button>
-                        );
-                      })}
+                      <button
+                        onClick={() => { setSubcategoryFilter(null); setExtraFieldFilters([]); }}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                          !subcategoryFilter
+                            ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                            : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
+                        }`}
+                      >
+                        All
+                      </button>
+                      {ACCOMMODATION_SUBCATEGORIES.map((sub) => (
+                        <button
+                          key={sub.id}
+                          onClick={() => {
+                            setSubcategoryFilter(subcategoryFilter === sub.id ? null : sub.id);
+                            setExtraFieldFilters([]);
+                          }}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                            subcategoryFilter === sub.id
+                              ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
+                              : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {sub.emoji} {sub.label}
+                        </button>
+                      ))}
                     </div>
                   )}
 
-                  {/* Clear active extra filters */}
-                  {extraFieldFilters.length > 0 && (
-                    <button
-                      onClick={() => setExtraFieldFilters([])}
-                      className="text-[10px] font-medium text-red-400 hover:text-red-500 transition-colors"
-                    >
-                      ✕ Clear {extraFieldFilters.length} filter{extraFieldFilters.length > 1 ? "s" : ""}
-                    </button>
+                  {/* List + Visited — compact row */}
+                  <div className="flex items-center gap-2">
+                    {visibleLists.length > 1 && (
+                      <select
+                        value={listFilter ?? ""}
+                        onChange={(e) => setListFilter(e.target.value ? Number(e.target.value) : null)}
+                        className="max-w-[180px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs text-[hsl(var(--foreground))]"
+                      >
+                        <option value="">All lists</option>
+                        {visibleLists.map((l) => (
+                          <optgroup key={l.id} label={l.name}>
+                            <option value={l.id}>{l.name}</option>
+                            {l.sublists.map((sub) => (
+                              <option key={sub.id} value={sub.id}>&nbsp;&nbsp;{sub.name}</option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )}
+                    <div className="flex gap-1 ml-auto">
+                      {(["all", "visited", "unvisited"] as const).map((v) => (
+                        <button
+                          key={v}
+                          onClick={() => setVisitedFilter(v)}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                            visitedFilter === v
+                              ? "border-emerald-400 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                              : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
+                          }`}
+                        >
+                          {v === "all" ? "All" : v === "visited" ? "✓ Visited" : "○ Unvisited"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Extra field filters — shown when relevant defs exist (category selected or items have fields) */}
+                  {activeExtraFieldDefs.length > 0 && (
+                    <div className="space-y-1.5 border-t border-dashed border-[hsl(var(--border))]/50 pt-2">
+                      {/* Dropdown filters: select, proximity, stars */}
+                      {dropdownDefs.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {dropdownDefs.map((def) => {
+                            const isActive = !!extraFieldFilters.find((f) => f.key === def.key);
+                            if (def.type === "proximity") {
+                              return (
+                                <select
+                                  key={def.key}
+                                  value={getFilterDropdownValue(def.key)}
+                                  onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "proximity")}
+                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                    isActive
+                                      ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
+                                      : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
+                                  }`}
+                                >
+                                  <option value="">{def.label}</option>
+                                  {PROXIMITY_OPTIONS.filter((o) => o.value !== "-").map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label} or closer</option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            if (def.type === "stars") {
+                              return (
+                                <select
+                                  key={def.key}
+                                  value={getFilterDropdownValue(def.key)}
+                                  onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "stars")}
+                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                    isActive
+                                      ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
+                                      : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
+                                  }`}
+                                >
+                                  <option value="">{def.label}</option>
+                                  {[1, 2, 3, 4, 5].map((n) => (
+                                    <option key={n} value={n}>{"★".repeat(n)}+</option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            if (def.type === "select" && "options" in def) {
+                              return (
+                                <select
+                                  key={def.key}
+                                  value={getFilterDropdownValue(def.key)}
+                                  onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "select")}
+                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                    isActive
+                                      ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
+                                      : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
+                                  }`}
+                                >
+                                  <option value="">{def.label}</option>
+                                  {def.options.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            return null;
+                          })}
+                        </div>
+                      )}
+
+                      {/* Boolean toggle pills */}
+                      {booleanDefs.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {booleanDefs.map((def) => {
+                            const isActive = extraFieldFilters.some((f) => f.key === def.key);
+                            return (
+                              <button
+                                key={def.key}
+                                onClick={() => toggleBooleanFilter(def.key)}
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                                  isActive
+                                    ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                                    : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
+                                }`}
+                              >
+                                {isActive ? "✓ " : ""}{def.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Clear active extra filters */}
+                      {extraFieldFilters.length > 0 && (
+                        <button
+                          onClick={() => setExtraFieldFilters([])}
+                          className="text-[10px] font-medium text-red-400 hover:text-red-500 transition-colors"
+                        >
+                          ✕ Clear {extraFieldFilters.length} filter{extraFieldFilters.length > 1 ? "s" : ""}
+                        </button>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
 
