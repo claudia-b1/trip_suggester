@@ -146,7 +146,20 @@ const ENTERTAINMENT_FIELDS: ExtraFieldDef[] = [
 
 export type ExtraFieldFilter = {
   key: string;
-  value: unknown; // true for booleans, specific value for selects/proximity, min for stars
+  value: unknown; // true for booleans, specific value for selects, min rank for proximity/stars
+  type?: "proximity" | "stars" | "boolean" | "select"; // field type for smart matching
+};
+
+/**
+ * Proximity rank: higher = closer = better.
+ * When filtering for "< 500 m", items with "< 200 m" or "Direct" also match.
+ */
+const PROXIMITY_RANK: Record<string, number> = {
+  "-": 0,
+  "2km": 1,
+  "500m": 2,
+  "200m": 3,
+  "direct": 4,
 };
 
 /**
@@ -164,8 +177,16 @@ export function matchesExtraFieldFilters(
     // For stars: filter means "at least this value"
     if (typeof f.value === "number" && typeof val === "number") {
       if (val < f.value) return false;
+      continue;
     }
-    // For specific value match (select, proximity)
+    // For proximity: filter means "at least as close" (rank-based)
+    if (f.type === "proximity" && typeof f.value === "string" && typeof val === "string") {
+      const filterRank = PROXIMITY_RANK[f.value] ?? 0;
+      const itemRank = PROXIMITY_RANK[val] ?? 0;
+      if (itemRank < filterRank) return false;
+      continue;
+    }
+    // For specific value match (select)
     if (typeof f.value === "string" && val !== f.value) return false;
   }
   return true;
