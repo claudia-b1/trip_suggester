@@ -1,33 +1,29 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
+import { TripGrid } from "@/components/trip-grid";
 
 export const dynamic = "force-dynamic";
 
-function formatDate(d: Date) {
-  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
-
-function durationLabel(start: Date, end: Date) {
-  const days = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-  if (days >= 14) return `${Math.round(days / 7)} weeks`;
-  return `${days} day${days === 1 ? "" : "s"}`;
-}
-
-const TRIP_GRADIENTS = [
-  "from-blue-500/20 to-violet-500/20",
-  "from-emerald-500/20 to-teal-500/20",
-  "from-orange-500/20 to-rose-500/20",
-  "from-indigo-500/20 to-cyan-500/20",
-  "from-pink-500/20 to-amber-500/20",
-  "from-sky-500/20 to-purple-500/20",
-];
-
 export default async function HomePage() {
-  const trips = await prisma.trip.findMany({
-    orderBy: { startDate: "asc" },
-    include: { cities: { select: { id: true } } },
-  });
+  const [trips, archivedCount] = await Promise.all([
+    prisma.trip.findMany({
+      orderBy: { startDate: "asc" },
+      include: { cities: { select: { id: true } } },
+    }),
+    prisma.trip.count({ where: { archived: true } }),
+  ]);
+
+  const serializedTrips = trips.map((t) => ({
+    id: t.id,
+    name: t.name,
+    startDate: t.startDate.toISOString(),
+    endDate: t.endDate.toISOString(),
+    createdAt: t.createdAt.toISOString(),
+    archived: t.archived,
+    coverImage: t.coverImage,
+    cityCount: t.cities.length,
+  }));
 
   return (
     <div className="space-y-8">
@@ -73,44 +69,7 @@ export default async function HomePage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {trips.map((trip, idx) => {
-              const grad = TRIP_GRADIENTS[idx % TRIP_GRADIENTS.length];
-              const cityCount = trip.cities.length;
-              const duration = durationLabel(trip.startDate, trip.endDate);
-              return (
-                <Link
-                  key={trip.id}
-                  href={`/trips/${trip.id}`}
-                  className="group relative overflow-hidden rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5"
-                >
-                  {/* Gradient header */}
-                  <div className={`h-24 bg-gradient-to-br ${grad} flex items-end p-4`}>
-                    <span className="text-3xl opacity-60 group-hover:opacity-100 transition-opacity">
-                      {cityCount > 3 ? "🌎" : cityCount > 1 ? "✈️" : "📍"}
-                    </span>
-                  </div>
-
-                  <div className="p-4 space-y-2">
-                    <h3 className="text-lg font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors">
-                      {trip.name}
-                    </h3>
-                    <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                      {formatDate(trip.startDate)} – {formatDate(trip.endDate)}
-                    </p>
-                    <div className="flex items-center gap-3">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--primary))]/10 px-2.5 py-0.5 text-xs font-medium text-[hsl(var(--primary))]">
-                        📅 {duration}
-                      </span>
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--muted))] px-2.5 py-0.5 text-xs font-medium text-[hsl(var(--muted-foreground))]">
-                        🏙️ {cityCount} {cityCount === 1 ? "city" : "cities"}
-                      </span>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+          <TripGrid trips={serializedTrips} archivedCount={archivedCount} />
         )}
       </div>
     </div>

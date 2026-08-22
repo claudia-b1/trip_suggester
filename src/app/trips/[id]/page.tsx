@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DeleteTripButton } from "./delete-button";
 import { EditTripButton } from "./edit-trip-button";
+import { ArchiveTripButton } from "./archive-trip-button";
+import { CoverImageUpload } from "./cover-image-upload";
 import { CitiesSection } from "./cities-section";
 import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
@@ -55,13 +57,26 @@ export default async function TripDetailPage({
         ]}
       />
 
-      {/* Trip header with gradient */}
+      {/* Trip header with cover image or gradient */}
       <div className="relative overflow-hidden rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))]">
-        <div className="h-3 bg-gradient-to-r from-blue-500 via-violet-500 to-indigo-500" />
+        {trip.coverImage ? (
+          <div className="h-40 w-full overflow-hidden">
+            <img src={trip.coverImage} alt={trip.name} className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <div className="h-3 bg-gradient-to-r from-blue-500 via-violet-500 to-indigo-500" />
+        )}
         <div className="p-6 space-y-4">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gradient">{trip.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-gradient">{trip.name}</h1>
+                {trip.archived && (
+                  <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                    📦 Archived
+                  </span>
+                )}
+              </div>
               <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
                 {formatDate(trip.startDate)} – {formatDate(trip.endDate)}
                 <span className="mx-2">·</span>
@@ -69,8 +84,12 @@ export default async function TripDetailPage({
                 <span className="mx-2">·</span>
                 {trip.cities.length} {trip.cities.length === 1 ? "city" : "cities"}
               </p>
+              <div className="mt-2">
+                <CoverImageUpload tripId={trip.id} currentImage={trip.coverImage} />
+              </div>
             </div>
             <div className="flex gap-2">
+              <ArchiveTripButton id={trip.id} archived={trip.archived} />
               <EditTripButton
                 trip={{
                   id: trip.id,

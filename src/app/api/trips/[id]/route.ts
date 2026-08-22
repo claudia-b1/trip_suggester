@@ -25,6 +25,9 @@ export async function PATCH(
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if (body.startDate) data.startDate = new Date(body.startDate);
   if (body.endDate) data.endDate = new Date(body.endDate);
+  if (typeof body.archived === "boolean") data.archived = body.archived;
+  if (typeof body.coverImage === "string") data.coverImage = body.coverImage;
+  if (body.coverImage === null) data.coverImage = null;
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }

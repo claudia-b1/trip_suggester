@@ -8,14 +8,16 @@ datasource db {
 }
 
 model Trip {
-  id        Int        @id @default(autoincrement())
-  name      String
-  startDate DateTime
-  endDate   DateTime
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  cities    City[]
-  notes     TripNote[]
+  id         Int        @id @default(autoincrement())
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  archived   Boolean    @default(false)
+  coverImage String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  cities     City[]
+  notes      TripNote[]
 }
 
 model City {
