@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Inter } from "next/font/google";
 import { Button } from "@/components/ui/button";
 import { ToastProvider } from "@/components/ui/toast";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
@@ -10,6 +11,12 @@ import { FavouritesPanel } from "@/components/favourites/favourites-panel";
 import { AddToFavouritesModal } from "@/components/favourites/add-to-favourites-modal";
 import { HeaderActions } from "@/components/favourites/header-actions";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: { default: "Trip Planner", template: "%s · Trip Planner" },
@@ -24,12 +31,9 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark")}catch(e){}})()` }} />
       </head>
-      <body className="min-h-screen flex flex-col font-sans">
+      <body className={`min-h-screen flex flex-col ${inter.className}`}>
         <ToastProvider>
           <ConfirmProvider>
             <FavouritesProvider>
