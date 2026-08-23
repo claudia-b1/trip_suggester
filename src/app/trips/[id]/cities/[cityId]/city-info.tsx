@@ -33,15 +33,9 @@ function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
 function GeneratedInfoPanel({
   generated,
   thumbnailUrl,
-  onRegenerate,
-  regenerating,
-  genError,
 }: {
   generated: GeneratedCityInfo;
   thumbnailUrl?: string;
-  onRegenerate: () => void;
-  regenerating: boolean;
-  genError: string | null;
 }) {
   const [selectedName, setSelectedName] = useState(
     () => generated.categories[0]?.name ?? "",
@@ -129,22 +123,10 @@ function GeneratedInfoPanel({
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between flex-wrap gap-2 px-4 py-2.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--muted))]/20 mt-auto">
+        <div className="px-4 py-2.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--muted))]/20 mt-auto">
           <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
-            Generated {ageLabel} · Z-AI GLM-4.5 Air
+            Generated {ageLabel}
           </span>
-          <div className="flex items-center gap-2">
-            {genError && <span className="text-xs text-red-600">{genError}</span>}
-            <button
-              type="button"
-              onClick={onRegenerate}
-              disabled={regenerating}
-              className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors disabled:opacity-40"
-            >
-              {regenerating && <span className="spinner" />}
-              ↺ Regenerate
-            </button>
-          </div>
         </div>
       </div>
     </div>
@@ -228,9 +210,6 @@ export function CityInfoSection({
             <GeneratedInfoPanel
               generated={generated}
               thumbnailUrl={info?.thumbnailUrl}
-              onRegenerate={generate}
-              regenerating={generating}
-              genError={genError}
             />
           ) : (
             /* Not yet generated */

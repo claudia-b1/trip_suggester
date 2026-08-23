@@ -7,6 +7,7 @@ import { EditTripButton } from "./edit-trip-button";
 import { ArchiveTripButton } from "./archive-trip-button";
 import { CoverImageUpload } from "./cover-image-upload";
 import { CitiesSection } from "./cities-section";
+import { TripTimeline } from "./trip-timeline";
 import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
 export const dynamic = "force-dynamic";
@@ -102,38 +103,20 @@ export default async function TripDetailPage({
             </div>
           </div>
 
-          {/* City date range visualization */}
-          {trip.cities.length > 0 && (() => {
-            const tripStart = trip.startDate.getTime();
-            const tripEnd = trip.endDate.getTime();
-            const tripDuration = tripEnd - tripStart || 1;
-            return (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Timeline</p>
-                <div className="relative h-6 rounded-full bg-[hsl(var(--muted))] overflow-hidden">
-                  {trip.cities.map((city, i) => {
-                    const cityStart = city.startDate.getTime();
-                    const cityEnd = city.endDate.getTime();
-                    const left = ((cityStart - tripStart) / tripDuration) * 100;
-                    const width = Math.max(((cityEnd - cityStart) / tripDuration) * 100, 2);
-                    const colors = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-500"];
-                    return (
-                      <div
-                        key={city.id}
-                        className={`absolute top-0 h-full ${colors[i % colors.length]} rounded-full opacity-80`}
-                        style={{ left: `${left}%`, width: `${width}%` }}
-                        title={`${city.name}: ${formatDate(city.startDate)} – ${formatDate(city.endDate)}`}
-                      />
-                    );
-                  })}
-                </div>
-                <div className="flex justify-between text-[10px] text-[hsl(var(--muted-foreground))]">
-                  <span>{formatDate(trip.startDate)}</span>
-                  <span>{formatDate(trip.endDate)}</span>
-                </div>
-              </div>
-            );
-          })()}
+          {/* Gantt-style city timeline */}
+          {trip.cities.length > 0 && (
+            <TripTimeline
+              cities={trip.cities.map((c) => ({
+                id: c.id,
+                name: c.name,
+                startDate: c.startDate.toISOString(),
+                endDate: c.endDate.toISOString(),
+                order: c.order,
+              }))}
+              tripStartDate={trip.startDate.toISOString()}
+              tripEndDate={trip.endDate.toISOString()}
+            />
+          )}
         </div>
       </div>
 

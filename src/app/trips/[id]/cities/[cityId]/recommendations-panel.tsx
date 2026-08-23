@@ -92,6 +92,7 @@ export function RecommendationsPanel({
 
   const [preferences, setPreferences] = useState<Set<PreferenceId>>(new Set());
   const [generating, setGenerating] = useState(false);
+  const [discoverOpen, setDiscoverOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [progressStep, setProgressStep] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -214,17 +215,35 @@ export function RecommendationsPanel({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle>🧭 Discover</CardTitle>
-          <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]">
+        <button
+          type="button"
+          onClick={() => setDiscoverOpen((v) => !v)}
+          className="flex w-full items-center justify-between"
+        >
+          <CardTitle className="flex items-center gap-2">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className={`h-4 w-4 text-[hsl(var(--muted-foreground))] transition-transform ${discoverOpen ? "rotate-90" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            🧭 Discover
+          </CardTitle>
+          <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]" onClick={(e) => e.stopPropagation()}>
             ⓘ
             <span className="pointer-events-none absolute right-0 top-6 z-20 w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
               Pulls from <strong>Geoapify Places</strong> (discovery) with enrichment via <strong>Wikidata</strong> &amp; <strong>Google Places</strong>. A rule-based engine ranks results by proximity, notability and category match.
             </span>
           </span>
-        </div>
+        </button>
       </CardHeader>
-      <CardContent className="space-y-4">
+      {discoverOpen && <CardContent className="space-y-4">
         {/* Categories — compact pill row */}
         <div className="space-y-1.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
@@ -538,7 +557,7 @@ export function RecommendationsPanel({
             ))}
           </ul>
         )}
-      </CardContent>
+      </CardContent>}
     </Card>
   );
 }

@@ -12,8 +12,10 @@ import { EditCityButton } from "./edit-city-button";
 import { CityHeader } from "./city-header";
 import { CityInfoSection, type CityWikiInfo } from "./city-info";
 import type { GeneratedCityInfo } from "@/lib/city-info";
+import type { ActivityRecommendationsResult } from "@/lib/activity-recommendations";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 import { TripNoteEditor } from "@/components/ui/trip-note-editor";
+import { ActivityRecommendations } from "./activity-recommendations";
 
 async function fetchCityWikiInfo(cityName: string, countryName?: string | null): Promise<CityWikiInfo | null> {
   const query = countryName ? `${cityName}, ${countryName}` : cityName;
@@ -98,10 +100,18 @@ export default async function CityDetailPage({
 
   // Load AI-generated city info from DB cache (if available)
   const cityInfoCacheRow = await prisma.cityInfoCache.findUnique({
-    where: { cityId: city.id },
+    where: { cityId_type: { cityId: city.id, type: "city-info" } },
   });
   const cachedCityInfo: GeneratedCityInfo | null = cityInfoCacheRow
     ? (JSON.parse(cityInfoCacheRow.data) as GeneratedCityInfo)
+    : null;
+
+  // Load cached activity recommendations
+  const activityCacheRow = await prisma.cityInfoCache.findUnique({
+    where: { cityId_type: { cityId: city.id, type: "activities" } },
+  });
+  const cachedActivities: ActivityRecommendationsResult | null = activityCacheRow
+    ? (JSON.parse(activityCacheRow.data) as ActivityRecommendationsResult)
     : null;
 
   await ensureDayPlans(city.id, city.startDate, city.endDate);
@@ -301,6 +311,17 @@ export default async function CityDetailPage({
         initialNotInterested={initialNotInterested}
         initialVisitedPoiIds={initialVisitedPoiIds}
         dayNotes={dayNotes}
+      />
+
+      <ActivityRecommendations
+        cityId={city.id}
+        cityName={city.name}
+        country={city.country ?? undefined}
+        tripId={tripId}
+        tripStartDate={city.endDate.toISOString()}
+        tripEndDate={city.trip.endDate.toISOString()}
+        initialData={cachedActivities}
+        pois={pois.map((p) => ({ id: p.id, name: p.name }))}
       />
     </div>
   );

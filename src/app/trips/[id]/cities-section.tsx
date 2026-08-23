@@ -133,6 +133,15 @@ export function CitiesSection({
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [cityMeta, setCityMeta] = useState<CityDetails | null>(null);
+  // Generation options for new city
+  const [genAbout, setGenAbout] = useState(true);
+  const [genRecommendations, setGenRecommendations] = useState(true);
+  const [genMustDo, setGenMustDo] = useState(true);
+  const [genNearbyCities, setGenNearbyCities] = useState(true);
+  const [genNearbyActivities, setGenNearbyActivities] = useState(true);
+  const [maxCitiesKm, setMaxCitiesKm] = useState(150);
+  const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
+  const [generating, setGenerating] = useState<string | null>(null); // null | "about" | "recommendations" | "done"
 
   function openAddForm() {
     // Set default dates based on trip dates when opening the form
@@ -195,13 +204,50 @@ export function CitiesSection({
       setSubmitting(false);
       return;
     }
+    const newCity = await res.json();
+    const newCityId = newCity.id;
+    setSubmitting(false);
+
+    // Run background generation tasks
+    const shouldGenAbout = genAbout;
+    const shouldGenRecs = genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities);
+
+    if (shouldGenAbout || shouldGenRecs) {
+      // Show generating state and keep form open
+      if (shouldGenAbout) {
+        setGenerating("about");
+        try {
+          await fetch(`/api/cities/${newCityId}/city-info`, { method: "POST" });
+        } catch { /* ignore - non-critical */ }
+      }
+
+      if (shouldGenRecs) {
+        setGenerating("recommendations");
+        try {
+          await fetch(`/api/cities/${newCityId}/activities`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              includeMustDo: genMustDo,
+              includeNearbyCities: genNearbyCities,
+              includeNearbyActivities: genNearbyActivities,
+              maxNearbyCitiesKm: maxCitiesKm,
+              maxNearbyActivitiesKm: maxActivitiesKm,
+            }),
+          });
+        } catch { /* ignore - non-critical */ }
+      }
+
+      setGenerating(null);
+    }
+
     setName("");
     setStartDate("");
     setEndDate("");
     setCityMeta(null);
-    setSubmitting(false);
     setAddOpen(false);
     router.refresh();
+    toast(`Added ${newCity.name} to your trip`);
   }
 
   async function onDelete(city: City) {
@@ -394,11 +440,76 @@ export function CitiesSection({
           {dateError && (
             <p className="text-sm text-red-600">{dateError}</p>
           )}
+
+          {/* Generation options */}
+          <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+              Generate on creation
+            </p>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={genAbout} onChange={(e) => setGenAbout(e.target.checked)} className="rounded" />
+              About city (AI-generated insights)
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={genRecommendations} onChange={(e) => setGenRecommendations(e.target.checked)} className="rounded" />
+              General recommendations
+            </label>
+            {genRecommendations && (
+              <div className="ml-6 space-y-1.5">
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-[hsl(var(--muted-foreground))]">
+                  <input type="checkbox" checked={genMustDo} onChange={(e) => setGenMustDo(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  Must-do activities
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-[hsl(var(--muted-foreground))]">
+                  <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  Nearby cities
+                  {genNearbyCities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxCitiesKm}
+                        onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={10}
+                        max={500}
+                      />
+                      <span className="text-[10px]">km max</span>
+                    </span>
+                  )}
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-[hsl(var(--muted-foreground))]">
+                  <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  Recommended activities nearby
+                  {genNearbyActivities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxActivitiesKm}
+                        onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={5}
+                        max={200}
+                      />
+                      <span className="text-[10px]">km max</span>
+                    </span>
+                  )}
+                </label>
+              </div>
+            )}
+          </div>
+
+          {generating && (
+            <div className="flex items-center gap-2 text-sm text-[hsl(var(--primary))] animate-pulse">
+              <span className="spinner" />
+              {generating === "about" ? "Generating city info…" : "Generating recommendations…"}
+            </div>
+          )}
+
           <div className="flex gap-2">
-            <Button type="submit" disabled={submitting || !!dateError}>
-              {submitting ? "Adding…" : "Add city"}
+            <Button type="submit" disabled={submitting || !!generating || !!dateError}>
+              {submitting ? "Adding…" : generating ? "Generating…" : "Add city"}
             </Button>
-            <Button type="button" variant="outline" onClick={closeAddForm} disabled={submitting}>
+            <Button type="button" variant="outline" onClick={closeAddForm} disabled={submitting || !!generating}>
               Cancel
             </Button>
           </div>

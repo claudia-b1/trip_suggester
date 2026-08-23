@@ -403,11 +403,11 @@ export async function POST(
     generatedAt: new Date().toISOString(),
   };
 
-  // Persist to DB (upsert — one row per city)
+  // Persist to DB (upsert — one row per city + type)
   await prisma.cityInfoCache.upsert({
-    where:  { cityId: cityIdNum },
+    where:  { cityId_type: { cityId: cityIdNum, type: "city-info" } },
     update: { data: JSON.stringify(result), generatedAt: new Date() },
-    create: { cityId: cityIdNum, data: JSON.stringify(result), generatedAt: new Date() },
+    create: { cityId: cityIdNum, type: "city-info", data: JSON.stringify(result), generatedAt: new Date() },
   });
 
   return NextResponse.json(result);
