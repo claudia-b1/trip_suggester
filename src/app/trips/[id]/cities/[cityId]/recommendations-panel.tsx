@@ -41,7 +41,8 @@ const PREFERENCES = [
   { id: "romantic", label: "💑 Romantic" },
   { id: "wheelchair_accessible", label: "♿ Accessible" },
   { id: "local_favourite", label: "🏠 Local favourite" },
-  { id: "nearby_trips", label: "🚗 Nearby day trips" },
+  // Nearby day trips moved to AI Recommendations section
+  // { id: "nearby_trips", label: "🚗 Nearby day trips" },
 ] as const;
 
 type PreferenceId = (typeof PREFERENCES)[number]["id"];
@@ -181,8 +182,8 @@ export function RecommendationsPanel({
         ),
         subcategories: subcategoriesPayload,
         cuisineFilter: cuisineFilter.trim() || undefined,
-        preferences: Array.from(preferences).filter((p) => p !== "nearby_trips"),
-        nearbyTrips: preferences.has("nearby_trips"),
+        preferences: Array.from(preferences),
+        nearbyTrips: false,
         overwrite,
         radiusKm,
         nearbyEnabled,
@@ -433,7 +434,7 @@ export function RecommendationsPanel({
           )}
         </div>
 
-        {/* Include nearby attractions */}
+        {/* Include nearby attractions — moved to AI Recommendations section
         <div className="space-y-2">
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <input
@@ -475,6 +476,7 @@ export function RecommendationsPanel({
             </div>
           )}
         </div>
+        */}
 
         {/* Action row — centered 1/3 width button */}
         <div className="flex flex-col items-center gap-2">

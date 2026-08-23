@@ -89,7 +89,7 @@ export function buildActivityPrompt(
   const outputFields: string[] = [];
 
   if (includeMustDo) {
-    sections.push(`## SECTION 1: Must-do activities (5-10 items)
+    sections.push(`## SECTION 1: Must-do activities (8-15 items)
 
 Focus on:
 - Activities and experiences, NOT specific venues or restaurants
@@ -107,7 +107,7 @@ If the recommendation is tied to a specific named landmark or place, include its
   }
 
   if (includeNearbyCities) {
-    sections.push(`## SECTION ${includeMustDo ? "2" : "1"}: Nearby cities worth visiting (3-5 items)
+    sections.push(`## SECTION ${includeMustDo ? "2" : "1"}: Nearby cities worth visiting (5-8 items)
 
 Suggest nearby towns or cities that are worth a day trip or side visit from ${cityName}.
 - Only include cities within approximately ${maxCitiesKm} km of ${cityName}
@@ -120,7 +120,7 @@ Suggest nearby towns or cities that are worth a day trip or side visit from ${ci
 
   if (includeNearbyActivities) {
     const sectionNum = [includeMustDo, includeNearbyCities].filter(Boolean).length + 1;
-    sections.push(`## SECTION ${sectionNum}: Recommended activities nearby (3-6 items)
+    sections.push(`## SECTION ${sectionNum}: Recommended activities nearby (5-10 items)
 
 Suggest specific activities, attractions, or experiences in the area SURROUNDING ${cityName} (within approximately ${maxActivitiesKm} km) but NOT in ${cityName} itself.
 - Focus on day-trip worthy activities: scenic drives, natural wonders, historic sites, unique experiences
@@ -215,7 +215,7 @@ export function parseActivityResponse(raw: string): {
             (item: unknown): item is Record<string, unknown> =>
               typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).name === "string",
           )
-          .slice(0, 5)
+          .slice(0, 8)
           .map((item: Record<string, unknown>) => ({
             name: String(item.name),
             description: String(item.description ?? ""),
@@ -234,7 +234,7 @@ export function parseActivityResponse(raw: string): {
               typeof (item as Record<string, unknown>).title === "string" &&
               !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
           )
-          .slice(0, 6)
+          .slice(0, 10)
           .map((item: Record<string, unknown>) => ({
             title: String(item.title),
             description: String(item.description ?? ""),
@@ -264,7 +264,7 @@ function parseRecommendationArray(arr: unknown[]): ActivityRecommendation[] {
         typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).title === "string" &&
         !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
     )
-    .slice(0, 10)
+    .slice(0, 15)
     .map((item) => ({
       title: String(item.title),
       description: String(item.description ?? ""),

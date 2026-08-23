@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -68,12 +68,70 @@ export function CitiesSection({
   tripEndDate: string;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const confirm = useConfirm();
+  const prefillHandled = useRef(false);
+  const addFormRef = useRef<HTMLFormElement>(null);
 
   // Local sorted list — enables optimistic reorder
   const [localCities, setLocalCities] = useState<City[]>(() => sortCities(cities));
   useEffect(() => { setLocalCities(sortCities(cities)); }, [cities]);
+
+  // Pre-fill the add city form from query params (e.g. from recommendations nearby city)
+  useEffect(() => {
+    if (prefillHandled.current) return;
+    const addCity = searchParams.get("addCity");
+    if (addCity !== "1") return;
+    prefillHandled.current = true;
+
+    const cityName = searchParams.get("cityName") ?? "";
+    const cityCountry = searchParams.get("cityCountry") ?? "";
+    const cityLat = searchParams.get("cityLat");
+    const cityLng = searchParams.get("cityLng");
+
+    if (cityName) {
+      setName(cityName);
+      if (cityCountry || cityLat || cityLng) {
+        setCityMeta({
+          name: cityName,
+          country: cityCountry || "",
+          countryCode: "",
+          latitude: cityLat ? parseFloat(cityLat) : 0,
+          longitude: cityLng ? parseFloat(cityLng) : 0,
+          timezone: "",
+        });
+      }
+    }
+
+    // Set default dates
+    const tripStart = new Date(tripStartDate);
+    const tripEnd = new Date(tripEndDate);
+    const today = new Date();
+    const defaultStart = tripStart > today ? tripStart : today;
+    const clampedStart = defaultStart < tripStart ? tripStart : defaultStart > tripEnd ? tripEnd : defaultStart;
+    const defaultEnd = new Date(clampedStart);
+    defaultEnd.setDate(defaultEnd.getDate() + 2);
+    const clampedEnd = defaultEnd > tripEnd ? tripEnd : defaultEnd;
+    setStartDate(clampedStart.toISOString().slice(0, 10));
+    setEndDate(clampedEnd.toISOString().slice(0, 10));
+    setDateError(null);
+    setAddOpen(true);
+
+    // Scroll to the form after it renders
+    requestAnimationFrame(() => {
+      addFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    // Clean the URL by removing query params (replace without re-rendering)
+    const url = new URL(window.location.href);
+    url.searchParams.delete("addCity");
+    url.searchParams.delete("cityName");
+    url.searchParams.delete("cityCountry");
+    url.searchParams.delete("cityLat");
+    url.searchParams.delete("cityLng");
+    window.history.replaceState({}, "", url.pathname + url.search);
+  }, [searchParams, tripStartDate, tripEndDate]);
 
   // Map cities (only those with coords), numbered in display order
   const mapCities = useMemo<TripCity[]>(() =>
@@ -377,6 +435,7 @@ export function CitiesSection({
             </Button>
           ) : (
             <form
+              ref={addFormRef}
               onSubmit={onAdd}
               className="space-y-4"
               noValidate
@@ -396,7 +455,7 @@ export function CitiesSection({
             />
             {cityMeta && (
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                {cityMeta.country} · {cityMeta.timezone}
+                {[cityMeta.country, cityMeta.timezone].filter(Boolean).join(" · ")}
               </p>
             )}
           </div>
