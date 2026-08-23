@@ -966,6 +966,21 @@ export function PoisSection({
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [view, focusPoiId]);
 
+  // Listen for "focus-poi-on-map" events from ActivityRecommendations
+  useEffect(() => {
+    function handleFocusPoi(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.poiId) {
+        setView("map");
+        setFocusPoiId(detail.poiId);
+        // Scroll the POIs section into view
+        document.getElementById("pois-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+    window.addEventListener("focus-poi-on-map", handleFocusPoi);
+    return () => window.removeEventListener("focus-poi-on-map", handleFocusPoi);
+  }, []);
+
   // Live day plans — single source of truth, shared with DailyPlan and TimelineSidebar
   const [liveDayPlans, setLiveDayPlans] = useState(dayPlans);
   useEffect(() => { setLiveDayPlans(dayPlans); }, [dayPlans]);

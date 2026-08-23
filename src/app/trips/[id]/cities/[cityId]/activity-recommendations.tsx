@@ -41,6 +41,13 @@ export function ActivityRecommendations({
   const [addingPoiFor, setAddingPoiFor] = useState<string | null>(null);
   const [addingCityFor, setAddingCityFor] = useState<string | null>(null);
 
+  // Generation options (shown when no data yet)
+  const [genMustDo, setGenMustDo] = useState(true);
+  const [genNearbyCities, setGenNearbyCities] = useState(true);
+  const [genNearbyActivities, setGenNearbyActivities] = useState(true);
+  const [maxCitiesKm, setMaxCitiesKm] = useState(150);
+  const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
+
   // Sync with server-provided initial data
   useEffect(() => {
     if (initialData) setData(initialData);
@@ -53,7 +60,13 @@ export function ActivityRecommendations({
       const res = await fetch(`/api/cities/${cityId}/activities`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          includeMustDo: genMustDo,
+          includeNearbyCities: genNearbyCities,
+          includeNearbyActivities: genNearbyActivities,
+          maxNearbyCitiesKm: maxCitiesKm,
+          maxNearbyActivitiesKm: maxActivitiesKm,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -78,24 +91,30 @@ export function ActivityRecommendations({
     return pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase())) ?? null;
   }
 
-  async function addPoiFromRecommendation(rec: ActivityRecommendation) {
-    if (!rec.linkedPlace) return;
-    const key = rec.linkedPlace;
+  /** Create POI, then dispatch event so PoisSection switches to map view and focuses it */
+  async function addPoiAndShowOnMap(poiData: {
+    name: string;
+    category: string;
+    description: string;
+    latitude: number | null;
+    longitude: number | null;
+  }) {
+    const key = poiData.name;
     setAddingPoiFor(key);
     try {
       const res = await fetch(`/api/cities/${cityId}/pois`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: rec.linkedPlace,
-          category: rec.category ?? "CULTURE",
-          description: rec.description,
-          latitude: rec.latitude ?? null,
-          longitude: rec.longitude ?? null,
-        }),
+        body: JSON.stringify(poiData),
       });
       if (!res.ok) throw new Error("Failed to add POI");
-      toast(`Added "${rec.linkedPlace}" to your POIs`);
+      const newPoi = await res.json();
+      toast(`Added "${poiData.name}" — showing on map`);
+
+      // Tell PoisSection to switch to map view and focus the new POI
+      window.dispatchEvent(
+        new CustomEvent("focus-poi-on-map", { detail: { poiId: newPoi.id } }),
+      );
       router.refresh();
     } catch {
       toast("Failed to add POI", { variant: "error" });
@@ -104,29 +123,25 @@ export function ActivityRecommendations({
     }
   }
 
-  async function addNearbyActivityAsPoi(act: NearbyActivityRecommendation) {
-    const key = act.title;
-    setAddingPoiFor(key);
-    try {
-      const res = await fetch(`/api/cities/${cityId}/pois`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: act.title,
-          category: act.category ?? "NATURE",
-          description: `${act.description}${act.location ? ` (${act.location})` : ""}`,
-          latitude: act.latitude ?? null,
-          longitude: act.longitude ?? null,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to add POI");
-      toast(`Added "${act.title}" to your POIs`);
-      router.refresh();
-    } catch {
-      toast("Failed to add POI", { variant: "error" });
-    } finally {
-      setAddingPoiFor(null);
-    }
+  function addPoiFromRecommendation(rec: ActivityRecommendation) {
+    if (!rec.linkedPlace) return;
+    addPoiAndShowOnMap({
+      name: rec.linkedPlace,
+      category: rec.category ?? "CULTURE",
+      description: rec.description,
+      latitude: rec.latitude ?? null,
+      longitude: rec.longitude ?? null,
+    });
+  }
+
+  function addNearbyActivityAsPoi(act: NearbyActivityRecommendation) {
+    addPoiAndShowOnMap({
+      name: act.title,
+      category: act.category ?? "NATURE",
+      description: `${act.description}${act.location ? ` (${act.location})` : ""}`,
+      latitude: act.latitude ?? null,
+      longitude: act.longitude ?? null,
+    });
   }
 
   async function addCityToTrip(city: NearbyCityRecommendation) {
@@ -201,18 +216,63 @@ export function ActivityRecommendations({
       {open && (
         <CardContent className="space-y-5">
           {!hasContent && !loading && (
-            <div className="text-center py-4 space-y-3">
-              <p className="text-sm text-[hsl(var(--muted-foreground))]">
+            <div className="py-4 space-y-4">
+              <p className="text-sm text-[hsl(var(--muted-foreground))] text-center">
                 Get AI-generated activity recommendations and must-do experiences for {cityName}.
               </p>
-              <Button
-                type="button"
-                onClick={generate}
-                disabled={loading}
-                className="min-w-[200px]"
-              >
-                {"✨"} Generate recommendations
-              </Button>
+
+              {/* Generation options */}
+              <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30 max-w-md mx-auto">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genMustDo} onChange={(e) => setGenMustDo(e.target.checked)} className="rounded" />
+                  Must-do activities
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded" />
+                  Nearby cities
+                  {genNearbyCities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxCitiesKm}
+                        onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={10}
+                        max={500}
+                      />
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                    </span>
+                  )}
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded" />
+                  Recommended activities nearby
+                  {genNearbyActivities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxActivitiesKm}
+                        onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={5}
+                        max={200}
+                      />
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                    </span>
+                  )}
+                </label>
+              </div>
+
+              <div className="text-center">
+                <Button
+                  type="button"
+                  onClick={generate}
+                  disabled={loading || (!genMustDo && !genNearbyCities && !genNearbyActivities)}
+                  className="min-w-[200px]"
+                >
+                  {"✨"} Generate recommendations
+                </Button>
+              </div>
             </div>
           )}
 
