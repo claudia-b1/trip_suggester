@@ -36,7 +36,7 @@ model City {
   pois          Poi[]
   dayPlans      DayPlan[]
   candidates    PoiCandidate[]
-  cityInfoCache CityInfoCache?
+  cityInfoCache CityInfoCache[]
   notes         TripNote[]
   createdAt     DateTime        @default(now())
 }
@@ -136,10 +136,13 @@ model PoiEnrichCache {
 // AI-generated city information cache (one row per city, upserted on regenerate).
 model CityInfoCache {
   id          Int      @id @default(autoincrement())
-  cityId      Int      @unique
+  cityId      Int
+  type        String   @default("city-info") // "city-info" | "activities"
   city        City     @relation(fields: [cityId], references: [id], onDelete: Cascade)
-  data        String   // JSON: GeneratedCityInfo (categories + generatedAt)
+  data        String   // JSON: GeneratedCityInfo or ActivityRecommendationsResult
   generatedAt DateTime @default(now())
+
+  @@unique([cityId, type], name: "cityId_type")
 }
 
 model PoiCache {
