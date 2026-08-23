@@ -5,6 +5,7 @@ import {
   buildActivityPrompt,
   parseActivityResponse,
   type ActivityRecommendationsResult,
+  type GenerateOptions,
 } from "@/lib/activity-recommendations";
 
 export async function GET(
@@ -26,11 +27,11 @@ export async function GET(
     return NextResponse.json(JSON.parse(cached.data));
   }
 
-  return NextResponse.json({ recommendations: [] });
+  return NextResponse.json({ recommendations: [], nearbyCities: [], nearbyActivities: [] });
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
   const { cityId } = await params;
@@ -52,7 +53,24 @@ export async function POST(
     return NextResponse.json({ error: "City not found" }, { status: 404 });
   }
 
-  const prompt = buildActivityPrompt(city.name, city.country ?? undefined);
+  // Parse optional generation options from request body
+  let options: GenerateOptions | undefined;
+  try {
+    const body = await req.json();
+    if (body && typeof body === "object") {
+      options = {
+        includeMustDo: body.includeMustDo,
+        includeNearbyCities: body.includeNearbyCities,
+        includeNearbyActivities: body.includeNearbyActivities,
+        maxNearbyCitiesKm: body.maxNearbyCitiesKm,
+        maxNearbyActivitiesKm: body.maxNearbyActivitiesKm,
+      };
+    }
+  } catch {
+    // No body or invalid JSON — use defaults
+  }
+
+  const prompt = buildActivityPrompt(city.name, city.country ?? undefined, options);
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -63,7 +81,7 @@ export async function POST(
     body: JSON.stringify({
       model: ACTIVITY_MODEL,
       messages: [
-        { role: "system", content: "You are a helpful travel advisor. Respond only with valid JSON." },
+        { role: "system", content: "You are a helpful travel advisor. Respond only with valid JSON. Do not include any explanation, reasoning, or markdown — just the raw JSON object." },
         { role: "user", content: prompt },
       ],
       max_tokens: 8000,
@@ -96,8 +114,9 @@ export async function POST(
     return NextResponse.json({ error: "Empty response from model" }, { status: 502 });
   }
 
-  const { recommendations, nearbyCities } = parseActivityResponse(text);
-  if (recommendations.length === 0) {
+  const { recommendations, nearbyCities, nearbyActivities } = parseActivityResponse(text);
+  // At least one section should have content
+  if (recommendations.length === 0 && nearbyCities.length === 0 && nearbyActivities.length === 0) {
     return NextResponse.json(
       { error: "Could not parse recommendations — try again" },
       { status: 502 },
@@ -107,6 +126,7 @@ export async function POST(
   const result: ActivityRecommendationsResult = {
     recommendations,
     nearbyCities,
+    nearbyActivities,
     generatedAt: new Date().toISOString(),
     model: ACTIVITY_MODEL,
   };

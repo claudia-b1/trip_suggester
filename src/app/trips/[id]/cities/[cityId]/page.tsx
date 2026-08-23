@@ -317,6 +317,9 @@ export default async function CityDetailPage({
         cityId={city.id}
         cityName={city.name}
         country={city.country ?? undefined}
+        tripId={tripId}
+        tripStartDate={city.endDate.toISOString()}
+        tripEndDate={city.trip.endDate.toISOString()}
         initialData={cachedActivities}
         pois={pois.map((p) => ({ id: p.id, name: p.name }))}
       />

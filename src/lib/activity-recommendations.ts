@@ -12,6 +12,12 @@ export type ActivityRecommendation = {
   description: string;
   /** Optional: a specific place name that could link to a POI */
   linkedPlace?: string;
+  /** Category hint for creating a POI (CULTURE, FOOD, NATURE, etc.) */
+  category?: string;
+  /** Approximate latitude if the model can provide it */
+  latitude?: number;
+  /** Approximate longitude if the model can provide it */
+  longitude?: number;
 };
 
 export type NearbyCityRecommendation = {
@@ -19,13 +25,44 @@ export type NearbyCityRecommendation = {
   description: string;
   /** Approximate distance from the main city */
   distance?: string;
+  /** Country of the nearby city */
+  country?: string;
+  /** Approximate latitude */
+  latitude?: number;
+  /** Approximate longitude */
+  longitude?: number;
+};
+
+export type NearbyActivityRecommendation = {
+  title: string;
+  description: string;
+  /** The nearby town/area where this activity is located */
+  location: string;
+  /** Approximate distance from main city */
+  distance?: string;
+  /** Category hint */
+  category?: string;
+  /** Approximate latitude */
+  latitude?: number;
+  /** Approximate longitude */
+  longitude?: number;
 };
 
 export type ActivityRecommendationsResult = {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
+  nearbyActivities: NearbyActivityRecommendation[];
   generatedAt: string;
   model: string;
+};
+
+/** Options controlling which sections to generate and distance limits */
+export type GenerateOptions = {
+  includeMustDo?: boolean;
+  includeNearbyCities?: boolean;
+  includeNearbyActivities?: boolean;
+  maxNearbyCitiesKm?: number;
+  maxNearbyActivitiesKm?: number;
 };
 
 // ── Model config ─────────────────────────────────────────────────────────────
@@ -36,14 +73,23 @@ export const ACTIVITY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 // ── Prompt builder ───────────────────────────────────────────────────────────
 // Edit this function to iterate on the prompt. The UI will not change.
 
-export function buildActivityPrompt(cityName: string, country?: string): string {
+export function buildActivityPrompt(
+  cityName: string,
+  country?: string,
+  options?: GenerateOptions,
+): string {
   const location = country ? `${cityName}, ${country}` : cityName;
+  const includeMustDo = options?.includeMustDo !== false;
+  const includeNearbyCities = options?.includeNearbyCities !== false;
+  const includeNearbyActivities = options?.includeNearbyActivities !== false;
+  const maxCitiesKm = options?.maxNearbyCitiesKm ?? 150;
+  const maxActivitiesKm = options?.maxNearbyActivitiesKm ?? 50;
 
-  return `You are a concise travel advisor. Generate recommendations for a visitor to ${location}.
+  const sections: string[] = [];
+  const outputFields: string[] = [];
 
-You MUST produce TWO sections:
-
-## SECTION 1: Must-do activities (5-10 items)
+  if (includeMustDo) {
+    sections.push(`## SECTION 1: Must-do activities (5-10 items)
 
 Focus on:
 - Activities and experiences, NOT specific venues or restaurants
@@ -53,9 +99,44 @@ Focus on:
 - Local customs, events, or traditions to participate in
 - Food or drink experiences specific to the region (types of cuisine, local specialties to seek out)
 
-## SECTION 2: Nearby cities worth visiting (3-5 items)
+For each recommendation, determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, WELLNESS, ACCOMMODATION.
 
-Suggest nearby towns or cities that are worth a day trip or side visit from ${cityName}. Include approximate distance.
+If the recommendation is tied to a specific named landmark or place, include its approximate GPS coordinates (latitude, longitude).`);
+
+    outputFields.push(`- "recommendations": array of objects with "title" (string), "description" (string), "linkedPlace" (string or null — only for specific named landmarks), "category" (string — one of CULTURE/FOOD/NATURE/ENTERTAINMENT/NIGHTLIFE/SHOPPING/WELLNESS/ACCOMMODATION), "latitude" (number or null), "longitude" (number or null)`);
+  }
+
+  if (includeNearbyCities) {
+    sections.push(`## SECTION ${includeMustDo ? "2" : "1"}: Nearby cities worth visiting (3-5 items)
+
+Suggest nearby towns or cities that are worth a day trip or side visit from ${cityName}.
+- Only include cities within approximately ${maxCitiesKm} km of ${cityName}
+- Include approximate distance in km
+- Include the country name
+- Include approximate GPS coordinates (latitude, longitude) for each city`);
+
+    outputFields.push(`- "nearbyCities": array of objects with "name" (string), "description" (string), "distance" (string like "~25 km"), "country" (string), "latitude" (number), "longitude" (number)`);
+  }
+
+  if (includeNearbyActivities) {
+    const sectionNum = [includeMustDo, includeNearbyCities].filter(Boolean).length + 1;
+    sections.push(`## SECTION ${sectionNum}: Recommended activities nearby (3-6 items)
+
+Suggest specific activities, attractions, or experiences in the area SURROUNDING ${cityName} (within approximately ${maxActivitiesKm} km) but NOT in ${cityName} itself.
+- Focus on day-trip worthy activities: scenic drives, natural wonders, historic sites, unique experiences
+- Include the town or area name where the activity is located
+- Include approximate distance from ${cityName}
+- Include approximate GPS coordinates (latitude, longitude)
+- Determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, WELLNESS`);
+
+    outputFields.push(`- "nearbyActivities": array of objects with "title" (string), "description" (string), "location" (string — the nearby town/area), "distance" (string like "~30 km"), "category" (string), "latitude" (number or null), "longitude" (number or null)`);
+  }
+
+  return `You are a concise travel advisor. Generate recommendations for a visitor to ${location}.
+
+You MUST produce the following sections:
+
+${sections.join("\n\n")}
 
 ## CRITICAL VERIFICATION RULES
 
@@ -77,12 +158,16 @@ If there is ANY doubt, REMOVE the recommendation. Do NOT guess.
 - Do NOT include opening hours, prices, or booking information
 - Prefer HIGH confidence facts only
 - For nearby cities: only include real, well-known places that are genuinely close to ${cityName}
+- GPS coordinates should be approximate but reasonable — do NOT use 0,0
 
 ## OUTPUT FORMAT
 
-Return a single JSON object with two arrays:
-- "recommendations": array of objects, each with "title" (string), "description" (string), "linkedPlace" (string or null)
-- "nearbyCities": array of objects, each with "name" (string), "description" (string), "distance" (string like "~25 km")
+Return a single JSON object with these arrays:
+${outputFields.join("\n")}
+
+${!includeMustDo ? '- "recommendations": [] (empty array, not requested)' : ""}
+${!includeNearbyCities ? '- "nearbyCities": [] (empty array, not requested)' : ""}
+${!includeNearbyActivities ? '- "nearbyActivities": [] (empty array, not requested)' : ""}
 
 Return ONLY valid JSON. No markdown code fences, no explanation text. Just the raw JSON object.`;
 }
@@ -92,6 +177,7 @@ Return ONLY valid JSON. No markdown code fences, no explanation text. Just the r
 export function parseActivityResponse(raw: string): {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
+  nearbyActivities: NearbyActivityRecommendation[];
 } {
   // Try to extract JSON object from response (model may wrap in markdown code block)
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
@@ -105,17 +191,18 @@ export function parseActivityResponse(raw: string): {
           return {
             recommendations: parseRecommendationArray(parsed),
             nearbyCities: [],
+            nearbyActivities: [],
           };
         }
       } catch { /* fall through */ }
     }
-    return { recommendations: [], nearbyCities: [] };
+    return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     if (typeof parsed !== "object" || parsed === null) {
-      return { recommendations: [], nearbyCities: [] };
+      return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
     }
 
     const recommendations = Array.isArray(parsed.recommendations)
@@ -133,12 +220,35 @@ export function parseActivityResponse(raw: string): {
             name: String(item.name),
             description: String(item.description ?? ""),
             distance: typeof item.distance === "string" ? item.distance : undefined,
+            country: typeof item.country === "string" ? item.country : undefined,
+            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
+            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
           }))
       : [];
 
-    return { recommendations, nearbyCities };
+    const nearbyActivities = Array.isArray(parsed.nearbyActivities)
+      ? parsed.nearbyActivities
+          .filter(
+            (item: unknown): item is Record<string, unknown> =>
+              typeof item === "object" && item !== null &&
+              typeof (item as Record<string, unknown>).title === "string" &&
+              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
+          )
+          .slice(0, 6)
+          .map((item: Record<string, unknown>) => ({
+            title: String(item.title),
+            description: String(item.description ?? ""),
+            location: String(item.location ?? ""),
+            distance: typeof item.distance === "string" ? item.distance : undefined,
+            category: typeof item.category === "string" ? item.category : undefined,
+            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
+            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+          }))
+      : [];
+
+    return { recommendations, nearbyCities, nearbyActivities };
   } catch {
-    return { recommendations: [], nearbyCities: [] };
+    return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
   }
 }
 
@@ -159,5 +269,8 @@ function parseRecommendationArray(arr: unknown[]): ActivityRecommendation[] {
       title: String(item.title),
       description: String(item.description ?? ""),
       linkedPlace: typeof item.linkedPlace === "string" && item.linkedPlace !== "null" ? item.linkedPlace : undefined,
+      category: typeof item.category === "string" ? item.category : undefined,
+      latitude: typeof item.latitude === "number" ? item.latitude : undefined,
+      longitude: typeof item.longitude === "number" ? item.longitude : undefined,
     }));
 }
