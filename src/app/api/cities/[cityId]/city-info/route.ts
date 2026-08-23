@@ -356,12 +356,12 @@ export async function POST(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "z-ai/glm-4.5-air:free",
+      model: "nvidia/nemotron-3-super-120b-a12b:free",
       messages: [
         { role: "system", content: prompt },
         { role: "user", content: "Generate the city information now." },
       ],
-      max_tokens: 3500,
+      max_tokens: 8000,
     }),
   });
 

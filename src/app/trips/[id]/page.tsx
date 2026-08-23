@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
@@ -125,20 +126,22 @@ export default async function TripDetailPage({
         scope={{ tripId: trip.id }}
       />
 
-      <CitiesSection
-        tripId={trip.id}
-        cities={trip.cities.map((c) => ({
-          id: c.id,
-          name: c.name,
-          startDate: c.startDate.toISOString(),
-          endDate: c.endDate.toISOString(),
-          latitude: c.latitude ?? null,
-          longitude: c.longitude ?? null,
-          order: c.order,
-        }))}
-        tripStartDate={trip.startDate.toISOString()}
-        tripEndDate={trip.endDate.toISOString()}
-      />
+      <Suspense>
+        <CitiesSection
+          tripId={trip.id}
+          cities={trip.cities.map((c) => ({
+            id: c.id,
+            name: c.name,
+            startDate: c.startDate.toISOString(),
+            endDate: c.endDate.toISOString(),
+            latitude: c.latitude ?? null,
+            longitude: c.longitude ?? null,
+            order: c.order,
+          }))}
+          tripStartDate={trip.startDate.toISOString()}
+          tripEndDate={trip.endDate.toISOString()}
+        />
+      </Suspense>
     </div>
   );
 }

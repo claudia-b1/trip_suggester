@@ -688,10 +688,12 @@ export function PoiMapImpl(props: PoiMapProps) {
       : null;
 
   // GeoJSON circle for nearby radius (orange dotted, different style)
-  const nearbyCircleData: GeoJSON.Feature<GeoJSON.Polygon> | null =
-    hasCityCenter && nearbyRadiusKm != null && nearbyRadiusKm > 0
-      ? makeRadiusCircle(cityLat!, cityLon!, nearbyRadiusKm)
-      : null;
+  // Commented out — nearby attractions section is disabled
+  // const nearbyCircleData: GeoJSON.Feature<GeoJSON.Polygon> | null =
+  //   hasCityCenter && nearbyRadiusKm != null && nearbyRadiusKm > 0
+  //     ? makeRadiusCircle(cityLat!, cityLon!, nearbyRadiusKm)
+  //     : null;
+  const nearbyCircleData = null;
 
   return (
     <div ref={containerRef} className="poi-map-outer relative rounded-xl border border-[hsl(var(--border))]">
