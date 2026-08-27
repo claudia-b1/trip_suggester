@@ -19,7 +19,7 @@ export function EditCityButton({
   tripEndDate,
 }: {
   tripId: number;
-  city: { id: number; name: string; startDate: string; endDate: string };
+  city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string };
   tripStartDate: string;
   tripEndDate: string;
 }) {
@@ -27,6 +27,7 @@ export function EditCityButton({
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(city.name);
+  const [nickname, setNickname] = useState(city.nickname ?? "");
   const [startDate, setStartDate] = useState(toInputDate(city.startDate));
   const [endDate, setEndDate] = useState(toInputDate(city.endDate));
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ export function EditCityButton({
 
   function onCancel() {
     setName(city.name);
+    setNickname(city.nickname ?? "");
     setStartDate(toInputDate(city.startDate));
     setEndDate(toInputDate(city.endDate));
     setCityMeta(null);
@@ -53,6 +55,7 @@ export function EditCityButton({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
+        nickname: nickname.trim() || "",
         startDate,
         endDate,
         ...(cityMeta && {
@@ -66,7 +69,7 @@ export function EditCityButton({
     });
     setSaving(false);
     if (!res.ok) {
-      toast("Failed to update city", { variant: "error" });
+      toast("Failed to update destination", { variant: "error" });
       return;
     }
     setOpen(false);
@@ -75,9 +78,14 @@ export function EditCityButton({
 
   if (!open) {
     return (
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        ✏️ Edit city
-      </Button>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-md p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
+        title="Edit destination"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+      </button>
     );
   }
 
@@ -92,6 +100,20 @@ export function EditCityButton({
           onSelect={(d) => { setName(d.name); setCityMeta(d); }}
           required
         />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="edit-city-nickname">Display name <span className="text-[10px] font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
+        <Input
+          id="edit-city-nickname"
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          placeholder={`e.g. a shorter name for "${name}"`}
+        />
+        {nickname.trim() && (
+          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            Will display &ldquo;{nickname.trim()}&rdquo; instead of &ldquo;{name}&rdquo;
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">

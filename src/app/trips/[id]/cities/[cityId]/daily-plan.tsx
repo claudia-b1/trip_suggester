@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,14 @@ export type DayPlanDTO = {
   activities: DayActivityDTO[];
 };
 
+export type SubcityDayPlanDTO = {
+  cityId: number;
+  cityName: string;
+  tripId: number;
+  date: string; // ISO
+  activities: { poiName: string; poiCategory: string; timeSlot: string }[];
+};
+
 const SLOT_LABELS: Record<TimeSlot, string> = {
   MORNING: "🌅 Morning",
   AFTERNOON: "☀️ Afternoon",
@@ -39,11 +48,15 @@ const SLOT_CSS: Record<TimeSlot, string> = {
 };
 
 function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString("en-US", {
+  return new Date(iso).toLocaleDateString("nl-NL", {
     weekday: "short",
-    month: "short",
     day: "numeric",
+    month: "short",
   });
+}
+
+function formatDayWithIndex(iso: string, dayIndex: number) {
+  return `${formatDay(iso)} (Dag ${dayIndex + 1})`;
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -90,11 +103,14 @@ function MiniCalendar({
     return set;
   }, [dayPlans]);
 
-  const activityCounts = useMemo(() => {
-    const map = new Map<string, number>();
+  const activityInfo = useMemo(() => {
+    const map = new Map<string, { pois: number; accommodation: number }>();
     for (const dp of dayPlans) {
       const d = new Date(dp.date);
-      map.set(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, dp.activities.length);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      const poiCount = dp.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length;
+      const accomCount = dp.activities.filter((a) => a.poiCategory === "ACCOMMODATION").length;
+      map.set(key, { pois: poiCount, accommodation: accomCount });
     }
     return map;
   }, [dayPlans]);
@@ -104,7 +120,7 @@ function MiniCalendar({
 
   const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
-  const monthLabel = viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const monthLabel = viewMonth.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
@@ -118,7 +134,7 @@ function MiniCalendar({
         <button type="button" onClick={nextMonth} className="p-1 hover:bg-[hsl(var(--muted))] rounded text-sm">›</button>
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
-        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+        {["zo", "ma", "di", "wo", "do", "vr", "za"].map((d) => (
           <div key={d} className="py-1 text-[hsl(var(--muted-foreground))] font-medium">{d}</div>
         ))}
         {cells.map((day, i) => {
@@ -126,7 +142,9 @@ function MiniCalendar({
           const key = `${year}-${month}-${day}`;
           const isTripDay = tripDates.has(key);
           const isSelected = key === selectedKey;
-          const count = activityCounts.get(key) ?? 0;
+          const info = activityInfo.get(key);
+          const hasPois = (info?.pois ?? 0) > 0;
+          const hasAccom = (info?.accommodation ?? 0) > 0;
 
           const matchingPlan = isTripDay
             ? dayPlans.find((dp) => {
@@ -150,8 +168,11 @@ function MiniCalendar({
               }`}
             >
               {day}
-              {isTripDay && count > 0 && !isSelected && (
-                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-blue-500" />
+              {isTripDay && !isSelected && (hasPois || hasAccom) && (
+                <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex gap-0.5">
+                  {hasPois && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+                  {hasAccom && <span className="text-[8px] leading-none">🏠</span>}
+                </span>
               )}
             </button>
           );
@@ -259,7 +280,7 @@ function MultiDayAccommodation({
                 className="rounded border-indigo-300"
               />
               <span className={isAssigned ? "line-through" : ""}>
-                Day {idx + 1} · {formatDay(dp.date)}
+                {formatDayWithIndex(dp.date, idx)}
               </span>
               {isAssigned && <span className="text-[9px] text-indigo-400 ml-auto">assigned</span>}
             </label>
@@ -286,30 +307,42 @@ function MultiDayAccommodation({
 
 const SLOT_ORDER: Record<TimeSlot, number> = { MORNING: 0, AFTERNOON: 1, EVENING: 2 };
 
+type AccommodationLoc = { name: string; latitude: number; longitude: number } | null;
+
 function DayMapModal({
   pois,
   activities,
   dayLabel,
   onClose,
+  startAccom,
+  endAccom,
 }: {
   pois: { id: number; name: string; category: Category; description: string | null; latitude: number | null; longitude: number | null; photoUrl?: string | null }[];
   activities: DayActivityDTO[];
   dayLabel: string;
   onClose: () => void;
+  /** Accommodation from the night before (where you wake up) */
+  startAccom: AccommodationLoc;
+  /** Accommodation for the current night (where you sleep) */
+  endAccom: AccommodationLoc;
 }) {
-  const openGoogleMapsRoute = useCallback(() => {
-    // Order POIs by time slot, then by position within slot (array index = order)
-    const ordered = TIME_SLOTS.flatMap((slot) =>
-      activities.filter((a) => a.timeSlot === slot),
+  // Order non-accommodation POIs by time slot
+  const orderedPois = useMemo(() =>
+    TIME_SLOTS.flatMap((slot) =>
+      activities.filter((a) => a.timeSlot === slot && a.poiCategory !== "ACCOMMODATION"),
     )
       .map((act) => pois.find((p) => p.id === act.poiId))
-      .filter((p): p is NonNullable<typeof p> => p != null && p.latitude != null && p.longitude != null);
+      .filter((p): p is NonNullable<typeof p> => p != null && p.latitude != null && p.longitude != null),
+    [activities, pois],
+  );
 
-    if (ordered.length < 2) return;
+  const openGoogleMapsRoute = useCallback(() => {
+    if (orderedPois.length === 0) return;
 
-    const origin = ordered[0];
-    const destination = ordered[ordered.length - 1];
-    const waypoints = ordered.slice(1, -1);
+    // Route through POIs only — accommodation is NOT included in the route
+    const origin = orderedPois[0];
+    const destination = orderedPois[orderedPois.length - 1];
+    const waypoints = orderedPois.slice(1, -1);
 
     let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking`;
     url += `&origin=${origin.latitude},${origin.longitude}`;
@@ -318,9 +351,36 @@ function DayMapModal({
       url += `&waypoints=${waypoints.map((p) => `${p.latitude},${p.longitude}`).join("|")}`;
     }
     window.open(url, "_blank", "noopener");
-  }, [pois, activities]);
+  }, [orderedPois]);
 
-  const hasEnoughPois = pois.filter((p) => p.latitude != null && p.longitude != null).length >= 2;
+  const openRoundTrip = useCallback(() => {
+    // Round trip: accommodation → best route through POIs → accommodation
+    const accom = startAccom ?? endAccom;
+    if (!accom || orderedPois.length === 0) return;
+
+    let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking`;
+    url += `&origin=${accom.latitude},${accom.longitude}`;
+    url += `&destination=${accom.latitude},${accom.longitude}`;
+    url += `&waypoints=${orderedPois.map((p) => `${p.latitude},${p.longitude}`).join("|")}`;
+    window.open(url, "_blank", "noopener");
+  }, [orderedPois, startAccom, endAccom]);
+
+  const hasLocatedPois = orderedPois.length >= 2;
+  const hasAccom = startAccom != null || endAccom != null;
+
+  // Compute numbered labels for POIs based on activity order (slot order, then position within slot)
+  const poiNumbers = useMemo(() => {
+    const nums: Record<number, number> = {};
+    let n = 1;
+    for (const slot of TIME_SLOTS) {
+      for (const act of activities.filter((a) => a.timeSlot === slot)) {
+        if (act.poiCategory !== "ACCOMMODATION" && !(act.poiId in nums)) {
+          nums[act.poiId] = n++;
+        }
+      }
+    }
+    return nums;
+  }, [activities]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -328,20 +388,33 @@ function DayMapModal({
         <div className="flex items-center justify-between border-b border-[hsl(var(--border))] px-4 py-3">
           <h3 className="text-sm font-semibold">{dayLabel} — Assigned POIs</h3>
           <div className="flex items-center gap-2">
-            {hasEnoughPois && (
-              <button
-                type="button"
-                onClick={openGoogleMapsRoute}
-                className="rounded-md border border-[hsl(var(--border))] bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
-              >
-                🚶 Walking route in Google Maps
-              </button>
+            {hasLocatedPois && (
+              <>
+                <button
+                  type="button"
+                  onClick={openGoogleMapsRoute}
+                  className="rounded-md border border-[hsl(var(--border))] bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                  title="Walking route through POIs in order"
+                >
+                  🚶 Walking route
+                </button>
+                {hasAccom && (
+                  <button
+                    type="button"
+                    onClick={openRoundTrip}
+                    className="rounded-md border border-[hsl(var(--border))] bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900"
+                    title={`Round trip from ${(startAccom ?? endAccom)!.name}`}
+                  >
+                    🏠 Round trip
+                  </button>
+                )}
+              </>
             )}
             <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[hsl(var(--muted))] text-lg leading-none">×</button>
           </div>
         </div>
         <div className="p-4">
-          <PoiMap pois={pois} />
+          <PoiMap pois={pois} poiNumbers={poiNumbers} />
         </div>
       </div>
     </div>
@@ -356,6 +429,9 @@ export function DailyPlan({
   scrollToActivity,
   onScrollComplete,
   dayNotes,
+  subcityDayPlans,
+  favouritedPoiIds,
+  hideSidebar,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -364,6 +440,9 @@ export function DailyPlan({
   scrollToActivity?: { date: string; activityId: number } | null;
   onScrollComplete?: () => void;
   dayNotes?: Record<number, { id: number; content: string }>;
+  subcityDayPlans?: SubcityDayPlanDTO[];
+  favouritedPoiIds?: Set<number>;
+  hideSidebar?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -377,6 +456,26 @@ export function DailyPlan({
   const [catFilter, setCatFilter] = useState<Category | null>(null);
   const [mapDayPlan, setMapDayPlan] = useState<DayPlanDTO | null>(null);
   const [dragActivity, setDragActivity] = useState<{ activityId: number; fromDayPlanId: number; fromSlot: TimeSlot } | null>(null);
+  const [poiDragActive, setPoiDragActive] = useState(false);
+  const [poiDragOverSlot, setPoiDragOverSlot] = useState<string | null>(null);
+
+  // Detect POI drags (from POI list/grid) to show drop targets
+  useEffect(() => {
+    function onDragOver(e: DragEvent) {
+      if (e.dataTransfer?.types.includes("application/x-poi-id")) {
+        setPoiDragActive(true);
+      }
+    }
+    function onEnd() { setPoiDragActive(false); setPoiDragOverSlot(null); }
+    document.addEventListener("dragover", onDragOver);
+    document.addEventListener("dragend", onEnd);
+    document.addEventListener("drop", onEnd);
+    return () => {
+      document.removeEventListener("dragover", onDragOver);
+      document.removeEventListener("dragend", onEnd);
+      document.removeEventListener("drop", onEnd);
+    };
+  }, []);
 
   // Cross-slot rearrangement suggestion shown after route optimisation
   type CrossSlotSuggestion = {
@@ -407,11 +506,17 @@ export function DailyPlan({
     setSelectedDate(scrollToActivity.date);
     // Wait for DOM to update, then scroll & highlight
     requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-activity-id="${scrollToActivity.activityId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("ring-2", "ring-[hsl(var(--primary))]");
-        setTimeout(() => el.classList.remove("ring-2", "ring-[hsl(var(--primary))]"), 1500);
+      if (scrollToActivity.activityId > 0) {
+        const el = document.querySelector(`[data-activity-id="${scrollToActivity.activityId}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-2", "ring-[hsl(var(--primary))]");
+          setTimeout(() => el.classList.remove("ring-2", "ring-[hsl(var(--primary))]"), 1500);
+        }
+      } else {
+        // Just navigate to the day — scroll the plan view into view
+        const planEl = document.getElementById("daily-plan-day-view");
+        if (planEl) planEl.scrollIntoView({ behavior: "smooth", block: "start" });
       }
       onScrollComplete?.();
     });
@@ -604,7 +709,7 @@ export function DailyPlan({
         name: p.name,
         category: p.category,
         description: p.description,
-        photoUrl: p.photoUrl,
+        photoUrl: p.photoUrl ? `/api/pois/${p.id}/photo` : null,
         rating: p.rating,
         estimatedDurationMinutes: p.estimatedDurationMinutes,
       });
@@ -620,13 +725,21 @@ export function DailyPlan({
   }
 
   function handleDragOver(e: React.DragEvent) {
+    const isPoi = e.dataTransfer.types.includes("application/x-poi-id");
+    const isActivity = e.dataTransfer.types.includes("application/x-activity-id");
+    if (!isPoi && !isActivity) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
+    e.dataTransfer.dropEffect = isPoi ? "copy" : "move";
   }
 
   function handleDropOnItem(e: React.DragEvent, toDayPlanId: number, toSlot: TimeSlot, targetIndex: number) {
     e.preventDefault();
     e.stopPropagation();
+    // POI drop from list/grid
+    if (e.dataTransfer.types.includes("application/x-poi-id")) {
+      handlePoiDrop(e, toDayPlanId, toSlot);
+      return;
+    }
     const rawId = e.dataTransfer.getData("application/x-activity-id");
     const activityId = Number(rawId);
     if (!activityId) return;
@@ -644,6 +757,11 @@ export function DailyPlan({
 
   function handleDrop(e: React.DragEvent, toDayPlanId: number, toSlot: TimeSlot) {
     e.preventDefault();
+    // POI drop from list/grid
+    if (e.dataTransfer.types.includes("application/x-poi-id")) {
+      handlePoiDrop(e, toDayPlanId, toSlot);
+      return;
+    }
     const rawId = e.dataTransfer.getData("application/x-activity-id");
     const activityId = Number(rawId);
     if (!activityId) return;
@@ -661,6 +779,63 @@ export function DailyPlan({
 
   function handleDragEnd() {
     setDragActivity(null);
+  }
+
+  // Handle POI dropped from POI list/grid onto a day plan slot
+  async function handlePoiDrop(e: React.DragEvent, dayPlanId: number, slot: TimeSlot) {
+    e.preventDefault();
+    e.stopPropagation();
+    setPoiDragOverSlot(null);
+    const rawId = e.dataTransfer.getData("application/x-poi-id");
+    const poiId = Number(rawId);
+    if (!poiId) return;
+
+    const poi = pois.find((p) => p.id === poiId);
+    if (!poi) return;
+
+    // Check if already assigned to this day+slot
+    const dp = dayPlans.find((d) => d.id === dayPlanId);
+    if (dp?.activities.some((a) => a.poiId === poiId && a.timeSlot === slot)) {
+      toast("Already assigned to this slot", { variant: "error" });
+      return;
+    }
+
+    // Optimistic update
+    const tempId = Date.now();
+    setDayPlans((prev) =>
+      prev.map((d) =>
+        d.id === dayPlanId
+          ? {
+              ...d,
+              activities: [
+                ...d.activities,
+                { id: tempId, poiId: poi.id, poiName: poi.name, poiCategory: poi.category, timeSlot: slot },
+              ],
+            }
+          : d,
+      ),
+    );
+
+    const res = await fetch(`/api/day-plans/${dayPlanId}/activities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poiId, timeSlot: slot }),
+    });
+
+    if (!res.ok) {
+      toast("Failed to assign POI", { variant: "error" });
+      setDayPlans((prev) =>
+        prev.map((d) =>
+          d.id === dayPlanId
+            ? { ...d, activities: d.activities.filter((a) => a.id !== tempId) }
+            : d,
+        ),
+      );
+      return;
+    }
+
+    toast(`${poi.name} added to plan!`);
+    router.refresh();
   }
 
   async function reorderInSlot(dayPlanId: number, slot: TimeSlot, activityId: number, targetIndex: number) {
@@ -696,8 +871,12 @@ export function DailyPlan({
     router.refresh();
   }
 
-  /** Nearest-neighbour heuristic fallback (used when Mapbox API is unavailable or >12 POIs). */
-  function nearestNeighbourSort(activities: DayActivityDTO[]): DayActivityDTO[] {
+  /** Nearest-neighbour heuristic fallback (used when Mapbox API is unavailable or >12 POIs).
+   *  If `startCoord` is provided (e.g. accommodation), the first POI chosen is the one nearest to it. */
+  function nearestNeighbourSort(
+    activities: DayActivityDTO[],
+    startCoord?: { lat: number; lng: number },
+  ): DayActivityDTO[] {
     type CoordItem = { activity: DayActivityDTO; lat: number; lng: number };
     const items: CoordItem[] = activities.map((a) => {
       const poi = pois.find((p) => p.id === a.poiId);
@@ -705,8 +884,22 @@ export function DailyPlan({
     });
     const ordered: CoordItem[] = [];
     const remaining = [...items];
-    let current = remaining.shift()!;
-    ordered.push(current);
+
+    if (startCoord && remaining.length > 0) {
+      // Pick the POI nearest to the starting coordinate (e.g. accommodation)
+      let nearest = 0;
+      let nearestDist = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const dist = (remaining[i].lat - startCoord.lat) ** 2 + (remaining[i].lng - startCoord.lng) ** 2;
+        if (dist < nearestDist) { nearestDist = dist; nearest = i; }
+      }
+      const first = remaining.splice(nearest, 1)[0];
+      ordered.push(first);
+    } else if (remaining.length > 0) {
+      ordered.push(remaining.shift()!);
+    }
+
+    let current = ordered[ordered.length - 1];
     while (remaining.length > 0) {
       let nearest = 0;
       let nearestDist = Infinity;
@@ -784,10 +977,17 @@ export function DailyPlan({
    * Core optimization engine. Takes an explicit activities array so it never
    * reads from the stale dayPlans closure — both optimizeRoute and
    * applyCrossSlotSuggestion call this after preparing the correct list.
+   *
+   * `accomStart` — accommodation where the traveller wakes up (previous night).
+   * The MORNING slot's first POI will be the one nearest to it.
+   * `accomEnd` — accommodation where the traveller sleeps (current night).
+   * The last occupied slot's final POI will be the one nearest to it.
    */
   async function optimizeActivities(
     dayPlanId: number,
     activities: DayActivityDTO[],
+    accomStart?: { lat: number; lng: number } | null,
+    accomEnd?: { lat: number; lng: number } | null,
   ): Promise<void> {
     const optimized: DayActivityDTO[] = [];
     const activitiesBySlot: Record<TimeSlot, DayActivityDTO[]> = {
@@ -795,6 +995,13 @@ export function DailyPlan({
       AFTERNOON: [],
       EVENING: [],
     };
+
+    // Determine which slot is the first/last with ≥1 non-accommodation activities
+    const occupiedSlots = TIME_SLOTS.filter((s) =>
+      activities.some((a) => a.timeSlot === s && a.poiCategory !== "ACCOMMODATION"),
+    );
+    const firstSlot = occupiedSlots[0] ?? null;
+    const lastSlot = occupiedSlots[occupiedSlots.length - 1] ?? null;
 
     for (const slot of TIME_SLOTS) {
       const slotActivities = activities.filter((a) => a.timeSlot === slot);
@@ -813,15 +1020,54 @@ export function DailyPlan({
         return poi?.latitude == null || poi?.longitude == null;
       });
 
+      // Determine anchor start/end for this slot based on accommodation
+      const slotAnchorStart = slot === firstSlot ? accomStart : undefined;
+      const slotAnchorEnd = slot === lastSlot ? accomEnd : undefined;
+
       let orderedSlot = slotActivities;
 
       if (withCoords.length >= 2 && withCoords.length <= 12) {
+        // Pre-sort: place the POI nearest to start-accommodation first,
+        // and the POI nearest to end-accommodation last, before calling Mapbox
+        // (which pins source=first, destination=last).
+        const sorted = [...withCoords];
+        if (slotAnchorStart) {
+          let nearestIdx = 0;
+          let nearestDist = Infinity;
+          for (let i = 0; i < sorted.length; i++) {
+            const poi = pois.find((p) => p.id === sorted[i].poiId)!;
+            const dist = (poi.latitude! - slotAnchorStart.lat) ** 2 + (poi.longitude! - slotAnchorStart.lng) ** 2;
+            if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+          }
+          // Move nearest-to-accommodation to position 0
+          if (nearestIdx !== 0) {
+            const [item] = sorted.splice(nearestIdx, 1);
+            sorted.unshift(item);
+          }
+        }
+        if (slotAnchorEnd) {
+          let nearestIdx = sorted.length - 1;
+          let nearestDist = Infinity;
+          // Search from index 1 (or 0 if no start anchor) to avoid displacing the start
+          const searchStart = slotAnchorStart ? 1 : 0;
+          for (let i = searchStart; i < sorted.length; i++) {
+            const poi = pois.find((p) => p.id === sorted[i].poiId)!;
+            const dist = (poi.latitude! - slotAnchorEnd.lat) ** 2 + (poi.longitude! - slotAnchorEnd.lng) ** 2;
+            if (dist < nearestDist) { nearestDist = dist; nearestIdx = i; }
+          }
+          // Move nearest-to-end-accommodation to last position
+          if (nearestIdx !== sorted.length - 1) {
+            const [item] = sorted.splice(nearestIdx, 1);
+            sorted.push(item);
+          }
+        }
+
         try {
           const res = await fetch(`/api/cities/${cityId}/optimize-route`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              waypoints: withCoords.map((a) => {
+              waypoints: sorted.map((a) => {
                 const poi = pois.find((p) => p.id === a.poiId)!;
                 return { id: String(a.id), lat: poi.latitude, lon: poi.longitude };
               }),
@@ -845,7 +1091,7 @@ export function DailyPlan({
 
       // Fallback: nearest-neighbour if Mapbox didn't produce a result
       if (orderedSlot === slotActivities && withCoords.length >= 2) {
-        orderedSlot = nearestNeighbourSort(slotActivities);
+        orderedSlot = nearestNeighbourSort(slotActivities, slotAnchorStart ?? undefined);
       }
 
       optimized.push(...orderedSlot);
@@ -876,12 +1122,43 @@ export function DailyPlan({
     router.refresh();
   }
 
+  /** Resolve start/end accommodation coordinates for a day plan.
+   *  Start = where you wake up (previous night), End = where you sleep (current night). */
+  function resolveAccom(dp: DayPlanDTO): {
+    accomStart: { lat: number; lng: number } | null;
+    accomEnd: { lat: number; lng: number } | null;
+  } {
+    const dayIdx = dayPlans.indexOf(dp);
+
+    function findAccomCoord(plan: DayPlanDTO | undefined): { lat: number; lng: number } | null {
+      if (!plan) return null;
+      for (const act of plan.activities) {
+        if (act.poiCategory === "ACCOMMODATION") {
+          const poi = pois.find((p) => p.id === act.poiId);
+          if (poi?.latitude != null && poi?.longitude != null) {
+            return { lat: poi.latitude, lng: poi.longitude };
+          }
+        }
+      }
+      return null;
+    }
+
+    const prevAccom = dayIdx > 0 ? findAccomCoord(dayPlans[dayIdx - 1]) : null;
+    const curAccom = findAccomCoord(dp);
+    return {
+      accomStart: prevAccom ?? curAccom,
+      accomEnd: curAccom ?? prevAccom,
+    };
+  }
+
   async function optimizeRoute(dayPlanId: number) {
     const dp = dayPlans.find((d) => d.id === dayPlanId);
     if (!dp) return;
     setBusy(true);
     setCrossSlotSuggestion(null);
-    await optimizeActivities(dayPlanId, dp.activities);
+
+    const { accomStart, accomEnd } = resolveAccom(dp);
+    await optimizeActivities(dayPlanId, dp.activities, accomStart, accomEnd);
   }
 
   /** Apply the cross-slot suggestion: move the activity to the target slot, then re-optimise. */
@@ -914,7 +1191,8 @@ export function DailyPlan({
     });
 
     // Now optimise using the already-updated activities array (no stale closure issue)
-    await optimizeActivities(dp.id, updatedActivities);
+    const { accomStart, accomEnd } = resolveAccom(dp);
+    await optimizeActivities(dp.id, updatedActivities, accomStart, accomEnd);
   }
 
   // Map modal data
@@ -923,6 +1201,36 @@ export function DailyPlan({
     const poiIds = mapDayPlan.activities.map((a) => a.poiId);
     return pois.filter((p) => poiIds.includes(p.id));
   }, [mapDayPlan, pois]);
+
+  // Resolve accommodation locations for the selected day's walking route
+  const { startAccom, endAccom } = useMemo((): { startAccom: AccommodationLoc; endAccom: AccommodationLoc } => {
+    if (!mapDayPlan) return { startAccom: null, endAccom: null };
+
+    const dayIdx = dayPlans.indexOf(mapDayPlan);
+
+    // Helper: find the first accommodation POI with valid coords from a day plan's activities
+    function findAccom(dp: DayPlanDTO | undefined): AccommodationLoc {
+      if (!dp) return null;
+      for (const act of dp.activities) {
+        if (act.poiCategory === "ACCOMMODATION") {
+          const poi = pois.find((p) => p.id === act.poiId);
+          if (poi?.latitude != null && poi?.longitude != null) {
+            return { name: poi.name, latitude: poi.latitude, longitude: poi.longitude };
+          }
+        }
+      }
+      return null;
+    }
+
+    // Start: accommodation from the night before (previous day), fall back to current day
+    const prevDayAccom = dayIdx > 0 ? findAccom(dayPlans[dayIdx - 1]) : null;
+    const curDayAccom = findAccom(mapDayPlan);
+
+    return {
+      startAccom: prevDayAccom ?? curDayAccom,
+      endAccom: curDayAccom ?? prevDayAccom,
+    };
+  }, [mapDayPlan, dayPlans, pois]);
 
   return (
     <div className="space-y-4">
@@ -1016,7 +1324,7 @@ export function DailyPlan({
                           : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
                       }`}
                     >
-                      Day {idx + 1} · {formatDay(dp.date)}
+                      {formatDayWithIndex(dp.date, idx)}
                     </button>
                   );
                 })}
@@ -1040,9 +1348,9 @@ export function DailyPlan({
       </div>
 
       {/* Main grid: sidebar + day view */}
-      <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+      <div className={`grid gap-4 ${hideSidebar ? "" : "md:grid-cols-[220px_1fr]"}`}>
         {/* Left sidebar: Unassigned POIs only */}
-        <aside className="space-y-2">
+        {!hideSidebar && <aside className="space-y-2">
           <div className="flex items-center justify-between gap-1">
             <h4 className="text-sm font-semibold">
               Unassigned POIs{" "}
@@ -1102,7 +1410,10 @@ export function DailyPlan({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium truncate">{poi.name}</span>
+                        <span className="font-medium truncate flex items-center gap-1">
+                          {poi.name}
+                          {favouritedPoiIds?.has(poi.id) && <span className="text-red-400 text-[10px]">♥</span>}
+                        </span>
                         <CategoryBadge category={poi.category} />
                       </div>
                     </button>
@@ -1127,12 +1438,12 @@ export function DailyPlan({
               )}
             </div>
           )}
-        </aside>
+        </aside>}
 
-        {/* Right: Calendar + Selected day view */}
-        <div className="space-y-4">
+        {/* Calendar + Selected day view */}
+        <div className={hideSidebar ? "grid gap-4 md:grid-cols-[1fr_4fr]" : "space-y-4"}>
           {/* Mini Calendar */}
-          <div className="rounded-md border border-[hsl(var(--border))] p-3">
+          <div className={`rounded-md border border-[hsl(var(--border))] p-3 ${hideSidebar ? "self-start sticky top-20" : ""}`}>
             <MiniCalendar
               dayPlans={dayPlans}
               selectedDate={selectedDate}
@@ -1145,10 +1456,10 @@ export function DailyPlan({
               No days in this range.
             </p>
           ) : currentDayPlan ? (
-            <div className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3">
+            <div id="daily-plan-day-view" className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3">
               <div className="flex items-center justify-between">
                 <h5 className="font-semibold">
-                  Day {currentDayIndex + 1} · {formatDay(currentDayPlan.date)}
+                  {formatDayWithIndex(currentDayPlan.date, currentDayIndex)}
                 </h5>
                 <div className="flex items-center gap-2">
                   {currentDayPlan.activities.length > 0 && (
@@ -1244,6 +1555,9 @@ export function DailyPlan({
                               <PoiHoverCard poi={poiLookup.get(a.poiId) ?? null}>
                                 <span className="truncate font-medium">{a.poiName}</span>
                               </PoiHoverCard>
+                              {favouritedPoiIds?.has(a.poiId) && (
+                                <span className="text-red-400 text-[10px] shrink-0" title="In favourites">♥</span>
+                              )}
                             </div>
                             <button
                               type="button"
@@ -1264,24 +1578,47 @@ export function DailyPlan({
 
               {/* Time slots grid with drag & drop */}
               <div className="grid gap-3 sm:grid-cols-3">
-                {TIME_SLOTS.map((slot) => {
+                {(() => {
+                  let runningNumber = 0;
+                  return TIME_SLOTS.map((slot) => {
                   const items = currentDayPlan.activities.filter((a) => a.timeSlot === slot && a.poiCategory !== "ACCOMMODATION");
-                  const isDropTarget = !!dragActivity;
+                  const slotStartNum = runningNumber;
+                  runningNumber += items.length;
+                  const isDropTarget = !!dragActivity || poiDragActive;
+                  const slotKey = `slot-${slot}`;
+                  const isPoiOver = poiDragOverSlot === slotKey;
                   return (
                     <div
                       key={slot}
                       className={`space-y-2 rounded-lg p-3 transition-colors ${SLOT_CSS[slot]} ${
-                        isDropTarget ? "ring-2 ring-dashed ring-blue-300" : ""
+                        isPoiOver
+                          ? "ring-2 ring-blue-400 bg-blue-50/50 dark:bg-blue-900/20"
+                          : isDropTarget
+                            ? "ring-2 ring-dashed ring-blue-300"
+                            : ""
                       }`}
-                      onDragOver={handleDragOver}
+                      onDragOver={(e) => {
+                        handleDragOver(e);
+                        if (e.dataTransfer.types.includes("application/x-poi-id")) {
+                          setPoiDragOverSlot(slotKey);
+                        }
+                      }}
+                      onDragLeave={(e) => {
+                        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                        if (poiDragOverSlot === slotKey) setPoiDragOverSlot(null);
+                      }}
                       onDrop={(e) => handleDrop(e, currentDayPlan.id, slot)}
                     >
                       <div className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_LABELS[slot]}
                       </div>
                       {items.length === 0 && !selectedPoi && (
-                        <div className="rounded-lg border-2 border-dashed border-[hsl(var(--border))] px-3 py-4 text-center text-xs text-[hsl(var(--muted-foreground))]">
-                          Drag a POI here
+                        <div className={`rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs ${
+                          isPoiOver
+                            ? "border-blue-300 text-blue-500"
+                            : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"
+                        }`}>
+                          {isPoiOver ? "Drop here" : "Drag a POI here"}
                         </div>
                       )}
                       <ul className="space-y-1">
@@ -1300,6 +1637,9 @@ export function DailyPlan({
                               <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-40 group-hover:opacity-100 transition-opacity" title="Drag to reorder">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
                               </span>
+                              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15 text-[9px] font-bold text-[hsl(var(--primary))]">
+                                {slotStartNum + idx + 1}
+                              </span>
                               <span
                                 className="h-2 w-2 shrink-0 rounded-full"
                                 style={{ backgroundColor: CATEGORY_STYLES[a.poiCategory].dot }}
@@ -1307,6 +1647,9 @@ export function DailyPlan({
                               <PoiHoverCard poi={poiLookup.get(a.poiId) ?? null}>
                                 <span className="truncate">{a.poiName}</span>
                               </PoiHoverCard>
+                              {favouritedPoiIds?.has(a.poiId) && (
+                                <span className="text-red-400 text-[10px] shrink-0" title="In favourites">♥</span>
+                              )}
                             </div>
                             <button
                               type="button"
@@ -1332,8 +1675,47 @@ export function DailyPlan({
                       </Button>
                     </div>
                   );
-                })}
+                });
+                })()}
               </div>
+
+              {/* Subcity activities for this date (read-only, from sub-destinations) */}
+              {(() => {
+                if (!subcityDayPlans || subcityDayPlans.length === 0) return null;
+                const currentDate = currentDayPlan.date.slice(0, 10);
+                const matchingSubs = subcityDayPlans.filter(
+                  (sdp) => sdp.date.slice(0, 10) === currentDate && sdp.activities.length > 0,
+                );
+                if (matchingSubs.length === 0) return null;
+                return (
+                  <div className="space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+                      Sub-destination activities
+                    </div>
+                    {matchingSubs.map((sdp) => (
+                      <div key={`${sdp.cityId}-${sdp.date}`} className="space-y-1">
+                        {sdp.activities.map((a, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-2 rounded-md bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm border border-[hsl(var(--border))]"
+                          >
+                            <Link
+                              href={`/trips/${sdp.tripId}/cities/${sdp.cityId}`}
+                              className="inline-flex items-center rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/20 transition-colors shrink-0"
+                            >
+                              {sdp.cityName}
+                            </Link>
+                            <span className="truncate text-[hsl(var(--muted-foreground))]">{a.poiName}</span>
+                            <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))]">
+                              {a.timeSlot === "MORNING" ? "🌅" : a.timeSlot === "AFTERNOON" ? "☀️" : "🌙"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {/* Day note */}
               <TripNoteEditor
@@ -1352,9 +1734,20 @@ export function DailyPlan({
                 >
                   ← Previous day
                 </button>
-                <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                  {currentDayIndex + 1} / {dayPlans.length}
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={currentDayIndex <= 0}
+                    onClick={() => setSelectedDate(dayPlans[0].date)}
+                    title="Go to first day"
+                    className="text-[10px] px-1.5 py-0.5 rounded border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-30 disabled:cursor-default transition-colors"
+                  >
+                    Start
+                  </button>
+                  <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                    {currentDayIndex + 1} / {dayPlans.length}
+                  </span>
+                </div>
                 <button
                   type="button"
                   disabled={currentDayIndex >= dayPlans.length - 1}
@@ -1374,8 +1767,10 @@ export function DailyPlan({
         <DayMapModal
           pois={mapPois}
           activities={mapDayPlan.activities}
-          dayLabel={`Day ${dayPlans.indexOf(mapDayPlan) + 1} · ${formatDay(mapDayPlan.date)}`}
+          dayLabel={formatDayWithIndex(mapDayPlan.date, dayPlans.indexOf(mapDayPlan))}
           onClose={() => setMapDayPlan(null)}
+          startAccom={startAccom}
+          endAccom={endAccom}
         />
       )}
     </div>

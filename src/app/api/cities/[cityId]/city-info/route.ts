@@ -343,7 +343,7 @@ export async function POST(
 
   const city = await prisma.city.findUnique({ where: { id: cityIdNum } });
   if (!city) {
-    return NextResponse.json({ error: "City not found" }, { status: 404 });
+    return NextResponse.json({ error: "Destination not found" }, { status: 404 });
   }
 
   const cityLabel = city.country ? `${city.name}, ${city.country}` : city.name;

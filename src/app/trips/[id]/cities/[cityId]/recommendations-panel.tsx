@@ -309,6 +309,35 @@ export function RecommendationsPanel({
           </div>
         </div>
 
+        {/* Area search radius — always visible */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+              Area search radius
+            </p>
+            <span className="text-xs font-semibold tabular-nums text-[hsl(var(--foreground))]">
+              {radiusKm} km
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">1</span>
+            <input
+              type="range"
+              min={1}
+              max={30}
+              step={1}
+              value={radiusKm}
+              onChange={(e) => onRadiusChange(Number(e.target.value))}
+              disabled={generating}
+              className="flex-1 accent-[hsl(var(--primary))] disabled:opacity-40"
+            />
+            <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
+          </div>
+          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            Only include places within {radiusKm} km of the city centre
+          </p>
+        </div>
+
         {/* Advanced filters — single collapsible section */}
         <div>
           <button
@@ -318,44 +347,15 @@ export function RecommendationsPanel({
           >
             <span className={`transition-transform ${advancedOpen ? "rotate-90" : ""}`}>▶</span>
             Advanced filters
-            {(Object.entries(subcats).some(
+            {Object.entries(subcats).some(
               ([cat, s]) => s.size < SUBCATEGORIES[cat as RecommendableCategory].length,
-            ) || radiusKm !== 5) && (
+            ) && (
               <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">active</span>
             )}
           </button>
 
           {advancedOpen && (
             <div className="mt-2 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
-              {/* City search radius */}
-              <div className="space-y-1.5 border-b border-[hsl(var(--border))] pb-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold text-[hsl(var(--foreground))]">
-                    🔵 City search radius
-                  </p>
-                  <span className="text-xs font-semibold tabular-nums text-[hsl(var(--foreground))]">
-                    {radiusKm} km
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">1</span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={30}
-                    step={1}
-                    value={radiusKm}
-                    onChange={(e) => onRadiusChange(Number(e.target.value))}
-                    disabled={generating}
-                    className="flex-1 accent-[hsl(var(--primary))] disabled:opacity-40"
-                  />
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
-                </div>
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                  Only include places within {radiusKm} km of the city centre
-                </p>
-              </div>
-
               {RECOMMENDABLE_CATEGORIES.map((cat) => {
                 const active = selected.has(cat);
                 if (!active) return null;

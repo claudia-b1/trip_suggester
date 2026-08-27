@@ -27,7 +27,7 @@ export async function GET(
     return NextResponse.json(JSON.parse(cached.data));
   }
 
-  return NextResponse.json({ recommendations: [], nearbyCities: [], nearbyActivities: [] });
+  return NextResponse.json({ recommendations: [], nearbyCities: [], nearbyActivities: [], hikes: [], cycling: [] });
 }
 
 export async function POST(
@@ -50,7 +50,7 @@ export async function POST(
 
   const city = await prisma.city.findUnique({ where: { id: cityIdNum } });
   if (!city) {
-    return NextResponse.json({ error: "City not found" }, { status: 404 });
+    return NextResponse.json({ error: "Destination not found" }, { status: 404 });
   }
 
   // Parse optional generation options from request body
@@ -62,6 +62,8 @@ export async function POST(
         includeMustDo: body.includeMustDo,
         includeNearbyCities: body.includeNearbyCities,
         includeNearbyActivities: body.includeNearbyActivities,
+        includeHikes: body.includeHikes,
+        includeCycling: body.includeCycling,
         maxNearbyCitiesKm: body.maxNearbyCitiesKm,
         maxNearbyActivitiesKm: body.maxNearbyActivitiesKm,
       };
@@ -114,19 +116,45 @@ export async function POST(
     return NextResponse.json({ error: "Empty response from model" }, { status: 502 });
   }
 
-  const { recommendations, nearbyCities, nearbyActivities } = parseActivityResponse(text);
-  // At least one section should have content
-  if (recommendations.length === 0 && nearbyCities.length === 0 && nearbyActivities.length === 0) {
+  const { recommendations, nearbyCities, nearbyActivities, hikes, cycling } = parseActivityResponse(text);
+
+  // Determine which sections were requested
+  const requestedMustDo = options?.includeMustDo !== false;
+  const requestedNearbyCities = options?.includeNearbyCities !== false;
+  const requestedNearbyActivities = options?.includeNearbyActivities !== false;
+  const requestedHikes = options?.includeHikes === true;
+  const requestedCycling = options?.includeCycling === true;
+
+  // Check that at least one REQUESTED section produced content
+  const requestedResults: boolean[] = [];
+  if (requestedMustDo) requestedResults.push(recommendations.length > 0);
+  if (requestedNearbyCities) requestedResults.push(nearbyCities.length > 0);
+  if (requestedNearbyActivities) requestedResults.push(nearbyActivities.length > 0);
+  if (requestedHikes) requestedResults.push(hikes.length > 0);
+  if (requestedCycling) requestedResults.push(cycling.length > 0);
+
+  if (requestedResults.length > 0 && !requestedResults.some(Boolean)) {
     return NextResponse.json(
       { error: "Could not parse recommendations — try again" },
       { status: 502 },
     );
   }
 
+  // Merge with existing cache: keep non-requested sections unchanged
+  let existing: Partial<ActivityRecommendationsResult> = {};
+  const existingCache = await prisma.cityInfoCache.findFirst({
+    where: { cityId: cityIdNum, type: "activities" },
+  });
+  if (existingCache) {
+    try { existing = JSON.parse(existingCache.data); } catch { /* ignore */ }
+  }
+
   const result: ActivityRecommendationsResult = {
-    recommendations,
-    nearbyCities,
-    nearbyActivities,
+    recommendations: requestedMustDo ? recommendations : (existing.recommendations ?? []),
+    nearbyCities: requestedNearbyCities ? nearbyCities : (existing.nearbyCities ?? []),
+    nearbyActivities: requestedNearbyActivities ? nearbyActivities : (existing.nearbyActivities ?? []),
+    hikes: requestedHikes ? hikes : (existing.hikes ?? []),
+    cycling: requestedCycling ? cycling : (existing.cycling ?? []),
     generatedAt: new Date().toISOString(),
     model: ACTIVITY_MODEL,
   };

@@ -9,6 +9,9 @@ export async function GET(
   const cities = await prisma.city.findMany({
     where: { tripId: Number(id) },
     orderBy: { order: "asc" },
+    include: {
+      subcities: { orderBy: { order: "asc" } },
+    },
   });
   return NextResponse.json(cities);
 }
@@ -19,10 +22,31 @@ export async function POST(
 ) {
   const { id } = await params;
   const tripId = Number(id);
-  const { name, startDate, endDate, country, countryCode, latitude, longitude, timezone } = await req.json();
+  const { name, nickname, startDate, endDate, country, countryCode, latitude, longitude, timezone, parentCityId } = await req.json();
 
+  // Validate parentCityId if provided
+  if (parentCityId != null) {
+    const parent = await prisma.city.findUnique({
+      where: { id: parentCityId },
+      select: { tripId: true, parentCityId: true },
+    });
+    if (!parent) {
+      return NextResponse.json({ error: "Parent destination not found" }, { status: 404 });
+    }
+    if (parent.tripId !== tripId) {
+      return NextResponse.json({ error: "Parent destination must belong to the same trip" }, { status: 400 });
+    }
+    if (parent.parentCityId !== null) {
+      return NextResponse.json(
+        { error: "Sub-destinations cannot have their own sub-destinations (one level deep)" },
+        { status: 400 },
+      );
+    }
+  }
+
+  // Compute order among siblings (same parentCityId)
   const last = await prisma.city.findFirst({
-    where: { tripId },
+    where: { tripId, parentCityId: parentCityId ?? null },
     orderBy: { order: "desc" },
     select: { order: true },
   });
@@ -35,6 +59,8 @@ export async function POST(
       endDate: new Date(endDate),
       order: nextOrder,
       tripId,
+      ...(parentCityId != null && { parentCityId }),
+      ...(nickname && { nickname }),
       ...(country && { country }),
       ...(countryCode && { countryCode }),
       ...(latitude != null && { latitude }),

@@ -23,7 +23,7 @@ export function CityAutocomplete({
   onChange,
   onSelect,
   id,
-  placeholder = "Search cities…",
+  placeholder = "Search destinations…",
   required,
   disabled,
 }: {

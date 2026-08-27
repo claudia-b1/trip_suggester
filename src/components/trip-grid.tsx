@@ -196,7 +196,7 @@ export function TripGrid({
                       📅 {duration}
                     </span>
                     <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--muted))] px-2.5 py-0.5 text-xs font-medium text-[hsl(var(--muted-foreground))]">
-                      🏙️ {cityCount} {cityCount === 1 ? "city" : "cities"}
+                      🏙️ {cityCount} {cityCount === 1 ? "destination" : "destinations"}
                     </span>
                     {trip.archived && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">

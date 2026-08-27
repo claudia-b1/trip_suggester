@@ -24,13 +24,13 @@ export type FavouriteSubcategoryDef = {
 };
 
 export const ACCOMMODATION_SUBCATEGORIES: FavouriteSubcategoryDef[] = [
-  { id: "camping", label: "Camping", emoji: "⛺" },
+  { id: "camping", label: "Camping", emoji: "🏕️" },
   { id: "hotel", label: "Hotel", emoji: "🏨" },
   { id: "hostel", label: "Hostel", emoji: "🏠" },
   { id: "bnb", label: "B&B", emoji: "🛏️" },
   { id: "apartment", label: "Apartment", emoji: "🏢" },
   { id: "resort", label: "Resort", emoji: "🏖️" },
-  { id: "glamping", label: "Glamping", emoji: "🏕️" },
+  { id: "glamping", label: "Glamping", emoji: "⛺" },
   { id: "cabin", label: "Cabin / Chalet", emoji: "🏡" },
 ];
 
