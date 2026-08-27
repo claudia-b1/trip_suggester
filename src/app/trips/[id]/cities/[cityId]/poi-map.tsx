@@ -10,7 +10,7 @@ const PoiMapDynamic = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="h-[clamp(500px,70vh,825px)] animate-pulse rounded-md bg-gray-100 border border-[hsl(var(--border))]" />
+      <div className="h-[clamp(500px,75vh,1100px)] animate-pulse rounded-md bg-gray-100 border border-[hsl(var(--border))]" />
     ),
   },
 );

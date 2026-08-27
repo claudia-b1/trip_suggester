@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
+import { EditCityButton } from "./edit-city-button";
 
 function countryCodeToFlag(code: string): string {
   return [...code.toUpperCase()]
@@ -54,6 +55,7 @@ export type CityHeaderProps = {
   cityId: number;
   tripId: number;
   name: string;
+  nickname: string | null;
   country: string | null;
   countryCode: string | null;
   timezone: string | null;
@@ -63,16 +65,25 @@ export type CityHeaderProps = {
   totalCities: number;
   prevCityId: number | null;
   nextCityId: number | null;
-  cities: { id: number; name: string }[];
+  cities: { id: number; name: string; nickname?: string | null }[];
+  activeCityId?: number;
+  parentCity?: { id: number; name: string } | null;
   poiCounts: Record<Category, number>;
   plannedCount: number;
   totalPois: number;
+  editProps?: {
+    tripId: number;
+    city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string };
+    tripStartDate: string;
+    tripEndDate: string;
+  };
 };
 
 export function CityHeader({
   cityId,
   tripId,
   name,
+  nickname,
   country,
   countryCode,
   timezone,
@@ -83,9 +94,12 @@ export function CityHeader({
   prevCityId,
   nextCityId,
   cities,
+  activeCityId,
+  parentCity,
   poiCounts,
   plannedCount,
   totalPois,
+  editProps,
 }: CityHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -132,32 +146,59 @@ export function CityHeader({
             </span>
           )}
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {name}
-              {country && (
-                <span className="ml-2 text-lg font-normal text-[hsl(var(--muted-foreground))]">
-                  {country}
-                </span>
+            {parentCity && (
+              <button
+                onClick={() => router.push(`/trips/${tripId}/cities/${parentCity.id}`)}
+                className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors mb-0.5 flex items-center gap-1"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                Sub-destination of {parentCity.name}
+              </button>
+            )}
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight">
+                {nickname ?? name}
+                {country && (
+                  <span className="ml-2 text-lg font-normal text-[hsl(var(--muted-foreground))]">
+                    {country}
+                  </span>
+                )}
+              </h1>
+              {editProps && (
+                <EditCityButton
+                  tripId={editProps.tripId}
+                  city={editProps.city}
+                  tripStartDate={editProps.tripStartDate}
+                  tripEndDate={editProps.tripEndDate}
+                />
               )}
-            </h1>
+            </div>
+            {nickname && (
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                {name}
+              </p>
+            )}
           </div>
         </div>
         {totalCities > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap">
-            {cities.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => c.id !== cityId && router.push(`/trips/${tripId}/cities/${c.id}`)}
-                aria-current={c.id === cityId ? "page" : undefined}
-                className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                  c.id === cityId
-                    ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] cursor-default"
-                    : "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
-                }`}
-              >
-                {c.name}
-              </button>
-            ))}
+            {cities.map((c) => {
+              const isActive = c.id === (activeCityId ?? cityId);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => !isActive && router.push(`/trips/${tripId}/cities/${c.id}`)}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] cursor-default"
+                      : "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
+                  }`}
+                >
+                  {c.nickname ?? c.name}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

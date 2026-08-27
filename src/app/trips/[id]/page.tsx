@@ -40,9 +40,17 @@ export default async function TripDetailPage({
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
-    include: { cities: { orderBy: { order: "asc" } } },
+    include: {
+      cities: {
+        where: { parentCityId: null },
+        orderBy: { order: "asc" },
+        include: { subcities: { orderBy: { order: "asc" } } },
+      },
+    },
   });
   if (!trip) notFound();
+
+  const totalDestinations = trip.cities.length + trip.cities.reduce((sum, c) => sum + c.subcities.length, 0);
 
   // Load trip-level note (one per trip, not scoped to city/day)
   const tripNote = await prisma.tripNote.findFirst({
@@ -84,7 +92,7 @@ export default async function TripDetailPage({
                 <span className="mx-2">·</span>
                 {(() => { const days = Math.round((trip.endDate.getTime() - trip.startDate.getTime()) / 86400000) + 1; return `${days} day${days === 1 ? "" : "s"}`; })()}
                 <span className="mx-2">·</span>
-                {trip.cities.length} {trip.cities.length === 1 ? "city" : "cities"}
+                {totalDestinations} {totalDestinations === 1 ? "destination" : "destinations"}
               </p>
               <div className="mt-2">
                 <CoverImageUpload tripId={trip.id} currentImage={trip.coverImage} />
@@ -109,10 +117,19 @@ export default async function TripDetailPage({
             <TripTimeline
               cities={trip.cities.map((c) => ({
                 id: c.id,
-                name: c.name,
+                name: c.nickname ?? c.name,
                 startDate: c.startDate.toISOString(),
                 endDate: c.endDate.toISOString(),
                 order: c.order,
+                parentCityId: null,
+                subcities: c.subcities.map((s) => ({
+                  id: s.id,
+                  name: s.nickname ?? s.name,
+                  startDate: s.startDate.toISOString(),
+                  endDate: s.endDate.toISOString(),
+                  order: s.order,
+                  parentCityId: c.id,
+                })),
               }))}
               tripStartDate={trip.startDate.toISOString()}
               tripEndDate={trip.endDate.toISOString()}
@@ -132,11 +149,25 @@ export default async function TripDetailPage({
           cities={trip.cities.map((c) => ({
             id: c.id,
             name: c.name,
+            nickname: c.nickname,
             startDate: c.startDate.toISOString(),
             endDate: c.endDate.toISOString(),
             latitude: c.latitude ?? null,
             longitude: c.longitude ?? null,
             order: c.order,
+            parentCityId: null,
+            subcities: c.subcities.map((s) => ({
+              id: s.id,
+              name: s.name,
+              nickname: s.nickname,
+              startDate: s.startDate.toISOString(),
+              endDate: s.endDate.toISOString(),
+              latitude: s.latitude ?? null,
+              longitude: s.longitude ?? null,
+              order: s.order,
+              parentCityId: c.id,
+              subcities: [],
+            })),
           }))}
           tripStartDate={trip.startDate.toISOString()}
           tripEndDate={trip.endDate.toISOString()}

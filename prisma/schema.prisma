@@ -23,6 +23,7 @@ model Trip {
 model City {
   id            Int             @id @default(autoincrement())
   name          String
+  nickname      String?
   startDate     DateTime
   endDate       DateTime
   order         Int
@@ -33,12 +34,17 @@ model City {
   timezone      String?
   tripId        Int
   trip          Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  parentCityId  Int?
+  parentCity    City?           @relation("CitySubcity", fields: [parentCityId], references: [id], onDelete: Cascade)
+  subcities     City[]          @relation("CitySubcity")
   pois          Poi[]
   dayPlans      DayPlan[]
   candidates    PoiCandidate[]
   cityInfoCache CityInfoCache[]
   notes         TripNote[]
   createdAt     DateTime        @default(now())
+
+  @@index([parentCityId])
 }
 
 model Poi {

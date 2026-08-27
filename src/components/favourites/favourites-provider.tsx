@@ -138,6 +138,11 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Eagerly fetch favourites on mount so hearts show correct state immediately
+  useEffect(() => {
+    if (!hasFetched) fetchLists();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const open = useCallback(() => {
     setIsOpen(true);
     if (!hasFetched) fetchLists();

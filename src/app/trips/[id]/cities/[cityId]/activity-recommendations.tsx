@@ -9,8 +9,11 @@ import type {
   ActivityRecommendation,
   NearbyCityRecommendation,
   NearbyActivityRecommendation,
+  HikeRecommendation,
+  CyclingRecommendation,
   ActivityRecommendationsResult,
 } from "@/lib/activity-recommendations";
+import { CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, CATEGORY_STYLES, type Category } from "@/lib/categories";
 
 /** Geocode a place name to get verified lat/lng via our geocode API */
 async function verifyLocation(
@@ -42,6 +45,7 @@ export function ActivityRecommendations({
   tripEndDate,
   initialData,
   pois,
+  parentCityId,
 }: {
   cityId: number;
   cityName: string;
@@ -50,41 +54,51 @@ export function ActivityRecommendations({
   tripStartDate: string;
   tripEndDate: string;
   initialData: ActivityRecommendationsResult | null;
-  /** Existing POI names — used to link recommendations to POIs */
-  pois?: { id: number; name: string }[];
+  /** Existing POIs — used to link recommendations to POIs and show their photos */
+  pois?: { id: number; name: string; photoUrl?: string | null }[];
+  /** If this city is a subcity, its parentCityId; null for top-level */
+  parentCityId?: number | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(true);
   const [data, setData] = useState<ActivityRecommendationsResult | null>(initialData);
-  const [loading, setLoading] = useState(false);
+  const [loadingSection, setLoadingSection] = useState<string | null>(null);
+  const isLoading = loadingSection !== null;
   const [error, setError] = useState<string | null>(null);
   const [addingPoiFor, setAddingPoiFor] = useState<string | null>(null);
 
-  // Generation options
+  // Generation options (initial generation)
   const [genMustDo, setGenMustDo] = useState(true);
   const [genNearbyCities, setGenNearbyCities] = useState(true);
   const [genNearbyActivities, setGenNearbyActivities] = useState(true);
   const [maxCitiesKm, setMaxCitiesKm] = useState(150);
   const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
 
-  // Regenerate settings panel
-  const [showSettings, setShowSettings] = useState(false);
+  // "Generate more" panel
+  const [showGenerateMore, setShowGenerateMore] = useState(false);
+  const [genHikes, setGenHikes] = useState(true);
+  const [genCycling, setGenCycling] = useState(true);
+
+  // Per-section regenerate settings (for sections with configurable distance)
+  const [regenSettingsFor, setRegenSettingsFor] = useState<string | null>(null);
 
   // Subsection collapse state (all open by default)
   const [mustDoOpen, setMustDoOpen] = useState(true);
   const [nearbyActivitiesOpen, setNearbyActivitiesOpen] = useState(true);
   const [nearbyCitiesOpen, setNearbyCitiesOpen] = useState(true);
+  const [hikesOpen, setHikesOpen] = useState(true);
+  const [cyclingOpen, setCyclingOpen] = useState(true);
 
   // Sync with server-provided initial data
   useEffect(() => {
     if (initialData) setData(initialData);
   }, [initialData]);
 
+  /** Initial generation — produces the three default sections */
   async function generate() {
-    setLoading(true);
+    setLoadingSection("all");
     setError(null);
-    setShowSettings(false);
     try {
       const res = await fetch(`/api/cities/${cityId}/activities`, {
         method: "POST",
@@ -93,6 +107,8 @@ export function ActivityRecommendations({
           includeMustDo: genMustDo,
           includeNearbyCities: genNearbyCities,
           includeNearbyActivities: genNearbyActivities,
+          includeHikes: false,
+          includeCycling: false,
           maxNearbyCitiesKm: maxCitiesKm,
           maxNearbyActivitiesKm: maxActivitiesKm,
         }),
@@ -109,15 +125,86 @@ export function ActivityRecommendations({
       setError(msg);
       toast(msg, { variant: "error" });
     } finally {
-      setLoading(false);
+      setLoadingSection(null);
+    }
+  }
+
+  /** Regenerate a single section, preserving all others via server-side merge */
+  async function regenerateSection(section: "mustDo" | "nearbyCities" | "nearbyActivities" | "hikes" | "cycling") {
+    setLoadingSection(section);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          includeMustDo: section === "mustDo",
+          includeNearbyCities: section === "nearbyCities",
+          includeNearbyActivities: section === "nearbyActivities",
+          includeHikes: section === "hikes",
+          includeCycling: section === "cycling",
+          maxNearbyCitiesKm: maxCitiesKm,
+          maxNearbyActivitiesKm: maxActivitiesKm,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to regenerate");
+      }
+      const result: ActivityRecommendationsResult = await res.json();
+      setData(result);
+      toast("Regenerated successfully");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
+      toast(msg, { variant: "error" });
+    } finally {
+      setLoadingSection(null);
+    }
+  }
+
+  /** Generate additional sections (hikes, cycling) via "Generate more" */
+  async function generateMore() {
+    setLoadingSection("more");
+    setError(null);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          includeMustDo: false,
+          includeNearbyCities: false,
+          includeNearbyActivities: false,
+          includeHikes: genHikes,
+          includeCycling: genCycling,
+          maxNearbyCitiesKm: maxCitiesKm,
+          maxNearbyActivitiesKm: maxActivitiesKm,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to generate");
+      }
+      const result: ActivityRecommendationsResult = await res.json();
+      setData(result);
+      setShowGenerateMore(false);
+      toast("Generated additional recommendations");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
+      toast(msg, { variant: "error" });
+    } finally {
+      setLoadingSection(null);
     }
   }
 
   // Try to find a matching POI for a linked place name
-  function findPoiLink(linkedPlace?: string): { id: number; name: string } | null {
+  function findPoiLink(linkedPlace?: string): { id: number; name: string; photoUrl?: string | null } | null {
     if (!linkedPlace || !pois?.length) return null;
     const lower = linkedPlace.toLowerCase();
-    return pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase())) ?? null;
+    const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
+    if (!match) return null;
+    return { id: match.id, name: match.name, photoUrl: match.photoUrl };
   }
 
   /** Verify a POI's location via geocoding, then create it and show on map */
@@ -197,29 +284,72 @@ export function ActivityRecommendations({
     }
   }
 
-  function addPoiFromRecommendation(rec: ActivityRecommendation) {
-    if (!rec.linkedPlace) return;
+  function addPoiFromRecommendation(rec: ActivityRecommendation, categoryOverride?: string) {
+    const name = rec.linkedPlace || rec.title;
     addPoiAndShowOnMap({
-      name: rec.linkedPlace,
-      category: rec.category ?? "CULTURE",
+      name,
+      category: categoryOverride ?? rec.category ?? "CULTURE",
       description: rec.description,
       latitude: rec.latitude ?? null,
       longitude: rec.longitude ?? null,
     });
   }
 
-  function addNearbyActivityAsPoi(act: NearbyActivityRecommendation) {
+  function addNearbyActivityAsPoi(act: NearbyActivityRecommendation, categoryOverride?: string) {
     addPoiAndShowOnMap({
       name: act.title,
-      category: act.category ?? "NATURE",
+      category: categoryOverride ?? act.category ?? "NATURE",
       description: `${act.description}${act.location ? ` (${act.location})` : ""}`,
       latitude: act.latitude ?? null,
       longitude: act.longitude ?? null,
     });
   }
 
-  function addCityToTrip(city: NearbyCityRecommendation) {
-    // Navigate to the trip page with query params to pre-fill the add city form
+  // The parent for sub-destinations: use current city if top-level, or its parent if subcity
+  const subcityParentId = parentCityId ?? cityId;
+
+  const [addingCityName, setAddingCityName] = useState<string | null>(null);
+
+  async function addCityAsSubdestination(city: NearbyCityRecommendation) {
+    setAddingCityName(city.name);
+    try {
+      // First verify coordinates via geocoding
+      let lat = city.latitude ?? null;
+      let lng = city.longitude ?? null;
+      const verified = await verifyLocation(city.name, city.country);
+      if (verified) {
+        lat = verified.lat;
+        lng = verified.lng;
+      }
+
+      const res = await fetch(`/api/trips/${tripId}/cities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: city.name,
+          startDate: tripStartDate,
+          endDate: tripEndDate,
+          parentCityId: subcityParentId,
+          ...(city.country && { country: city.country }),
+          ...(lat != null && { latitude: lat }),
+          ...(lng != null && { longitude: lng }),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || "Failed to add sub-destination");
+      }
+      toast(`Added ${city.name} as sub-destination`);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to add sub-destination", { variant: "error" });
+    } finally {
+      setAddingCityName(null);
+    }
+  }
+
+  function addCityAsDestination(city: NearbyCityRecommendation) {
+    // Navigate to trip page with query params to pre-fill the add form
     const params = new URLSearchParams();
     params.set("addCity", "1");
     params.set("cityName", city.name);
@@ -232,53 +362,15 @@ export function ActivityRecommendations({
   const hasRecommendations = data && data.recommendations.length > 0;
   const hasNearbyCities = data && data.nearbyCities && data.nearbyCities.length > 0;
   const hasNearbyActivities = data && data.nearbyActivities && data.nearbyActivities.length > 0;
-  const hasContent = hasRecommendations || hasNearbyCities || hasNearbyActivities;
+  const hasHikes = data && data.hikes && data.hikes.length > 0;
+  const hasCycling = data && data.cycling && data.cycling.length > 0;
+  const hasContent = hasRecommendations || hasNearbyCities || hasNearbyActivities || hasHikes || hasCycling;
 
-  // Generation options UI (shared between initial and regenerate)
-  function renderOptions() {
-    return (
-      <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30 max-w-md mx-auto">
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={genMustDo} onChange={(e) => setGenMustDo(e.target.checked)} className="rounded" />
-          Must-do activities
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded" />
-          Nearby cities
-          {genNearbyCities && (
-            <span className="inline-flex items-center gap-1 ml-1">
-              <input
-                type="number"
-                value={maxCitiesKm}
-                onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
-                className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
-                min={10}
-                max={500}
-              />
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
-            </span>
-          )}
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded" />
-          Recommended activities nearby
-          {genNearbyActivities && (
-            <span className="inline-flex items-center gap-1 ml-1">
-              <input
-                type="number"
-                value={maxActivitiesKm}
-                onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
-                className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
-                min={5}
-                max={200}
-              />
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
-            </span>
-          )}
-        </label>
-      </div>
-    );
-  }
+  // Sections available for "generate more" (not yet generated)
+  const generateMoreOptions = [
+    ...(!hasHikes ? [{ key: "hikes" as const, label: "🥾 Hikes & walks", state: genHikes, setState: setGenHikes }] : []),
+    ...(!hasCycling ? [{ key: "cycling" as const, label: "🚴 Cycling routes", state: genCycling, setState: setGenCycling }] : []),
+  ];
 
   return (
     <Card>
@@ -315,20 +407,59 @@ export function ActivityRecommendations({
 
       {open && (
         <CardContent className="space-y-5">
-          {!hasContent && !loading && (
+          {!hasContent && !isLoading && (
             <div className="py-4 space-y-4">
               <p className="text-sm text-[hsl(var(--muted-foreground))] text-center">
                 Get AI-generated activity recommendations and must-do experiences for {cityName}.
               </p>
 
-              {/* Generation options */}
-              {renderOptions()}
+              {/* Initial generation options */}
+              <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30 max-w-md mx-auto">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genMustDo} onChange={(e) => setGenMustDo(e.target.checked)} className="rounded" />
+                  Must-do activities
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded" />
+                  Nearby cities
+                  {genNearbyCities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxCitiesKm}
+                        onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={10}
+                        max={500}
+                      />
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                    </span>
+                  )}
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded" />
+                  Recommended activities nearby
+                  {genNearbyActivities && (
+                    <span className="inline-flex items-center gap-1 ml-1">
+                      <input
+                        type="number"
+                        value={maxActivitiesKm}
+                        onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                        className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                        min={5}
+                        max={200}
+                      />
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                    </span>
+                  )}
+                </label>
+              </div>
 
               <div className="text-center">
                 <Button
                   type="button"
                   onClick={generate}
-                  disabled={loading || (!genMustDo && !genNearbyCities && !genNearbyActivities)}
+                  disabled={isLoading || (!genMustDo && !genNearbyCities && !genNearbyActivities)}
                   className="min-w-[200px]"
                 >
                   {"✨"} Generate recommendations
@@ -337,7 +468,7 @@ export function ActivityRecommendations({
             </div>
           )}
 
-          {loading && (
+          {loadingSection === "all" && (
             <div className="flex items-center justify-center gap-2 py-6 text-sm text-[hsl(var(--primary))] animate-pulse">
               <span className="spinner" />
               Generating recommendations for {cityName}…
@@ -354,6 +485,9 @@ export function ActivityRecommendations({
               count={data!.recommendations.length}
               open={mustDoOpen}
               onToggle={() => setMustDoOpen((v) => !v)}
+              onRegenerate={() => regenerateSection("mustDo")}
+              regenerating={loadingSection === "mustDo"}
+              disabled={isLoading}
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 {data!.recommendations.map((rec, i) => {
@@ -364,8 +498,8 @@ export function ActivityRecommendations({
                       rec={rec}
                       index={i}
                       poiLink={poiLink}
-                      onAddPoi={() => addPoiFromRecommendation(rec)}
-                      addingPoi={addingPoiFor === rec.linkedPlace}
+                      onAddPoi={(categoryOverride?: string) => addPoiFromRecommendation(rec, categoryOverride)}
+                      addingPoi={addingPoiFor === (rec.linkedPlace || rec.title)}
                     />
                   );
                 })}
@@ -379,14 +513,116 @@ export function ActivityRecommendations({
               count={data!.nearbyActivities.length}
               open={nearbyActivitiesOpen}
               onToggle={() => setNearbyActivitiesOpen((v) => !v)}
+              onRegenerate={() => setRegenSettingsFor((v) => v === "nearbyActivities" ? null : "nearbyActivities")}
+              regenerating={loadingSection === "nearbyActivities"}
+              disabled={isLoading}
+              settingsOpen={regenSettingsFor === "nearbyActivities"}
+              settingsPanel={
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
+                  <label className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                    Max distance
+                    <input
+                      type="number"
+                      value={maxActivitiesKm}
+                      onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                      className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                      min={5}
+                      max={200}
+                    />
+                    km
+                  </label>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => { setRegenSettingsFor(null); regenerateSection("nearbyActivities"); }}
+                      disabled={isLoading}
+                      className="h-7 text-xs px-2.5"
+                    >
+                      {loadingSection === "nearbyActivities" ? <><span className="spinner !h-3 !w-3" /> Regenerating…</> : <>{"🔄"} Regenerate</>}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setRegenSettingsFor(null)}
+                      className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              }
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 {data!.nearbyActivities.map((act, i) => (
                   <NearbyActivityCard
                     key={i}
                     activity={act}
-                    onAddPoi={() => addNearbyActivityAsPoi(act)}
+                    onAddPoi={(categoryOverride?: string) => addNearbyActivityAsPoi(act, categoryOverride)}
                     addingPoi={addingPoiFor === act.title}
+                  />
+                ))}
+              </div>
+            </CollapsibleSubsection>
+          )}
+
+          {hasHikes && (
+            <CollapsibleSubsection
+              title="🥾 Hikes & walks"
+              count={data!.hikes.length}
+              open={hikesOpen}
+              onToggle={() => setHikesOpen((v) => !v)}
+              onRegenerate={() => regenerateSection("hikes")}
+              regenerating={loadingSection === "hikes"}
+              disabled={isLoading}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                {data!.hikes.map((hike, i) => (
+                  <RouteCard
+                    key={i}
+                    route={hike}
+                    icon="🥾"
+                    onAddPoi={(categoryOverride?: string) => {
+                      addPoiAndShowOnMap({
+                        name: hike.title,
+                        category: categoryOverride ?? "NATURE",
+                        description: hike.description,
+                        latitude: hike.latitude ?? null,
+                        longitude: hike.longitude ?? null,
+                      });
+                    }}
+                    addingPoi={addingPoiFor === hike.title}
+                  />
+                ))}
+              </div>
+            </CollapsibleSubsection>
+          )}
+
+          {hasCycling && (
+            <CollapsibleSubsection
+              title="🚴 Cycling routes"
+              count={data!.cycling.length}
+              open={cyclingOpen}
+              onToggle={() => setCyclingOpen((v) => !v)}
+              onRegenerate={() => regenerateSection("cycling")}
+              regenerating={loadingSection === "cycling"}
+              disabled={isLoading}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                {data!.cycling.map((route, i) => (
+                  <RouteCard
+                    key={i}
+                    route={route}
+                    icon="🚴"
+                    onAddPoi={(categoryOverride?: string) => {
+                      addPoiAndShowOnMap({
+                        name: route.title,
+                        category: categoryOverride ?? "NATURE",
+                        description: route.description,
+                        latitude: route.latitude ?? null,
+                        longitude: route.longitude ?? null,
+                      });
+                    }}
+                    addingPoi={addingPoiFor === route.title}
                   />
                 ))}
               </div>
@@ -399,65 +635,116 @@ export function ActivityRecommendations({
               count={data!.nearbyCities.length}
               open={nearbyCitiesOpen}
               onToggle={() => setNearbyCitiesOpen((v) => !v)}
+              onRegenerate={() => setRegenSettingsFor((v) => v === "nearbyCities" ? null : "nearbyCities")}
+              regenerating={loadingSection === "nearbyCities"}
+              disabled={isLoading}
+              settingsOpen={regenSettingsFor === "nearbyCities"}
+              settingsPanel={
+                <div className="flex flex-wrap items-center gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
+                  <label className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                    Max distance
+                    <input
+                      type="number"
+                      value={maxCitiesKm}
+                      onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                      className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                      min={10}
+                      max={500}
+                    />
+                    km
+                  </label>
+                  <div className="ml-auto flex items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => { setRegenSettingsFor(null); regenerateSection("nearbyCities"); }}
+                      disabled={isLoading}
+                      className="h-7 text-xs px-2.5"
+                    >
+                      {loadingSection === "nearbyCities" ? <><span className="spinner !h-3 !w-3" /> Regenerating…</> : <>{"🔄"} Regenerate</>}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => setRegenSettingsFor(null)}
+                      className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              }
             >
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {data!.nearbyCities.map((city, i) => (
+                {[...data!.nearbyCities].sort((a, b) => {
+                  const numA = parseFloat((a.distance ?? "").replace(/[^0-9.]/g, "")) || 0;
+                  const numB = parseFloat((b.distance ?? "").replace(/[^0-9.]/g, "")) || 0;
+                  return numA - numB;
+                }).map((city, i) => (
                   <NearbyCityCard
                     key={i}
                     city={city}
-                    onAddToTrip={() => addCityToTrip(city)}
+                    onAddAsSubdestination={() => addCityAsSubdestination(city)}
+                    onAddAsDestination={() => addCityAsDestination(city)}
+                    adding={addingCityName === city.name}
                   />
                 ))}
               </div>
             </CollapsibleSubsection>
           )}
 
-          {hasContent && (
-            <div className="space-y-3">
-              {/* Regenerate settings panel */}
-              {showSettings && (
-                <div className="space-y-3 py-2">
-                  {renderOptions()}
-                  <div className="flex items-center justify-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={generate}
-                      disabled={loading || (!genMustDo && !genNearbyCities && !genNearbyActivities)}
-                    >
-                      {"🔄"} Regenerate
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setShowSettings(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex items-center justify-center gap-3">
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                  Generated {new Date(data!.generatedAt).toLocaleDateString()} · {data!.model}
-                </p>
-                {!showSettings && (
-                  <button
-                    type="button"
-                    onClick={() => setShowSettings(true)}
-                    className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                    Regenerate
-                  </button>
-                )}
+          {/* Generate more panel — shown when there are ungenerated optional sections */}
+          {hasContent && generateMoreOptions.length > 0 && (
+            !showGenerateMore ? (
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowGenerateMore(true)}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
+                >
+                  + Generate more
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/20 max-w-sm mx-auto">
+                <p className="text-xs font-medium text-[hsl(var(--foreground))]">Generate additional sections:</p>
+                {generateMoreOptions.map((opt) => (
+                  <label key={opt.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox" checked={opt.state} onChange={(e) => opt.setState(e.target.checked)} className="rounded" />
+                    {opt.label}
+                  </label>
+                ))}
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={generateMore}
+                    disabled={isLoading || generateMoreOptions.every((o) => !o.state)}
+                  >
+                    {loadingSection === "more" ? (
+                      <><span className="spinner !h-3 !w-3" /> Generating…</>
+                    ) : (
+                      <>{"✨"} Generate</>
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowGenerateMore(false)}
+                    disabled={isLoading}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )
+          )}
+
+          {hasContent && (
+            <p className="text-[10px] text-center text-[hsl(var(--muted-foreground))]">
+              Generated {new Date(data!.generatedAt).toLocaleDateString()} · {data!.model}
+            </p>
           )}
         </CardContent>
       )}
@@ -470,40 +757,74 @@ function CollapsibleSubsection({
   count,
   open,
   onToggle,
+  onRegenerate,
+  regenerating,
+  disabled,
+  settingsOpen,
+  settingsPanel,
   children,
 }: {
   title: string;
   count: number;
   open: boolean;
   onToggle: () => void;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+  disabled?: boolean;
+  /** When true, settingsPanel is rendered between header and children */
+  settingsOpen?: boolean;
+  /** Panel shown when settingsOpen is true (e.g. distance input + confirm) */
+  settingsPanel?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-3">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex items-center gap-1.5 group w-full text-left"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-3 w-3 text-[hsl(var(--muted-foreground))] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex items-center gap-1.5 group text-left"
         >
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <span className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))] transition-colors">
-          {title}
-        </span>
-        <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
-          ({count})
-        </span>
-      </button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className={`h-3 w-3 text-[hsl(var(--muted-foreground))] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <span className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))] transition-colors">
+            {title}
+          </span>
+          <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
+            ({count})
+          </span>
+        </button>
+        {onRegenerate && (
+          <button
+            type="button"
+            onClick={onRegenerate}
+            disabled={disabled || regenerating}
+            className={`inline-flex items-center gap-1 text-[10px] font-medium transition-colors disabled:opacity-40 ${
+              settingsOpen
+                ? "text-[hsl(var(--primary))]"
+                : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))]"
+            }`}
+            title="Regenerate this section"
+          >
+            {regenerating ? (
+              <><span className="spinner !h-3 !w-3" /> Regenerating…</>
+            ) : (
+              <><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg> Regenerate</>
+            )}
+          </button>
+        )}
+      </div>
+      {settingsOpen && settingsPanel}
       {open && children}
     </div>
   );
@@ -518,48 +839,107 @@ function RecommendationCard({
 }: {
   rec: ActivityRecommendation;
   index: number;
-  poiLink: { id: number; name: string } | null;
-  onAddPoi: () => void;
+  poiLink: { id: number; name: string; photoUrl?: string | null } | null;
+  onAddPoi: (categoryOverride?: string) => void;
   addingPoi: boolean;
 }) {
+  const category = (rec.category ?? "CULTURE") as Category;
+  const catStyle = CATEGORY_STYLES[category];
+  const catIcon = CATEGORY_ICONS[category] ?? "";
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>(category);
+  const [imgError, setImgError] = useState(false);
+  const photoSrc = poiLink?.photoUrl ? `/api/pois/${poiLink.id}/photo` : null;
+
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-1.5 transition-colors hover:bg-[hsl(var(--muted))]/50">
+    <div
+      className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] overflow-hidden transition-all hover:bg-[hsl(var(--muted))]/50 shadow-sm"
+      style={{ borderLeftWidth: 3, borderLeftColor: catStyle?.dot ?? "hsl(var(--border))" }}
+    >
+      {/* Photo banner */}
+      {photoSrc && !imgError && (
+        <div className="h-28 w-full overflow-hidden bg-[hsl(var(--muted))]/40">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoSrc} alt={rec.title} className="h-full w-full object-cover" onError={() => setImgError(true)} />
+        </div>
+      )}
+      <div className="p-3 space-y-1.5">
       <div className="flex items-start gap-2">
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/10 text-[10px] font-bold text-[hsl(var(--primary))]">
           {index + 1}
         </span>
-        <h4 className="text-sm font-semibold leading-tight">{rec.title}</h4>
-      </div>
-      <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed pl-7">
-        {rec.description}
-      </p>
-      {rec.linkedPlace && (
-        <div className="pl-7 flex items-center gap-2">
-          {poiLink ? (
-            <a
-              href={`#poi-${poiLink.id}`}
-              className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
-            >
-              {"📍"} {rec.linkedPlace}
-            </a>
-          ) : (
-            <>
-              <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
-                {"📍"} {rec.linkedPlace}
-              </span>
-              <button
-                type="button"
-                onClick={onAddPoi}
-                disabled={addingPoi}
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
-              >
-                {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
-                {addingPoi ? "Adding…" : "Add as POI"}
-              </button>
-            </>
-          )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs shrink-0">{catIcon}</span>
+            <h4 className="text-sm font-semibold leading-tight">{rec.title}</h4>
+          </div>
+          <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed mt-1">
+            {rec.description}
+          </p>
         </div>
-      )}
+      </div>
+      <div className="pl-7 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {/* Show linked place link if POI exists */}
+        {poiLink && rec.linkedPlace && (
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(
+                new CustomEvent("focus-poi-on-map", { detail: { poiId: poiLink.id } }),
+              );
+            }}
+            className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+          >
+            {"📍"} {rec.linkedPlace}
+          </button>
+        )}
+        {/* Show place name if linked but no POI yet */}
+        {!poiLink && rec.linkedPlace && (
+          <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+            {"📍"} {rec.linkedPlace}
+          </span>
+        )}
+        {/* Add as POI — toggle inline category picker */}
+        {!addOpen ? (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            disabled={addingPoi}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+          >
+            {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
+            {addingPoi ? "Adding…" : "Add as POI"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => { onAddPoi(selectedCategory); setAddOpen(false); }}
+              disabled={addingPoi}
+              className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {addingPoi ? "Adding…" : "Add"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+      </div>
     </div>
   );
 }
@@ -570,14 +950,23 @@ function NearbyActivityCard({
   addingPoi,
 }: {
   activity: NearbyActivityRecommendation;
-  onAddPoi: () => void;
+  onAddPoi: (categoryOverride?: string) => void;
   addingPoi: boolean;
 }) {
+  const category = (activity.category ?? "NATURE") as Category;
+  const catStyle = CATEGORY_STYLES[category];
+  const catIcon = CATEGORY_ICONS[category] ?? "🏞️";
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>(category);
+
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-1.5 transition-colors hover:bg-[hsl(var(--muted))]/50">
+    <div
+      className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-1.5 transition-all hover:bg-[hsl(var(--muted))]/50 shadow-sm"
+      style={{ borderLeftWidth: 3, borderLeftColor: catStyle?.dot ?? "hsl(var(--border))" }}
+    >
       <div className="flex items-start justify-between gap-2">
         <h4 className="text-sm font-semibold leading-tight flex items-center gap-1.5">
-          <span className="text-xs">{"🏞️"}</span>
+          <span className="text-xs">{catIcon}</span>
           {activity.title}
         </h4>
         {activity.distance && (
@@ -589,21 +978,51 @@ function NearbyActivityCard({
       <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
         {activity.description}
       </p>
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {activity.location && (
           <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
             {"📍"} {activity.location}
           </span>
         )}
-        <button
-          type="button"
-          onClick={onAddPoi}
-          disabled={addingPoi}
-          className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
-        >
-          {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
-          {addingPoi ? "Adding…" : "Add as POI"}
-        </button>
+        {/* Add as POI — toggle inline category picker */}
+        {!addOpen ? (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            disabled={addingPoi}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+          >
+            {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
+            {addingPoi ? "Adding…" : "Add as POI"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => { onAddPoi(selectedCategory); setAddOpen(false); }}
+              disabled={addingPoi}
+              className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {addingPoi ? "Adding…" : "Add"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -611,13 +1030,17 @@ function NearbyActivityCard({
 
 function NearbyCityCard({
   city,
-  onAddToTrip,
+  onAddAsSubdestination,
+  onAddAsDestination,
+  adding,
 }: {
   city: NearbyCityRecommendation;
-  onAddToTrip: () => void;
+  onAddAsSubdestination: () => void;
+  onAddAsDestination: () => void;
+  adding?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-1 transition-colors hover:bg-[hsl(var(--muted))]/50">
+    <div className="rounded-lg border border-[hsl(var(--border))] bg-gradient-to-br from-[hsl(var(--card))] to-[hsl(var(--muted))]/30 p-4 space-y-1.5 transition-all hover:shadow-sm shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <h4 className="text-sm font-semibold flex items-center gap-1.5">
           <span className="text-xs">{"🏘️"}</span>
@@ -632,14 +1055,121 @@ function NearbyCityCard({
       <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
         {city.description}
       </p>
-      <div className="pt-1">
+      <div className="pt-1 flex items-center gap-3">
         <button
           type="button"
-          onClick={onAddToTrip}
-          className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+          onClick={onAddAsSubdestination}
+          disabled={adding}
+          className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
         >
-          + Add to trip
+          {adding ? <span className="spinner !h-3 !w-3" /> : "+"}
+          {adding ? "Adding…" : "Add as sub-destination"}
         </button>
+        <button
+          type="button"
+          onClick={onAddAsDestination}
+          disabled={adding}
+          className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline disabled:opacity-50"
+        >
+          or add as destination
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RouteCard({
+  route,
+  icon,
+  onAddPoi,
+  addingPoi,
+}: {
+  route: HikeRecommendation | CyclingRecommendation;
+  icon: string;
+  onAddPoi: (categoryOverride?: string) => void;
+  addingPoi: boolean;
+}) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>("NATURE");
+
+  const difficultyColor = route.difficulty === "challenging"
+    ? "text-red-600 bg-red-50 dark:bg-red-950 dark:text-red-400"
+    : route.difficulty === "moderate"
+      ? "text-amber-600 bg-amber-50 dark:bg-amber-950 dark:text-amber-400"
+      : "text-green-600 bg-green-50 dark:bg-green-950 dark:text-green-400";
+
+  return (
+    <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 space-y-1.5 transition-all hover:bg-[hsl(var(--muted))]/50 shadow-sm">
+      <div className="flex items-start justify-between gap-2">
+        <h4 className="text-sm font-semibold leading-tight flex items-center gap-1.5">
+          <span className="text-xs">{icon}</span>
+          {route.title}
+        </h4>
+        {route.difficulty && (
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${difficultyColor}`}>
+            {route.difficulty}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">
+        {route.description}
+      </p>
+      {/* Route meta */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {route.distance && (
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+            📏 {route.distance}
+          </span>
+        )}
+        {route.duration && (
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+            ⏱ {route.duration}
+          </span>
+        )}
+        {route.startLocation && (
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+            📍 {route.startLocation}
+          </span>
+        )}
+        {/* Add as POI */}
+        {!addOpen ? (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            disabled={addingPoi}
+            className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+          >
+            {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
+            {addingPoi ? "Adding…" : "Add as POI"}
+          </button>
+        ) : (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => { onAddPoi(selectedCategory); setAddOpen(false); }}
+              disabled={addingPoi}
+              className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+            >
+              {addingPoi ? "Adding…" : "Add"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddOpen(false)}
+              className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

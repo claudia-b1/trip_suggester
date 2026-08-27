@@ -90,7 +90,7 @@ export async function POST(
 
   // ── Resolve city ────────────────────────────────────────────────────────────
   const city = await prisma.city.findUnique({ where: { id: cityIdNum } });
-  if (!city) return NextResponse.json({ error: "City not found" }, { status: 404 });
+  if (!city) return NextResponse.json({ error: "Destination not found" }, { status: 404 });
 
   // ── Delete existing POIs if overwrite requested ──────────────────────────────
   if (overwrite) {

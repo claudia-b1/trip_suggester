@@ -48,10 +48,46 @@ export type NearbyActivityRecommendation = {
   longitude?: number;
 };
 
+export type HikeRecommendation = {
+  title: string;
+  description: string;
+  /** Distance of the hike/walk */
+  distance?: string;
+  /** Estimated duration */
+  duration?: string;
+  /** Difficulty level */
+  difficulty?: string;
+  /** Starting point / trailhead */
+  startLocation?: string;
+  /** Approximate latitude of the start */
+  latitude?: number;
+  /** Approximate longitude of the start */
+  longitude?: number;
+};
+
+export type CyclingRecommendation = {
+  title: string;
+  description: string;
+  /** Distance of the route */
+  distance?: string;
+  /** Estimated duration */
+  duration?: string;
+  /** Difficulty level */
+  difficulty?: string;
+  /** Starting point */
+  startLocation?: string;
+  /** Approximate latitude of the start */
+  latitude?: number;
+  /** Approximate longitude of the start */
+  longitude?: number;
+};
+
 export type ActivityRecommendationsResult = {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
   nearbyActivities: NearbyActivityRecommendation[];
+  hikes: HikeRecommendation[];
+  cycling: CyclingRecommendation[];
   generatedAt: string;
   model: string;
 };
@@ -61,6 +97,8 @@ export type GenerateOptions = {
   includeMustDo?: boolean;
   includeNearbyCities?: boolean;
   includeNearbyActivities?: boolean;
+  includeHikes?: boolean;
+  includeCycling?: boolean;
   maxNearbyCitiesKm?: number;
   maxNearbyActivitiesKm?: number;
 };
@@ -82,6 +120,8 @@ export function buildActivityPrompt(
   const includeMustDo = options?.includeMustDo !== false;
   const includeNearbyCities = options?.includeNearbyCities !== false;
   const includeNearbyActivities = options?.includeNearbyActivities !== false;
+  const includeHikes = options?.includeHikes ?? false;
+  const includeCycling = options?.includeCycling ?? false;
   const maxCitiesKm = options?.maxNearbyCitiesKm ?? 150;
   const maxActivitiesKm = options?.maxNearbyActivitiesKm ?? 50;
 
@@ -132,6 +172,34 @@ Suggest specific activities, attractions, or experiences in the area SURROUNDING
     outputFields.push(`- "nearbyActivities": array of objects with "title" (string), "description" (string), "location" (string — the nearby town/area), "distance" (string like "~30 km"), "category" (string), "latitude" (number or null), "longitude" (number or null)`);
   }
 
+  if (includeHikes) {
+    const sectionNum = [includeMustDo, includeNearbyCities, includeNearbyActivities].filter(Boolean).length + 1;
+    sections.push(`## SECTION ${sectionNum}: Hikes & walks (3-8 items)
+
+Suggest hiking trails, walking routes, and scenic walks in and around ${cityName}.
+- Include a mix of easy, moderate, and challenging routes when available
+- Cover city walks, nature trails, coastal paths, mountain hikes — whatever is relevant to the area
+- Include approximate distance (km), estimated duration, and difficulty (easy/moderate/challenging)
+- Include the starting point or trailhead location
+- Include approximate GPS coordinates for the starting point`);
+
+    outputFields.push(`- "hikes": array of objects with "title" (string), "description" (string), "distance" (string like "~8 km"), "duration" (string like "~2-3 hours"), "difficulty" (string — "easy", "moderate", or "challenging"), "startLocation" (string), "latitude" (number or null), "longitude" (number or null)`);
+  }
+
+  if (includeCycling) {
+    const sectionNum = [includeMustDo, includeNearbyCities, includeNearbyActivities, includeHikes].filter(Boolean).length + 1;
+    sections.push(`## SECTION ${sectionNum}: Cycling routes (3-8 items)
+
+Suggest cycling routes and bike trips in and around ${cityName}.
+- Include a mix of recreational rides, road cycling routes, and mountain bike trails when available
+- Include routes through scenic areas, along rivers, coastlines, or through countryside
+- Include approximate distance (km), estimated duration, and difficulty (easy/moderate/challenging)
+- Include the starting point
+- Include approximate GPS coordinates for the starting point`);
+
+    outputFields.push(`- "cycling": array of objects with "title" (string), "description" (string), "distance" (string like "~25 km"), "duration" (string like "~1.5 hours"), "difficulty" (string — "easy", "moderate", or "challenging"), "startLocation" (string), "latitude" (number or null), "longitude" (number or null)`);
+  }
+
   return `You are a concise travel advisor. Generate recommendations for a visitor to ${location}.
 
 You MUST produce the following sections:
@@ -168,6 +236,8 @@ ${outputFields.join("\n")}
 ${!includeMustDo ? '- "recommendations": [] (empty array, not requested)' : ""}
 ${!includeNearbyCities ? '- "nearbyCities": [] (empty array, not requested)' : ""}
 ${!includeNearbyActivities ? '- "nearbyActivities": [] (empty array, not requested)' : ""}
+${!includeHikes ? '- "hikes": [] (empty array, not requested)' : ""}
+${!includeCycling ? '- "cycling": [] (empty array, not requested)' : ""}
 
 Return ONLY valid JSON. No markdown code fences, no explanation text. Just the raw JSON object.`;
 }
@@ -178,7 +248,11 @@ export function parseActivityResponse(raw: string): {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
   nearbyActivities: NearbyActivityRecommendation[];
+  hikes: HikeRecommendation[];
+  cycling: CyclingRecommendation[];
 } {
+  const empty = { recommendations: [] as ActivityRecommendation[], nearbyCities: [] as NearbyCityRecommendation[], nearbyActivities: [] as NearbyActivityRecommendation[], hikes: [] as HikeRecommendation[], cycling: [] as CyclingRecommendation[] };
+
   // Try to extract JSON object from response (model may wrap in markdown code block)
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -188,21 +262,17 @@ export function parseActivityResponse(raw: string): {
       try {
         const parsed = JSON.parse(arrayMatch[0]);
         if (Array.isArray(parsed)) {
-          return {
-            recommendations: parseRecommendationArray(parsed),
-            nearbyCities: [],
-            nearbyActivities: [],
-          };
+          return { ...empty, recommendations: parseRecommendationArray(parsed) };
         }
       } catch { /* fall through */ }
     }
-    return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
+    return empty;
   }
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
     if (typeof parsed !== "object" || parsed === null) {
-      return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
+      return empty;
     }
 
     const recommendations = Array.isArray(parsed.recommendations)
@@ -246,9 +316,51 @@ export function parseActivityResponse(raw: string): {
           }))
       : [];
 
-    return { recommendations, nearbyCities, nearbyActivities };
+    const hikes = Array.isArray(parsed.hikes)
+      ? parsed.hikes
+          .filter(
+            (item: unknown): item is Record<string, unknown> =>
+              typeof item === "object" && item !== null &&
+              typeof (item as Record<string, unknown>).title === "string" &&
+              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
+          )
+          .slice(0, 8)
+          .map((item: Record<string, unknown>) => ({
+            title: String(item.title),
+            description: String(item.description ?? ""),
+            distance: typeof item.distance === "string" ? item.distance : undefined,
+            duration: typeof item.duration === "string" ? item.duration : undefined,
+            difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
+            startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
+            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
+            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+          }))
+      : [];
+
+    const cycling = Array.isArray(parsed.cycling)
+      ? parsed.cycling
+          .filter(
+            (item: unknown): item is Record<string, unknown> =>
+              typeof item === "object" && item !== null &&
+              typeof (item as Record<string, unknown>).title === "string" &&
+              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
+          )
+          .slice(0, 8)
+          .map((item: Record<string, unknown>) => ({
+            title: String(item.title),
+            description: String(item.description ?? ""),
+            distance: typeof item.distance === "string" ? item.distance : undefined,
+            duration: typeof item.duration === "string" ? item.duration : undefined,
+            difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
+            startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
+            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
+            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+          }))
+      : [];
+
+    return { recommendations, nearbyCities, nearbyActivities, hikes, cycling };
   } catch {
-    return { recommendations: [], nearbyCities: [], nearbyActivities: [] };
+    return empty;
   }
 }
 

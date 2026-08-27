@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
+import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, isCategory, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
 import { PoiMap, type DayPlanOption } from "./poi-map";
-import { DailyPlan, type DayPlanDTO } from "./daily-plan";
+import { DailyPlan, type DayPlanDTO, type SubcityDayPlanDTO } from "./daily-plan";
 import { TimelineSidebar } from "./timeline-sidebar";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -45,7 +45,7 @@ export type PoiDTO = {
   subcategory: string | null;
 };
 
-type View = "list" | "map" | "plan";
+type View = "list" | "map";
 type ListLayout = "grid" | "compact";
 
 /** Build a Google Maps URL that resolves to the actual place if found, otherwise falls back to coordinates */
@@ -53,10 +53,52 @@ function googleMapsUrl(name: string, lat: number, lng: number) {
   return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
 }
 
+/** Photo URL — data URIs returned directly, external URLs proxied through API to handle expired Google Places URLs */
+function poiPhotoSrc(poi: { id: number; photoUrl: string | null }): string | null {
+  if (!poi.photoUrl) return null;
+  if (poi.photoUrl.startsWith("data:")) return poi.photoUrl;
+  return `/api/pois/${poi.id}/photo`;
+}
+
+/** Resize an image file client-side, return as JPEG data URI */
+function resizeImageFile(file: File, maxWidth: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL("image/jpeg", 0.8));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
 function formatReviewCount(n: number): string {
   if (n >= 10000) return `${Math.round(n / 1000)}K`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
   return `${n}`;
+}
+
+// ─── Drag grip icon SVG ──────────────────────────────────────────────────────
+
+function DragGripIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <rect x="7" y="5" width="3" height="3" rx="1"/>
+      <rect x="14" y="5" width="3" height="3" rx="1"/>
+      <rect x="7" y="11" width="3" height="3" rx="1"/>
+      <rect x="14" y="11" width="3" height="3" rx="1"/>
+      <rect x="7" y="17" width="3" height="3" rx="1"/>
+      <rect x="14" y="17" width="3" height="3" rx="1"/>
+    </svg>
+  );
 }
 
 // ─── Delete icon SVG ──────────────────────────────────────────────────────────
@@ -75,15 +117,30 @@ function TrashIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
 
 // ─── DayPlanAssigner ──────────────────────────────────────────────────────────
 
-function DayPlanAssigner({ poiId, poiName, dayPlans }: { poiId: number; poiName: string; dayPlans: DayPlanOption[] }) {
+function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poiId: number; poiName: string; poiCategory: Category; dayPlans: DayPlanOption[] }) {
   const router = useRouter();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot>("MORNING");
   const [assigning, setAssigning] = useState(false);
+  // Multi-day mode for accommodation
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
+  const isAccommodation = poiCategory === "ACCOMMODATION";
 
   if (dayPlans.length === 0) return null;
+
+  function toggleDay(id: number) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllDays() {
+    setSelectedDays(new Set(dayPlans.map((d) => d.id)));
+  }
 
   async function assign() {
     if (!selectedDay) return;
@@ -103,6 +160,30 @@ function DayPlanAssigner({ poiId, poiName, dayPlans }: { poiId: number; poiName:
     router.refresh();
   }
 
+  async function assignMulti() {
+    if (selectedDays.size === 0) return;
+    setAssigning(true);
+    const res = await fetch("/api/day-plans/batch-assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        poiId,
+        dayPlanIds: [...selectedDays],
+        timeSlot: "EVENING",
+      }),
+    });
+    setAssigning(false);
+    if (res.ok) {
+      const data = await res.json();
+      toast(`${poiName} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
+      setOpen(false);
+      setSelectedDays(new Set());
+      router.refresh();
+    } else {
+      toast("Failed to assign", { variant: "error" });
+    }
+  }
+
   return (
     <div className="mb-2">
       <button
@@ -115,33 +196,79 @@ function DayPlanAssigner({ poiId, poiName, dayPlans }: { poiId: number; poiName:
       </button>
       {open && (
         <div className="mt-1.5 space-y-1.5">
-          <select
-            value={selectedDay ?? ""}
-            onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
-            className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
-          >
-            <option value="">Pick a day…</option>
-            {dayPlans.map((d) => (
-              <option key={d.id} value={d.id}>{d.label}</option>
-            ))}
-          </select>
-          <select
-            value={selectedSlot}
-            onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
-            className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
-          >
-            {TIME_SLOTS.map((s) => (
-              <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={assign}
-            disabled={!selectedDay || assigning}
-            className="w-full rounded bg-[hsl(var(--primary))] px-2 py-1 text-xs font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-40 hover:opacity-90"
-          >
-            {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
-          </button>
+          {isAccommodation ? (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                  🏠 Select days
+                </span>
+                <button
+                  type="button"
+                  onClick={selectAllDays}
+                  className="text-[10px] text-indigo-500 hover:text-indigo-700"
+                >
+                  Select all
+                </button>
+              </div>
+              <div className="max-h-[160px] overflow-y-auto space-y-0.5">
+                {dayPlans.map((d) => (
+                  <label
+                    key={d.id}
+                    className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedDays.has(d.id)}
+                      onChange={() => toggleDay(d.id)}
+                      disabled={assigning}
+                      className="rounded border-indigo-300"
+                    />
+                    <span>{d.label}</span>
+                  </label>
+                ))}
+              </div>
+              {selectedDays.size > 0 && (
+                <button
+                  type="button"
+                  onClick={assignMulti}
+                  disabled={assigning}
+                  className="w-full rounded bg-indigo-500 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+                >
+                  {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <select
+                value={selectedDay ?? ""}
+                onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
+                className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
+              >
+                <option value="">Pick a day…</option>
+                {dayPlans.map((d) => (
+                  <option key={d.id} value={d.id}>{d.label}</option>
+                ))}
+              </select>
+              <select
+                value={selectedSlot}
+                onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
+                className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
+              >
+                {TIME_SLOTS.map((s) => (
+                  <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={assign}
+                disabled={!selectedDay || assigning}
+                className="w-full rounded bg-[hsl(var(--primary))] px-2 py-1 text-xs font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-40 hover:opacity-90"
+              >
+                {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -244,6 +371,8 @@ function PoiCard({
   onFavourite,
   isFavourited,
   dayPlans,
+  onChangeCategory,
+  onUploadPhoto,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -260,19 +389,24 @@ function PoiCard({
   onFavourite: (poi: PoiDTO) => void;
   isFavourited: boolean;
   dayPlans: DayPlanOption[];
+  onChangeCategory: (poiId: number, cat: Category) => void;
+  onUploadPhoto: (poiId: number, dataUri: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tipsOpen, setTipsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [hoverStar, setHoverStar] = useState<number | null>(null);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const hasCoords = poi.latitude != null && poi.longitude != null;
   const isDeleting = deletingId === poi.id;
   const longDesc = (poi.description?.length ?? 0) > 110;
   const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
   const hasDetails = poi.openingHours || poi.phoneNumber || poi.inceptionYear || poi.fee;
-  const showPhoto = poi.photoUrl && !imgError;
+  const photoSrc = poiPhotoSrc(poi);
+  const showPhoto = photoSrc && !imgError;
   const displayRating = hoverStar ?? userRating ?? 0;
 
   return (
@@ -287,9 +421,31 @@ function PoiCard({
       {/* ── Header: left category strip + photo ──────────────── */}
       <div className="flex h-28 w-full flex-shrink-0">
 
-        {/* Left strip: category icon + Google rating */}
-        <div className="flex w-12 flex-shrink-0 flex-col items-center justify-start gap-1.5 bg-[hsl(var(--muted))] px-1 py-2.5">
-          <span className="text-xl leading-none">{CATEGORY_ICONS[poi.category]}</span>
+        {/* Left strip: category icon (clickable to change) + Google rating */}
+        <div className="flex w-12 flex-shrink-0 flex-col items-center justify-start gap-1.5 bg-[hsl(var(--muted))] px-1 py-2.5 relative">
+          <button
+            type="button"
+            title="Change category"
+            onClick={() => setCatPickerOpen((v) => !v)}
+            className="text-xl leading-none hover:scale-110 transition-transform cursor-pointer"
+          >
+            {CATEGORY_ICONS[poi.category]}
+          </button>
+          {catPickerOpen && (
+            <div className="absolute top-8 left-0 z-30 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg p-1.5 grid grid-cols-2 gap-1 w-max">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => { if (c !== poi.category) onChangeCategory(poi.id, c); setCatPickerOpen(false); }}
+                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
+                >
+                  <span>{CATEGORY_ICONS[c]}</span>
+                  <span>{CATEGORY_LABELS[c]}</span>
+                </button>
+              ))}
+            </div>
+          )}
           {poi.rating != null && (
             <div className="flex flex-col items-center text-center gap-0.5">
               <span className="text-[10px] font-semibold text-amber-600 leading-none">⭐ {poi.rating.toFixed(1)}</span>
@@ -303,19 +459,52 @@ function PoiCard({
         {/* Photo area */}
         <div
           className={`relative flex-1 overflow-hidden ${showPhoto ? "cursor-zoom-in" : "bg-[hsl(var(--muted))]/60"}`}
-          onClick={() => showPhoto && onOpenLightbox(poi.photoUrl!, poi.name)}
+          onClick={() => showPhoto && onOpenLightbox(photoSrc!, poi.name)}
         >
+          {/* Hidden file input for photo upload */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="hidden"
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              const dataUri = await resizeImageFile(file, 600);
+              onUploadPhoto(poi.id, dataUri);
+              if (photoInputRef.current) photoInputRef.current.value = "";
+            }}
+          />
           {showPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={poi.photoUrl!}
-              alt={poi.name}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-              onError={() => setImgError(true)}
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={photoSrc!}
+                alt={poi.name}
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                onError={() => setImgError(true)}
+              />
+              {/* Change photo button — top-right corner */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); photoInputRef.current?.click(); }}
+                className="absolute top-1.5 right-1.5 z-10 rounded-full bg-black/50 p-1 text-white/80 hover:text-white hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+                title="Change photo"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                </svg>
+              </button>
+            </>
           ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <span className="text-3xl opacity-10">{CATEGORY_ICONS[poi.category]}</span>
+            <div
+              className="flex h-full w-full flex-col items-center justify-center gap-1 cursor-pointer hover:bg-[hsl(var(--muted))]/80 transition-colors"
+              onClick={(e) => { e.stopPropagation(); photoInputRef.current?.click(); }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <span className="text-[10px] opacity-20 font-medium">Add photo</span>
             </div>
           )}
 
@@ -424,14 +613,14 @@ function PoiCard({
           </div>
         )}
 
-        {/* Tips + Details side by side */}
+        {/* Tips + Details toggle buttons */}
         {(poi.tips || hasDetails) && (
           <div className="mb-1.5 flex flex-wrap items-center gap-3">
             {poi.tips && (
               <button
                 type="button"
                 onClick={() => setTipsOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
+                className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline"
               >
                 <span className={`text-[9px] transition-transform ${tipsOpen ? "rotate-90" : ""}`}>▶</span>
                 💡 Tip
@@ -441,7 +630,7 @@ function PoiCard({
               <button
                 type="button"
                 onClick={() => setDetailsOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
+                className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
               >
                 <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
                 ℹ Details
@@ -452,14 +641,14 @@ function PoiCard({
 
         {/* Expanded tip */}
         {tipsOpen && poi.tips && (
-          <div className="mb-2 rounded-md bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-xs text-amber-800">
+          <div className="mb-2 border-l-2 border-amber-400 pl-2.5 py-1 text-xs text-amber-800">
             💡 {poi.tips}
           </div>
         )}
 
         {/* Expanded details */}
-        {detailsOpen && (
-          <div className="mb-2 rounded-md bg-slate-50 border border-slate-100 px-2.5 py-1.5 text-xs text-slate-700 space-y-0.5">
+        {detailsOpen && hasDetails && (
+          <div className="mb-2 border-l-2 border-slate-300 pl-2.5 py-1 text-xs text-slate-600 space-y-0.5">
             {poi.fee && <p>🎫 {poi.fee === "yes" ? "Admission fee" : poi.fee === "no" ? "Free" : poi.fee}</p>}
             {poi.openingHours && <p>🕐 {poi.openingHours}</p>}
             {poi.phoneNumber && <p>📞 {poi.phoneNumber}</p>}
@@ -468,24 +657,23 @@ function PoiCard({
         )}
 
         {/* Add to Day Plan */}
-        <DayPlanAssigner poiId={poi.id} poiName={poi.name} dayPlans={dayPlans} />
+        <DayPlanAssigner poiId={poi.id} poiName={poi.name} poiCategory={poi.category} dayPlans={dayPlans} />
 
         {/* Footer links */}
         <div className="mt-auto flex items-center gap-3 flex-wrap border-t border-[hsl(var(--border))] pt-2">
-          {/* Favourite button — always visible, especially important on mobile */}
-          <button
-            type="button"
-            onClick={() => onFavourite(poi)}
-            title={isFavourited ? "Already in favourites" : "Add to favourites"}
-            className={`flex items-center gap-1 text-xs font-medium transition-colors ${
-              isFavourited
-                ? "text-pink-500"
-                : "text-[hsl(var(--muted-foreground))] hover:text-pink-500"
-            }`}
+          {/* Drag handle */}
+          <span
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+            }}
+            title="Drag to timeline"
+            className="flex items-center gap-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] cursor-grab active:cursor-grabbing transition-colors"
           >
-            <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
-            <span className="sm:hidden">{isFavourited ? "Saved" : "Save"}</span>
-          </button>
+            <DragGripIcon className="h-3.5 w-3.5" />
+            <span className="text-[10px] font-medium">Drag</span>
+          </span>
           {hasCoords && (
             <button
               type="button"
@@ -538,6 +726,8 @@ function CompactPoiCard({
   onFavourite,
   isFavourited,
   dayPlans,
+  onChangeCategory,
+  onUploadPhoto,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -553,9 +743,15 @@ function CompactPoiCard({
   onFavourite: (poi: PoiDTO) => void;
   isFavourited: boolean;
   dayPlans: DayPlanOption[];
+  onChangeCategory: (poiId: number, cat: Category) => void;
+  onUploadPhoto: (poiId: number, dataUri: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [tipsOpen, setTipsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [catPickerOpen, setCatPickerOpen] = useState(false);
+  const compactPhotoRef = useRef<HTMLInputElement>(null);
   const hasCoords = poi.latitude != null && poi.longitude != null;
   const isDeleting = deletingId === poi.id;
   const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
@@ -563,8 +759,8 @@ function CompactPoiCard({
 
   return (
     <div className={`group relative rounded-lg border transition-shadow hover:shadow-md ${isAssigned ? "bg-[hsl(var(--card))]/80 ring-1 ring-green-300" : "bg-[hsl(var(--card))]"} ${userRating != null ? "border-[hsl(var(--primary))]" : "border-[hsl(var(--border))]"}`}>
-      {/* Status indicators — left side */}
-      <div className="absolute left-2 top-2.5 z-10 flex items-center gap-1">
+      {/* Status indicators — left side (offset to right of drag handle) */}
+      <div className="absolute left-7 top-2.5 z-10 flex items-center gap-1">
         {isAssigned && (
           <span title="Assigned to daily plan" className="flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm text-[9px]">✓</span>
         )}
@@ -581,19 +777,58 @@ function CompactPoiCard({
       </div>
 
       {/* Compact header — always visible */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-3 p-2.5 pl-12 text-left"
+      <div className="flex w-full items-center gap-0">
+        {/* Drag handle */}
+        <span
+          draggable
+          onDragStart={(e) => {
+            e.stopPropagation();
+            e.dataTransfer.effectAllowed = "copy";
+            e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+          }}
+          title="Drag to timeline"
+          className="flex items-center px-1 py-2.5 text-[hsl(var(--muted-foreground))]/40 hover:text-[hsl(var(--muted-foreground))] cursor-grab active:cursor-grabbing transition-colors self-stretch"
+        >
+          <DragGripIcon className="h-4 w-4" />
+        </span>
+      <div
+        onClick={(e) => { if ((e.target as HTMLElement).closest('button')) return; setOpen((v) => !v); }}
+        className="flex flex-1 items-center gap-3 p-2.5 pl-1 text-left min-w-0 cursor-pointer"
       >
         {/* Thumbnail */}
-        {poi.photoUrl && !imgError ? (
-          <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-md">
+        <input
+          ref={compactPhotoRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const dataUri = await resizeImageFile(file, 600);
+            onUploadPhoto(poi.id, dataUri);
+            if (compactPhotoRef.current) compactPhotoRef.current.value = "";
+          }}
+        />
+        {poiPhotoSrc(poi) && !imgError ? (
+          <div
+            className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-md group/thumb cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); compactPhotoRef.current?.click(); }}
+            title="Change photo"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={poi.photoUrl} alt="" className="h-full w-full object-cover" onError={() => setImgError(true)} />
+            <img src={poiPhotoSrc(poi)!} alt="" className="h-full w-full object-cover" onError={() => setImgError(true)} />
+            <div className="absolute inset-0 bg-black/0 group-hover/thumb:bg-black/40 transition-colors flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-white opacity-0 group-hover/thumb:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+              </svg>
+            </div>
           </div>
         ) : (
-          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-[hsl(var(--muted))] text-lg">
+          <span
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-[hsl(var(--muted))] text-lg cursor-pointer hover:bg-[hsl(var(--muted))]/80 transition-colors"
+            onClick={(e) => { e.stopPropagation(); compactPhotoRef.current?.click(); }}
+            title="Add photo"
+          >
             {CATEGORY_ICONS[poi.category]}
           </span>
         )}
@@ -617,28 +852,49 @@ function CompactPoiCard({
           )}
         </div>
 
-        {/* Category badge */}
-        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
-          {CATEGORY_LABELS[poi.category]}
+        {/* Category badge — clickable to change */}
+        <span className="flex-shrink-0 relative">
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); setCatPickerOpen((v) => !v); }}
+            title="Change category"
+            className={`rounded-full px-2 py-0.5 text-[10px] font-medium hover:ring-1 hover:ring-[hsl(var(--primary))]/40 transition-all ${CATEGORY_STYLES[poi.category].badge}`}
+          >
+            {CATEGORY_LABELS[poi.category]}
+          </button>
+          {catPickerOpen && (
+            <div className="absolute top-6 right-0 z-30 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg p-1.5 grid grid-cols-2 gap-1 w-max">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); if (c !== poi.category) onChangeCategory(poi.id, c); setCatPickerOpen(false); }}
+                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
+                >
+                  <span>{CATEGORY_ICONS[c]}</span>
+                  <span>{CATEGORY_LABELS[c]}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </span>
 
         {/* Favourite heart — always visible, tap-friendly for mobile */}
-        <span
-          role="button"
-          tabIndex={0}
+        <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onFavourite(poi); } }}
           title={isFavourited ? "Already in favourites" : "Add to favourites"}
           className={`flex-shrink-0 p-1 transition-colors ${isFavourited ? "text-pink-500" : "text-gray-300 hover:text-pink-400"}`}
         >
           <HeartIcon filled={isFavourited} className="h-4 w-4" />
-        </span>
+        </button>
 
         {/* Expand chevron */}
         <span className={`flex-shrink-0 text-xs text-[hsl(var(--muted-foreground))] transition-transform ${open ? "rotate-180" : ""}`}>
           ▼
         </span>
-      </button>
+      </div>
+      </div>
 
       {/* Expanded details */}
       {open && (
@@ -647,21 +903,39 @@ function CompactPoiCard({
             <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.description}</p>
           )}
 
-          {poi.tips && (
-            <p className="rounded-md bg-amber-50 border border-amber-100 px-2.5 py-1.5 text-xs text-amber-800">
+          {/* Tips + Details toggle buttons */}
+          {(poi.tips || hasDetails) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {poi.tips && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setTipsOpen((v) => !v); }}
+                  className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline"
+                >
+                  <span className={`text-[9px] transition-transform ${tipsOpen ? "rotate-90" : ""}`}>▶</span>
+                  💡 Tip
+                </button>
+              )}
+              {hasDetails && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
+                  className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
+                >
+                  <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
+                  ℹ Details
+                </button>
+              )}
+            </div>
+          )}
+
+          {tipsOpen && poi.tips && (
+            <div className="border-l-2 border-amber-400 pl-2.5 py-1 text-xs text-amber-800">
               💡 {poi.tips}
-            </p>
+            </div>
           )}
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              title={isFavourited ? "Already in favourites" : "Add to favourites"}
-              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
-              className={`rounded-full p-1 transition-colors ${isFavourited ? "text-red-500" : "text-[hsl(var(--muted-foreground))] hover:text-red-400"}`}
-            >
-              <HeartIcon filled={isFavourited} className="h-4 w-4" />
-            </button>
             <StarRating
               poiId={poi.id}
               rating={userRating}
@@ -673,8 +947,8 @@ function CompactPoiCard({
             />
           </div>
 
-          {hasDetails && (
-            <div className="rounded-md bg-slate-50 border border-slate-100 px-2.5 py-1.5 text-xs text-slate-700 space-y-0.5">
+          {detailsOpen && hasDetails && (
+            <div className="border-l-2 border-slate-300 pl-2.5 py-1 text-xs text-slate-600 space-y-0.5">
               {poi.fee && <p>🎫 {poi.fee === "yes" ? "Admission fee required" : poi.fee === "no" ? "Free admission" : poi.fee}</p>}
               {poi.openingHours && <p>🕐 {poi.openingHours}</p>}
               {poi.phoneNumber && <p>📞 {poi.phoneNumber}</p>}
@@ -682,23 +956,9 @@ function CompactPoiCard({
             </div>
           )}
 
-          <DayPlanAssigner poiId={poi.id} poiName={poi.name} dayPlans={dayPlans} />
+          <DayPlanAssigner poiId={poi.id} poiName={poi.name} poiCategory={poi.category} dayPlans={dayPlans} />
 
           <div className="flex items-center gap-3 flex-wrap pt-1">
-            {/* Favourite button — visible on mobile without needing to find it in overlays */}
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
-              title={isFavourited ? "Already in favourites" : "Add to favourites"}
-              className={`flex items-center gap-1 text-xs font-medium transition-colors ${
-                isFavourited
-                  ? "text-pink-500"
-                  : "text-[hsl(var(--muted-foreground))] hover:text-pink-500"
-              }`}
-            >
-              <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
-              {isFavourited ? "Saved" : "Save"}
-            </button>
             {hasCoords && (
               <button type="button" onClick={() => onViewOnMap(poi.id)} className="text-xs font-medium text-[hsl(var(--primary))] hover:underline">
                 🗺️ View on map
@@ -891,6 +1151,7 @@ export function PoisSection({
   initialNotInterested,
   initialVisitedPoiIds,
   dayNotes,
+  subcityDayPlans,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -906,6 +1167,7 @@ export function PoisSection({
   initialNotInterested?: number[];
   initialVisitedPoiIds?: number[];
   dayNotes?: Record<number, { id: number; content: string }>;
+  subcityDayPlans?: SubcityDayPlanDTO[];
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -959,6 +1221,8 @@ export function PoisSection({
   const [listLayout, setListLayout] = useState<ListLayout>("grid");
   const [scrollToActivity, setScrollToActivity] = useState<{ date: string; activityId: number } | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  const [poiDragActive, setPoiDragActive] = useState(false);
+  const [dayPlanOpen, setDayPlanOpen] = useState(true);
 
   useEffect(() => {
     if (view !== "list" || focusPoiId == null) return;
@@ -979,6 +1243,25 @@ export function PoisSection({
     }
     window.addEventListener("focus-poi-on-map", handleFocusPoi);
     return () => window.removeEventListener("focus-poi-on-map", handleFocusPoi);
+  }, []);
+
+  // Detect POI drag start/end globally so the timeline sidebar can appear as drop target
+  useEffect(() => {
+    function handleDragOver(e: DragEvent) {
+      if (e.dataTransfer?.types.includes("application/x-poi-id")) {
+        setPoiDragActive(true);
+      }
+    }
+    function handleDragEnd() { setPoiDragActive(false); }
+    function handleDrop() { setPoiDragActive(false); }
+    document.addEventListener("dragover", handleDragOver);
+    document.addEventListener("dragend", handleDragEnd);
+    document.addEventListener("drop", handleDrop);
+    return () => {
+      document.removeEventListener("dragover", handleDragOver);
+      document.removeEventListener("dragend", handleDragEnd);
+      document.removeEventListener("drop", handleDrop);
+    };
   }, []);
 
   // Live day plans — single source of truth, shared with DailyPlan and TimelineSidebar
@@ -1230,6 +1513,7 @@ export function PoisSection({
   // Tracks subcategories the user has explicitly deselected (opt-out model).
   // Empty = show all; non-empty = hide those subcategories.
   const [excludedSubcategories, setExcludedSubcategories] = useState<Set<string>>(() => new Set());
+  const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
 
   function toggleSubcategory(id: string) {
     setExcludedSubcategories((prev) => {
@@ -1244,14 +1528,16 @@ export function PoisSection({
     setSearch("");
     setStatusFilters(new Set());
     setExcludedSubcategories(new Set());
+    setShowFavouritesOnly(false);
   }
   const allCategoriesSelected = activeCategories.size === CATEGORIES.length;
-  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || excludedSubcategories.size > 0;
+  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || excludedSubcategories.size > 0 || showFavouritesOnly;
   const searchLower = search.trim().toLowerCase();
   const filteredPois = pois.filter((p) => {
     if (!activeCategories.has(p.category)) return false;
     if (searchLower !== "" && !p.name.toLowerCase().includes(searchLower)) return false;
     if (excludedSubcategories.size > 0 && excludedSubcategories.has(p.subcategory ?? "__none__")) return false;
+    if (showFavouritesOnly && !isPoiFavourited(p)) return false;
     // Every active status filter must be satisfied (AND logic across filters)
     for (const f of statusFilters) {
       if (f === "assigned"            && !assignedPoiIds.has(p.id))  return false;
@@ -1398,6 +1684,34 @@ export function PoisSection({
     router.refresh();
   }
 
+  async function onChangeCategory(poiId: number, newCategory: Category) {
+    const res = await fetch(`/api/pois/${poiId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: newCategory }),
+    });
+    if (!res.ok) {
+      toast("Failed to update category", { variant: "error" });
+      return;
+    }
+    toast("Category updated");
+    router.refresh();
+  }
+
+  async function onUploadPhoto(poiId: number, dataUri: string) {
+    const res = await fetch(`/api/pois/${poiId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoUrl: dataUri }),
+    });
+    if (!res.ok) {
+      toast("Failed to upload photo", { variant: "error" });
+      return;
+    }
+    toast("Photo updated");
+    router.refresh();
+  }
+
   async function onClearAll() {
     const ok = await confirm({
       title: "Clear all POIs?",
@@ -1417,10 +1731,98 @@ export function PoisSection({
   }
 
   const hasActivities = liveDayPlans.some((dp) => dp.activities.length > 0);
+  const showTimeline = hasActivities || (poiDragActive && liveDayPlans.length > 0);
+
+  // Compute favourited POI IDs for DailyPlan
+  const favouritedPoiIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const p of pois) {
+      if (isPoiFavourited(p)) set.add(p.id);
+    }
+    return set;
+  }, [pois, isPoiFavourited]);
+
+  // Filter favourite items by active filters (category + search) so map markers match
+  const filteredFavouriteItems = useMemo(() => {
+    if (!favouriteItems) return favouriteItems;
+    if (!hasFilters) return favouriteItems;
+    const result = favouriteItems.filter((f) => {
+      // Category filter
+      if (!allCategoriesSelected) {
+        const cat = isCategory(f.category) ? f.category : null;
+        if (!cat || !activeCategories.has(cat)) return false;
+      }
+      // Search filter
+      if (searchLower !== "" && !f.name.toLowerCase().includes(searchLower)) return false;
+      // Subcategory filter
+      if (excludedSubcategories.size > 0 && excludedSubcategories.has(f.subcategory ?? "__none__")) return false;
+      return true;
+    });
+    return result;
+  }, [favouriteItems, hasFilters, allCategoriesSelected, activeCategories, searchLower, excludedSubcategories]);
+
+  // Handle POI dropped on timeline sidebar
+  const handleDropPoiOnTimeline = useCallback(async (dayPlanId: number, timeSlot: TimeSlot, poiId: number) => {
+    const poi = pois.find((p) => p.id === poiId);
+    if (!poi) return;
+
+    // Check if already assigned to this day+slot
+    const dp = liveDayPlans.find((d) => d.id === dayPlanId);
+    if (dp?.activities.some((a) => a.poiId === poiId && a.timeSlot === timeSlot)) {
+      toast("Already assigned to this slot", { variant: "error" });
+      return;
+    }
+
+    // Optimistic update
+    const tempId = Date.now();
+    setLiveDayPlans((prev) =>
+      prev.map((d) =>
+        d.id === dayPlanId
+          ? {
+              ...d,
+              activities: [
+                ...d.activities,
+                {
+                  id: tempId,
+                  poiId: poi.id,
+                  poiName: poi.name,
+                  poiCategory: poi.category,
+                  timeSlot,
+                },
+              ],
+            }
+          : d,
+      ),
+    );
+
+    const res = await fetch(`/api/day-plans/${dayPlanId}/activities`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ poiId, timeSlot }),
+    });
+
+    if (!res.ok) {
+      toast("Failed to assign POI", { variant: "error" });
+      // Revert optimistic update
+      setLiveDayPlans((prev) =>
+        prev.map((d) =>
+          d.id === dayPlanId
+            ? { ...d, activities: d.activities.filter((a) => a.id !== tempId) }
+            : d,
+        ),
+      );
+      return;
+    }
+
+    toast(`${poi.name} added to plan!`);
+    router.refresh();
+  }, [pois, liveDayPlans, toast, router]);
 
   return (
-    <div className={hasActivities ? "grid gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
-      <Card className="min-w-0">
+    <div className="space-y-2">
+    <div className={showTimeline ? "grid gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
+      <div className="min-w-0 space-y-2">
+      <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <div className="flex items-center gap-3">
           <CardTitle>Points of interest</CardTitle>
@@ -1446,7 +1848,6 @@ export function PoisSection({
             [
               ["map", "🗺️", "Map"],
               ["list", "📋", "List"],
-              ["plan", "📅", "Plan"],
             ] as const
           ).map(([key, icon, label]) => (
             <button
@@ -1467,7 +1868,7 @@ export function PoisSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {view !== "plan" && (
+        {/* Filters — always visible */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Input
@@ -1505,6 +1906,18 @@ export function PoisSection({
                 }`}
               >
                 All ({pois.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFavouritesOnly((v) => !v)}
+                aria-pressed={showFavouritesOnly}
+                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                  showFavouritesOnly
+                    ? "border-pink-400 bg-pink-100 text-pink-700 ring-2 ring-offset-1 ring-pink-300"
+                    : "border-pink-200 bg-pink-50 text-pink-400 hover:text-pink-600 hover:bg-pink-100"
+                }`}
+              >
+                ♥ Favourites
               </button>
               {CATEGORIES.map((c) => {
                 const active = activeCategories.has(c);
@@ -1582,7 +1995,6 @@ export function PoisSection({
               );
             })()}
           </div>
-        )}
 
         {view === "map" ? (
           <div className="space-y-2">
@@ -1606,14 +2018,12 @@ export function PoisSection({
                 notInterested={notInterested}
                 onRatePoi={setUserRating}
                 onToggleNotInterested={toggleNotInterested}
-                favouriteItems={favouriteItems}
+                favouriteItems={filteredFavouriteItems}
                 onFavourite={(poi) => handleFavourite(poi as PoiDTO)}
                 isPoiFavourited={(poi) => isPoiFavourited(poi as PoiDTO)}
               />
             </div>
           </div>
-        ) : view === "plan" ? (
-          <DailyPlan cityId={cityId} pois={pois} dayPlans={liveDayPlans} setDayPlans={setLiveDayPlans} scrollToActivity={scrollToActivity} onScrollComplete={() => setScrollToActivity(null)} dayNotes={dayNotes} />
         ) : pois.length === 0 ? (
           <p className="text-sm text-[hsl(var(--muted-foreground))]">No POIs yet.</p>
         ) : (
@@ -1673,6 +2083,8 @@ export function PoisSection({
                     onFavourite={handleFavourite}
                     isFavourited={isPoiFavourited(poi)}
                     dayPlans={dayPlanOptions}
+                    onChangeCategory={onChangeCategory}
+                    onUploadPhoto={onUploadPhoto}
                   />
                 ))}
               </div>
@@ -1696,6 +2108,8 @@ export function PoisSection({
                     onFavourite={handleFavourite}
                     isFavourited={isPoiFavourited(poi)}
                     dayPlans={dayPlanOptions}
+                    onChangeCategory={onChangeCategory}
+                    onUploadPhoto={onUploadPhoto}
                   />
                 ))}
               </div>
@@ -1843,20 +2257,71 @@ export function PoisSection({
         )}
       </CardContent>
     </Card>
-    {hasActivities && (
+
+    {/* Day Plan — always visible below map/list */}
+    {liveDayPlans.length > 0 && (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle>📅 Day Plan</CardTitle>
+          <button
+            type="button"
+            onClick={() => setDayPlanOpen((v) => !v)}
+            className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors flex items-center gap-1"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className={`h-3.5 w-3.5 transition-transform ${dayPlanOpen ? "rotate-90" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            {dayPlanOpen ? "Hide" : "Show"}
+          </button>
+        </CardHeader>
+        {dayPlanOpen && (
+          <CardContent>
+            <DailyPlan
+              cityId={cityId}
+              pois={pois}
+              dayPlans={liveDayPlans}
+              setDayPlans={setLiveDayPlans}
+              scrollToActivity={scrollToActivity}
+              onScrollComplete={() => setScrollToActivity(null)}
+              dayNotes={dayNotes}
+              subcityDayPlans={subcityDayPlans}
+              favouritedPoiIds={favouritedPoiIds}
+              hideSidebar
+            />
+          </CardContent>
+        )}
+      </Card>
+    )}
+    </div>
+    {showTimeline && (
       <aside className="hidden lg:block">
         <TimelineSidebar
           dayPlans={liveDayPlans}
           onActivityClick={(dayDate, activityId) => {
             setScrollToActivity({ date: dayDate, activityId });
-            setView("plan");
           }}
+          onDayDoubleClick={(dayDate) => {
+            setScrollToActivity({ date: dayDate, activityId: -1 });
+          }}
+          onDropPoi={handleDropPoiOnTimeline}
+          subcityDayPlans={subcityDayPlans}
+          favouritedPoiIds={favouritedPoiIds}
         />
       </aside>
     )}
     {lightbox && (
       <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
     )}
+    </div>
     </div>
   );
 }

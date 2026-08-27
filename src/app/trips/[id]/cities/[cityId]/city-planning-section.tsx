@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { RecommendationsPanel } from "./recommendations-panel";
 import { PoisSection, type PoiDTO } from "./pois-section";
-import type { DayPlanDTO } from "./daily-plan";
+import type { DayPlanDTO, SubcityDayPlanDTO } from "./daily-plan";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 const DEFAULT_RADIUS_KM = 5;
@@ -57,6 +57,7 @@ export function CityPlanningSection({
   initialNotInterested,
   initialVisitedPoiIds,
   dayNotes,
+  subcityDayPlans,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -70,6 +71,7 @@ export function CityPlanningSection({
   initialNotInterested?: number[];
   initialVisitedPoiIds?: number[];
   dayNotes?: Record<number, { id: number; content: string }>;
+  subcityDayPlans?: SubcityDayPlanDTO[];
 }) {
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
   const [nearbyEnabled, setNearbyEnabled] = useState(false);
@@ -116,6 +118,7 @@ export function CityPlanningSection({
           initialNotInterested={initialNotInterested}
           initialVisitedPoiIds={initialVisitedPoiIds}
           dayNotes={dayNotes}
+          subcityDayPlans={subcityDayPlans}
         />
       </div>
     </>

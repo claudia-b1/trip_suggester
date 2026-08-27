@@ -140,7 +140,7 @@ export async function POST(
     },
   });
   if (!city) {
-    return NextResponse.json({ error: "City not found" }, { status: 404 });
+    return NextResponse.json({ error: "Destination not found" }, { status: 404 });
   }
   if (city.pois.length === 0) {
     return NextResponse.json({ error: "No POIs to plan" }, { status: 400 });

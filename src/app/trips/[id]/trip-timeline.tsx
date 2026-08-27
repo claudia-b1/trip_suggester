@@ -4,12 +4,23 @@ import { useState } from "react";
 
 const MARKER_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
+type TimelineSubcity = {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  order: number;
+  parentCityId: number | null;
+};
+
 type TimelineCity = {
   id: number;
   name: string;
   startDate: string;
   endDate: string;
   order: number;
+  parentCityId: number | null;
+  subcities: TimelineSubcity[];
 };
 
 export function TripTimeline({
@@ -90,33 +101,99 @@ export function TripTimeline({
             const left = ((cityStart - tripStart) / tripDuration) * 100;
             const width = Math.max(((cityEnd - cityStart) / tripDuration) * 100, 3);
             const cityDays = Math.round((cityEnd - cityStart) / 86400000) + 1;
+
+            const sortedSubs = [...(city.subcities ?? [])].sort((a, b) => {
+              const dt = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+              return dt !== 0 ? dt : a.order - b.order;
+            });
+
             return (
-              <div key={city.id} className="flex items-center gap-2">
-                {/* City label */}
-                <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1.5 min-w-0">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                  <span className="text-xs font-medium truncate">{city.name}</span>
-                </div>
-                {/* Bar track */}
-                <div className="relative h-7 flex-1 rounded-md bg-[hsl(var(--muted))]/50">
-                  {/* Vertical grid lines */}
-                  {ticks.map((tick, j) => (
+              <div key={city.id} className="space-y-0.5">
+                {/* Parent row */}
+                <div className="flex items-center gap-2">
+                  {/* City label */}
+                  <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1.5 min-w-0">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                    <span className="text-xs font-medium truncate">{city.name}</span>
+                  </div>
+                  {/* Bar track */}
+                  <div className="relative h-7 flex-1 rounded-md bg-[hsl(var(--muted))]/50">
+                    {/* Vertical grid lines */}
+                    {ticks.map((tick, j) => (
+                      <div
+                        key={j}
+                        className="absolute top-0 h-full w-px bg-[hsl(var(--border))]/50"
+                        style={{ left: `${tick.pct}%` }}
+                      />
+                    ))}
+                    {/* City bar */}
                     <div
-                      key={j}
-                      className="absolute top-0 h-full w-px bg-[hsl(var(--border))]/50"
-                      style={{ left: `${tick.pct}%` }}
-                    />
-                  ))}
-                  {/* City bar */}
-                  <div
-                    className="absolute top-1 bottom-1 rounded-md shadow-sm flex items-center justify-center overflow-hidden"
-                    style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
-                  >
-                    <span className="text-[10px] font-medium text-white/90 whitespace-nowrap px-1.5 drop-shadow-sm">
-                      {cityDays}d
-                    </span>
+                      className="absolute top-1 bottom-1 rounded-md shadow-sm flex items-center justify-center overflow-hidden"
+                      style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
+                    >
+                      <span className="text-[10px] font-medium text-white/90 whitespace-nowrap px-1.5 drop-shadow-sm">
+                        {cityDays}d
+                      </span>
+                    </div>
                   </div>
                 </div>
+
+                {/* Sub-destination rows */}
+                {sortedSubs.length > 0 && (
+                  <div className="relative">
+                    {/* Vertical connector line from parent to subcities */}
+                    <div
+                      className="absolute left-[18px] top-0 w-px border-l border-dashed"
+                      style={{ borderColor: color, opacity: 0.4, bottom: 10 }}
+                    />
+                    {sortedSubs.map((sub, si) => {
+                      const subStart = new Date(sub.startDate).getTime();
+                      const subEnd = new Date(sub.endDate).getTime();
+                      const subLeft = ((subStart - tripStart) / tripDuration) * 100;
+                      const subWidth = Math.max(((subEnd - subStart) / tripDuration) * 100, 2);
+                      const subDays = Math.round((subEnd - subStart) / 86400000) + 1;
+                      const isLast = si === sortedSubs.length - 1;
+
+                      return (
+                        <div key={sub.id} className="flex items-center gap-2">
+                          {/* Subcity label — indented with connecting branch */}
+                          <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1 min-w-0 pl-4">
+                            <span className="text-[10px] select-none" style={{ color, opacity: 0.5 }}>
+                              {isLast ? "└" : "├"}
+                            </span>
+                            <span className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{sub.name}</span>
+                          </div>
+                          {/* Bar track — thinner */}
+                          <div className="relative h-5 flex-1 rounded-md">
+                            {/* Vertical grid lines */}
+                            {ticks.map((tick, j) => (
+                              <div
+                                key={j}
+                                className="absolute top-0 h-full w-px bg-[hsl(var(--border))]/30"
+                                style={{ left: `${tick.pct}%` }}
+                              />
+                            ))}
+                            {/* Subcity bar — lighter, thinner, dashed border */}
+                            <div
+                              className="absolute top-1 bottom-1 rounded flex items-center justify-center overflow-hidden border border-dashed"
+                              style={{
+                                left: `${subLeft}%`,
+                                width: `${subWidth}%`,
+                                backgroundColor: color,
+                                opacity: 0.35,
+                                borderColor: color,
+                              }}
+                            >
+                              <span className="text-[9px] font-medium text-white whitespace-nowrap px-1 drop-shadow-sm">
+                                {subDays}d
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}

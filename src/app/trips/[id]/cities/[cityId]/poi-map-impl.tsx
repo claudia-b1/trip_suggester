@@ -5,6 +5,7 @@ import MapGL, {
   Marker,
   Popup,
   NavigationControl,
+  ScaleControl,
   Source,
   Layer,
   type MapRef,
@@ -58,6 +59,8 @@ export type PoiMapProps = {
   onFavourite?: (poi: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number; longitude: number; photoUrl?: string | null; placeId?: string | null; website?: string | null }) => void;
   /** Check if a POI is already favourited */
   isPoiFavourited?: (poi: { id: number; name: string; placeId?: string | null }) => boolean;
+  /** Optional numbered labels for POIs (poiId → display number). When set, markers show the number instead of the category emoji. */
+  poiNumbers?: Record<number, number>;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -226,6 +229,9 @@ function PopupContent({
   const [assigning, setAssigning] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [hoverStar, setHoverStar] = useState<number | null>(null);
+  // Multi-day mode for accommodation
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
+  const isAccommodation = poi.category === "ACCOMMODATION";
 
   async function assign() {
     if (!selectedDay) return;
@@ -245,6 +251,29 @@ function PopupContent({
     onClose();
   }
 
+  async function assignMultiDay() {
+    if (selectedDays.size === 0) return;
+    setAssigning(true);
+    const res = await fetch("/api/day-plans/batch-assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        poiId: poi.id,
+        dayPlanIds: [...selectedDays],
+        timeSlot: "EVENING",
+      }),
+    });
+    setAssigning(false);
+    if (res.ok) {
+      const data = await res.json();
+      toast(`${poi.name} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
+      router.refresh();
+      onClose();
+    } else {
+      toast("Failed to assign", { variant: "error" });
+    }
+  }
+
   const currentRating = userRatings?.[poi.id];
   const displayStars = hoverStar ?? currentRating ?? 0;
 
@@ -258,7 +287,7 @@ function PopupContent({
     <div className="min-w-[200px] max-w-[260px] space-y-2 text-sm">
       {poi.photoUrl && !imgError && (
         <img
-          src={poi.photoUrl}
+          src={`/api/pois/${poi.id}/photo`}
           alt={poi.name}
           onError={() => setImgError(true)}
           className="w-full h-24 object-cover rounded-md"
@@ -269,6 +298,23 @@ function PopupContent({
         <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
           {CATEGORY_ICONS[poi.category]} {poi.category}
         </span>
+      </div>
+      {/* Drag handle for timeline */}
+      <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "copy";
+          e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+        }}
+        className="flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
+        title="Drag to timeline"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
+          <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
+          <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
+        </svg>
+        <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
       </div>
       {poi.description && (
         <p className="text-xs text-gray-600 leading-snug">
@@ -341,33 +387,76 @@ function PopupContent({
             Add to Day Plan
           </summary>
           <div className="mt-2 space-y-1.5">
-            <select
-              value={selectedDay ?? ""}
-              onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
-            >
-              <option value="">Pick a day…</option>
-              {dayPlans.map((d) => (
-                <option key={d.id} value={d.id}>{d.label}</option>
-              ))}
-            </select>
-            <select
-              value={selectedSlot}
-              onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
-              className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
-            >
-              {TIME_SLOTS.map((s) => (
-                <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); assign(); }}
-              disabled={!selectedDay || assigning}
-              className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-blue-700"
-            >
-              {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
-            </button>
+            {isAccommodation ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-indigo-600 uppercase tracking-wider">🏠 Select days</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDays(new Set(dayPlans.map((d) => d.id)))}
+                    className="text-[10px] text-indigo-500 hover:text-indigo-700"
+                  >Select all</button>
+                </div>
+                <div className="max-h-[140px] overflow-y-auto space-y-0.5">
+                  {dayPlans.map((d) => (
+                    <label key={d.id} className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs cursor-pointer hover:bg-indigo-100/30">
+                      <input
+                        type="checkbox"
+                        checked={selectedDays.has(d.id)}
+                        onChange={() => setSelectedDays((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(d.id)) next.delete(d.id); else next.add(d.id);
+                          return next;
+                        })}
+                        disabled={assigning}
+                        className="rounded border-indigo-300"
+                      />
+                      {d.label}
+                    </label>
+                  ))}
+                </div>
+                {selectedDays.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={assignMultiDay}
+                    disabled={assigning}
+                    className="w-full rounded bg-indigo-500 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50"
+                  >
+                    {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <select
+                  value={selectedDay ?? ""}
+                  onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
+                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                >
+                  <option value="">Pick a day…</option>
+                  {dayPlans.map((d) => (
+                    <option key={d.id} value={d.id}>{d.label}</option>
+                  ))}
+                </select>
+                <select
+                  value={selectedSlot}
+                  onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
+                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
+                >
+                  {TIME_SLOTS.map((s) => (
+                    <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); assign(); }}
+                  disabled={!selectedDay || assigning}
+                  className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-blue-700"
+                >
+                  {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
+                </button>
+              </>
+            )}
           </div>
         </details>
       )}
@@ -507,7 +596,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -540,6 +629,64 @@ export function PoiMapImpl(props: PoiMapProps) {
     document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
+
+  // Long-press on touch devices → drop pin (equivalent to right-click on desktop)
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressOrigin = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!onAddAtLocation) return;
+    const canvas = containerRef.current?.querySelector("canvas");
+    if (!canvas) return;
+
+    function clearLongPress() {
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      longPressOrigin.current = null;
+    }
+
+    function onTouchStart(e: TouchEvent) {
+      if (e.touches.length !== 1) { clearLongPress(); return; }
+      const touch = e.touches[0];
+      longPressOrigin.current = { x: touch.clientX, y: touch.clientY };
+      longPressTimer.current = setTimeout(() => {
+        const map = mapRef.current;
+        if (!map || !longPressOrigin.current) return;
+        // Convert screen point to map coordinates
+        const rect = canvas!.getBoundingClientRect();
+        const x = longPressOrigin.current.x - rect.left;
+        const y = longPressOrigin.current.y - rect.top;
+        const lngLat = map.unproject([x, y]);
+        setDropPin({ lat: lngLat.lat, lng: lngLat.lng });
+        setActiveId(null);
+        setActiveFavId(null);
+        clearLongPress();
+        // Prevent the subsequent touchend from triggering a click
+        canvas!.addEventListener("touchend", (ev) => { ev.preventDefault(); }, { once: true });
+      }, 500);
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (!longPressOrigin.current || e.touches.length !== 1) { clearLongPress(); return; }
+      const touch = e.touches[0];
+      const dx = touch.clientX - longPressOrigin.current.x;
+      const dy = touch.clientY - longPressOrigin.current.y;
+      // Cancel if finger moves more than 10px (user is panning)
+      if (Math.sqrt(dx * dx + dy * dy) > 10) clearLongPress();
+    }
+
+    function onTouchEnd() { clearLongPress(); }
+
+    canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: true });
+    canvas.addEventListener("touchend", onTouchEnd);
+    canvas.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      clearLongPress();
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
+      canvas.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [onAddAtLocation, mapReady]);
 
   const located: LocatedPoi[] = useMemo(
     () => pois.flatMap((p) =>
@@ -649,6 +796,26 @@ export function PoiMapImpl(props: PoiMapProps) {
     );
   }, [located, visibleFavourites]);
 
+  const fitBoundsNoAccommodation = useCallback(() => {
+    const map = mapRef.current;
+    const nonAccom = located.filter((p) => p.category !== "ACCOMMODATION");
+    const allPoints = [
+      ...nonAccom.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+      ...visibleFavourites.filter((f) => f.category !== "ACCOMMODATION").map((f) => ({ lat: f.latitude, lng: f.longitude })),
+    ];
+    if (!map || allPoints.length === 0) return;
+    if (allPoints.length === 1) {
+      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
+      return;
+    }
+    const lngs = allPoints.map((p) => p.lng);
+    const lats = allPoints.map((p) => p.lat);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 60, duration: 800, maxZoom: 15 },
+    );
+  }, [located, visibleFavourites]);
+
   useEffect(() => {
     if (!focusPoiId) return;
     const poi = located.find((p) => p.id === focusPoiId);
@@ -706,6 +873,16 @@ export function PoiMapImpl(props: PoiMapProps) {
         >
           ⊡ Fit all
         </button>
+        {located.some((p) => p.category === "ACCOMMODATION") && (
+          <button
+            type="button"
+            onClick={fitBoundsNoAccommodation}
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+            title="Fit all except accommodation"
+          >
+            ⊡ Fit (no accom.)
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setMapStyle((s) => (s === "streets" ? "satellite" : "streets"))}
@@ -732,7 +909,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         ref={mapRef}
         mapboxAccessToken={token}
         initialViewState={{ longitude: centerLon, latitude: centerLat, zoom: 12 }}
-        style={{ width: "100%", height: fullscreen ? "100dvh" : "clamp(500px, 70vh, 825px)" }}
+        style={{ width: "100%", height: fullscreen ? "100dvh" : "clamp(500px, 75vh, 1100px)" }}
         mapStyle={MAP_STYLES[mapStyle]}
         onLoad={() => {
           setMapReady(true);
@@ -768,6 +945,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         }}
       >
         <NavigationControl position="top-right" />
+        <ScaleControl position="bottom-left" unit="metric" />
         {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
 
         {/* City radius circle — grey dashed */}
@@ -877,7 +1055,7 @@ export function PoiMapImpl(props: PoiMapProps) {
                 <div
                   className={`flex items-center justify-center rounded-full shadow-md transition-transform ${mapReady ? "marker-enter" : ""}`}
                   style={{
-                    backgroundColor: "white",
+                    backgroundColor: poiNumbers?.[poi.id] != null ? CATEGORY_STYLES[poi.category].dot : "white",
                     border: `${isActive ? 3 : 2.5}px solid ${CATEGORY_STYLES[poi.category].dot}`,
                     width: isActive ? 34 : 28,
                     height: isActive ? 34 : 28,
@@ -887,9 +1065,15 @@ export function PoiMapImpl(props: PoiMapProps) {
                       : "0 2px 6px rgba(0,0,0,0.3)",
                   }}
                 >
-                  <span style={{ fontSize: isActive ? 17 : 14, lineHeight: 1 }}>
-                    {getMarkerEmoji(poi.category, poi.subcategory)}
-                  </span>
+                  {poiNumbers?.[poi.id] != null ? (
+                    <span className="font-bold text-white" style={{ fontSize: isActive ? 15 : 12, lineHeight: 1 }}>
+                      {poiNumbers[poi.id]}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: isActive ? 17 : 14, lineHeight: 1 }}>
+                      {getMarkerEmoji(poi.category, poi.subcategory)}
+                    </span>
+                  )}
                 </div>
                 {/* Favourite heart badge — bottom-right of the icon */}
                 {favouritedPoiIds.has(poi.id) && (
