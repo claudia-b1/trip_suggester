@@ -23,12 +23,19 @@ async function main() {
   await prisma.poi.deleteMany();
   await prisma.city.deleteMany();
   await prisma.trip.deleteMany();
+  await prisma.user.deleteMany();
+
+  // Create default user for seed data
+  const user = await prisma.user.create({
+    data: { name: "Me", color: "#3B82F6" },
+  });
 
   await prisma.trip.create({
     data: {
       name: "Tokyo, autumn 2026",
       startDate: new Date("2026-10-12"),
       endDate: new Date("2026-10-22"),
+      userId: user.id,
       cities: {
         create: [
           {
@@ -103,6 +110,7 @@ async function main() {
       name: "Lisbon weekend",
       startDate: new Date("2026-06-05"),
       endDate: new Date("2026-06-08"),
+      userId: user.id,
       cities: {
         create: [
           {

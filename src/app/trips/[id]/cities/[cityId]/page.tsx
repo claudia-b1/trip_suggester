@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { isCategory, CATEGORIES, type Category } from "@/lib/categories";
 import { isTimeSlot, type TimeSlot } from "@/lib/slots";
@@ -16,6 +17,9 @@ import type { FavouriteItemDTO } from "@/components/favourites/favourites-provid
 import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 import { ActivityRecommendations } from "./activity-recommendations";
 import { SubcityTabs } from "./subcity-tabs";
+import { syncFavouritesToCity } from "@/lib/favourite-poi-sync";
+import { StopPlanningSection } from "./stop-planning-section";
+import type { StopPoiDTO } from "./stop-planning-section";
 
 async function fetchCityWikiInfo(cityName: string, countryName?: string | null): Promise<CityWikiInfo | null> {
   const query = countryName ? `${cityName}, ${countryName}` : cityName;
@@ -74,6 +78,9 @@ export default async function CityDetailPage({
 }: {
   params: Promise<{ id: string; cityId: string }>;
 }) {
+  const userId = await getActiveUserId();
+  if (!userId) notFound();
+
   const { id, cityId } = await params;
   const tripId = Number(id);
   const cityIdNum = Number(cityId);
@@ -91,12 +98,12 @@ export default async function CityDetailPage({
       },
     },
   });
-  if (!city || city.tripId !== tripId) notFound();
+  if (!city || city.tripId !== tripId || city.trip.userId !== userId) notFound();
 
-  // Sibling cities for stepper — always top-level destinations only
+  // Sibling cities for stepper — always top-level destinations only, sorted by arrival date
   const siblingCities = await prisma.city.findMany({
     where: { tripId, parentCityId: null },
-    orderBy: { order: "asc" },
+    orderBy: { startDate: "asc" },
     select: { id: true, order: true, name: true, nickname: true },
   });
   const totalCities = siblingCities.length;
@@ -145,7 +152,27 @@ export default async function CityDetailPage({
     ? (JSON.parse(activityCacheRow.data) as ActivityRecommendationsResult)
     : null;
 
-  await ensureDayPlans(city.id, city.startDate, city.endDate);
+  const isStop = city.type === "stop";
+
+  if (!isStop) {
+    await ensureDayPlans(city.id, city.startDate, city.endDate);
+  }
+
+  // Auto-sync: ensure all matching favourites are added as POIs
+  if (city.latitude != null && city.longitude != null && !isStop) {
+    try {
+      await syncFavouritesToCity(
+        city.id,
+        city.latitude,
+        city.longitude,
+        city.country ?? null,
+        city.discoverRadiusKm ?? null,
+        userId,
+      );
+    } catch {
+      // Best-effort — don't block page load
+    }
+  }
 
   const dayPlansRaw = await prisma.dayPlan.findMany({
     where: {
@@ -161,15 +188,33 @@ export default async function CityDetailPage({
     },
   });
 
-  // Fetch favourite items matching this city (case-insensitive)
-  const favouriteItemsRaw = await prisma.favouriteItem.findMany({
+  // Fetch favourite items nearby, filter by country when available then by distance
+  const DEFAULT_FAV_RADIUS_KM = 10;
+  const favRadiusKm = city.discoverRadiusKm ?? DEFAULT_FAV_RADIUS_KM;
+  const allCountryFavs = await prisma.favouriteItem.findMany({
     where: {
-      city: { equals: city.name, mode: "insensitive" },
       ...(city.country ? { country: { equals: city.country, mode: "insensitive" } } : {}),
+      list: { userId },
     },
     include: { list: { select: { id: true, name: true } } },
     orderBy: { createdAt: "asc" },
   });
+
+  // Haversine distance filter
+  const favouriteItemsRaw = (city.latitude != null && city.longitude != null)
+    ? allCountryFavs.filter((f) => {
+        const R = 6371;
+        const dLat = ((f.latitude - city.latitude!) * Math.PI) / 180;
+        const dLon = ((f.longitude - city.longitude!) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((city.latitude! * Math.PI) / 180) *
+            Math.cos((f.latitude * Math.PI) / 180) *
+            Math.sin(dLon / 2) ** 2;
+        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return dist <= favRadiusKm;
+      })
+    : allCountryFavs;
 
   const favouriteItems: FavouriteItemDTO[] = favouriteItemsRaw.map((f) => ({
     id: f.id,
@@ -197,7 +242,7 @@ export default async function CityDetailPage({
 
   // Load persisted user ratings + visited from database
   const ratingsRaw = await prisma.poiRating.findMany({
-    where: { poi: { cityId: city.id } },
+    where: { poi: { cityId: city.id }, userId },
     select: { poiId: true, rating: true, notInterested: true, visited: true },
   });
   const initialUserRatings: Record<number, number> = {};
@@ -249,6 +294,8 @@ export default async function CityDetailPage({
     wikidataId: p.wikidataId,
     userRatingCount: p.userRatingCount ?? null,
     subcategory: p.subcategory ?? null,
+    favouriteItemId: p.favouriteItemId ?? null,
+    hasOriginalData: !!p.originalData,
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -373,6 +420,7 @@ export default async function CityDetailPage({
           tripStartDate: city.trip.startDate.toISOString(),
           tripEndDate: city.trip.endDate.toISOString(),
         }}
+        isStop={isStop}
       />
 
       {subcityTabData && (
@@ -384,45 +432,86 @@ export default async function CityDetailPage({
         />
       )}
 
-      <CityInfoSection
-        cityId={city.id}
-        cityName={city.nickname ?? city.name}
-        info={wikiInfo}
-        initialGenerated={cachedCityInfo}
-      />
+      {isStop ? (
+        <>
+          {/* Simplified view for travel stops */}
+          <TripNoteEditor
+            initialNote={cityNote ?? null}
+            scope={{ cityId: city.id }}
+          />
+          {wikiInfo && (
+            <CityInfoSection
+              cityId={city.id}
+              cityName={city.nickname ?? city.name}
+              info={wikiInfo}
+              initialGenerated={cachedCityInfo}
+            />
+          )}
+          <StopPlanningSection
+            cityId={city.id}
+            pois={pois as StopPoiDTO[]}
+            cityLat={city.latitude ?? undefined}
+            cityLon={city.longitude ?? undefined}
+            cityName={city.nickname ?? city.name}
+            country={city.country ?? undefined}
+            favouriteItems={favouriteItems}
+            initialAccommodation={
+              (() => {
+                const accom = city.pois.find((p) => p.category === "ACCOMMODATION");
+                if (accom && accom.latitude != null && accom.longitude != null) {
+                  return { id: accom.id, name: accom.name, latitude: accom.latitude, longitude: accom.longitude };
+                }
+                return null;
+              })()
+            }
+          />
+        </>
+      ) : (
+        <>
+          <CityInfoSection
+            cityId={city.id}
+            cityName={city.nickname ?? city.name}
+            info={wikiInfo}
+            initialGenerated={cachedCityInfo}
+          />
 
-      <TripNoteEditor
-        initialNote={cityNote ?? null}
-        scope={{ cityId: city.id }}
-      />
+          <TripNoteEditor
+            initialNote={cityNote ?? null}
+            scope={{ cityId: city.id }}
+          />
 
-      <ActivityRecommendations
-        cityId={city.id}
-        cityName={city.nickname ?? city.name}
-        country={city.country ?? undefined}
-        tripId={tripId}
-        tripStartDate={city.endDate.toISOString()}
-        tripEndDate={city.trip.endDate.toISOString()}
-        initialData={cachedActivities}
-        pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl }))}
-        parentCityId={city.parentCityId}
-      />
+          <ActivityRecommendations
+            cityId={city.id}
+            cityName={city.nickname ?? city.name}
+            country={city.country ?? undefined}
+            tripId={tripId}
+            tripStartDate={city.endDate.toISOString()}
+            tripEndDate={city.trip.endDate.toISOString()}
+            cityStartDate={city.startDate.toISOString()}
+            cityEndDate={city.endDate.toISOString()}
+            initialData={cachedActivities}
+            pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl }))}
+            parentCityId={city.parentCityId}
+          />
 
-      <CityPlanningSection
-        cityId={city.id}
-        pois={pois}
-        dayPlans={dayPlans}
-        cityLat={city.latitude ?? undefined}
-        cityLon={city.longitude ?? undefined}
-        cityName={city.nickname ?? city.name}
-        country={city.country ?? undefined}
-        favouriteItems={favouriteItems}
-        initialUserRatings={initialUserRatings}
-        initialNotInterested={initialNotInterested}
-        initialVisitedPoiIds={initialVisitedPoiIds}
-        dayNotes={dayNotes}
-        subcityDayPlans={subcityDayPlans}
-      />
+          <CityPlanningSection
+            cityId={city.id}
+            pois={pois}
+            dayPlans={dayPlans}
+            cityLat={city.latitude ?? undefined}
+            cityLon={city.longitude ?? undefined}
+            cityName={city.nickname ?? city.name}
+            country={city.country ?? undefined}
+            favouriteItems={favouriteItems}
+            initialUserRatings={initialUserRatings}
+            initialNotInterested={initialNotInterested}
+            initialVisitedPoiIds={initialVisitedPoiIds}
+            dayNotes={dayNotes}
+            subcityDayPlans={subcityDayPlans}
+            initialRadiusKm={city.discoverRadiusKm ?? undefined}
+          />
+        </>
+      )}
     </div>
   );
 }

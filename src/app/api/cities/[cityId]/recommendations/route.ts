@@ -15,6 +15,8 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 import {
   isRecommendableCategory,
   type RecommendableCategory,
@@ -31,9 +33,16 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   try {
   const { cityId } = await params;
   const cityIdNum = Number(cityId);
+
+  if (!await verifyCityOwnership(cityIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // ── Parse request body ──────────────────────────────────────────────────────
   const body = await req.json().catch(() => null);
@@ -79,11 +88,35 @@ export async function POST(
       ? body.radiusKm
       : Infinity;
 
+  // Persist the discover radius for this city (best-effort)
+  if (isFinite(radiusKm)) {
+    prisma.city.update({ where: { id: cityIdNum }, data: { discoverRadiusKm: radiusKm } }).catch(() => {});
+  }
+
   const nearbyEnabled: boolean = body?.nearbyEnabled === true;
   const nearbyRadiusKm: number =
     typeof body?.nearbyRadiusKm === "number" && body.nearbyRadiusKm > 0
       ? body.nearbyRadiusKm
       : 30;
+
+  // Optional center override (e.g. from travel stop accommodation)
+  const bodyCenterLat: number | undefined =
+    typeof body?.centerLat === "number" ? body.centerLat : undefined;
+  const bodyCenterLon: number | undefined =
+    typeof body?.centerLon === "number" ? body.centerLon : undefined;
+
+  // Category-tiered quality gates: strict for tourist attractions, lenient for everyday places
+  const QUALITY_GATES: Record<string, { minRating: number; minReviews: number }> = {
+    CULTURE:       { minRating: 4.0, minReviews: 15 },
+    NATURE:        { minRating: 4.0, minReviews: 15 },
+    FOOD:          { minRating: 3.8, minReviews: 10 },
+    ENTERTAINMENT: { minRating: 3.8, minReviews: 10 },
+    NIGHTLIFE:     { minRating: 3.8, minReviews: 10 },
+    SHOPPING:      { minRating: 3.5, minReviews: 5 },
+    GROCERIES:     { minRating: 3.5, minReviews: 5 },
+    WELLNESS:      { minRating: 3.5, minReviews: 5 },
+    OUTDOORS:      { minRating: 3.5, minReviews: 5 },
+  };
 
   // Categories eligible for nearby (ring-search) enrichment
   const NEARBY_CATEGORIES: RecommendableCategory[] = ["CULTURE", "NATURE"];
@@ -93,8 +126,9 @@ export async function POST(
   if (!city) return NextResponse.json({ error: "Destination not found" }, { status: 404 });
 
   // ── Delete existing POIs if overwrite requested ──────────────────────────────
+  // Preserve POIs that were added from favourites
   if (overwrite) {
-    await prisma.poi.deleteMany({ where: { cityId: cityIdNum } });
+    await prisma.poi.deleteMany({ where: { cityId: cityIdNum, favouriteItemId: null } });
   }
 
   // ── Existing POIs — for deduplication (#1) ──────────────────────────────────
@@ -109,11 +143,19 @@ export async function POST(
     existingPois.map((p) => p.name.toLowerCase().trim()),
   );
 
-  // Prefer the city's own stored coordinates; fall back to geocoding
+  // Prefer explicit center override, then city coordinates, then geocoding
   const center: { lat: number; lon: number } | null =
-    city.latitude != null && city.longitude != null
-      ? { lat: city.latitude, lon: city.longitude }
-      : await geocodeCity(city.name).catch(() => null);
+    bodyCenterLat != null && bodyCenterLon != null
+      ? { lat: bodyCenterLat, lon: bodyCenterLon }
+      : city.latitude != null && city.longitude != null
+        ? { lat: city.latitude, lon: city.longitude }
+        : await geocodeCity(city.name).catch(() => null);
+
+  // Build centerOverride for searchPlaces (only when explicitly provided)
+  const searchCenterOverride: { lat: number; lon: number } | undefined =
+    bodyCenterLat != null && bodyCenterLon != null
+      ? { lat: bodyCenterLat, lon: bodyCenterLon }
+      : undefined;
 
   // ── 1. DISCOVERY — fetch raw candidates per category (always live) ──────────
   //
@@ -125,7 +167,7 @@ export async function POST(
   const discoveryResults = await Promise.allSettled(
     categories.map(async (cat) => {
       const subcats = subcatsMap[cat] ?? [];
-      const places = await searchPlaces(city.name, cat, subcats, 100, discoveryRadiusM);
+      const places = await searchPlaces(city.name, cat, subcats, 100, discoveryRadiusM, false, searchCenterOverride);
       return { cat, places };
     }),
   );
@@ -319,7 +361,7 @@ export async function POST(
     }
   }
 
-  const PRESCAN_MULTIPLIER = 3;
+  const PRESCAN_MULTIPLIER = 4;
   const prescanIds = new Set<string>();
   for (const cat of categories) {
     const catPlaces = discoveryByCategory[cat] ?? [];
@@ -548,16 +590,19 @@ export async function POST(
       return { place, score: breakdown.total, breakdown, meta: meta ?? null, distKm };
     });
 
-    // Quality gate: must have a Google match with rating ≥ 4.0 AND ≥ 15 reviews.
+    // Quality gate: must have a Google match with rating and reviews above the
+    // category-specific thresholds. Strict for tourist attractions (CULTURE, NATURE),
+    // lenient for everyday places (SHOPPING, GROCERIES, etc.).
     // Wrong-entity matches (same name, different location) are already handled by
     // the coord-mismatch penalty in computeCoordScore — they score to 0 and are
     // dropped by MIN_SCORE, so no special case is needed here.
+    const gate = QUALITY_GATES[cat] ?? { minRating: 4.0, minReviews: 15 };
     const regularQualityDropped = new Set(
       scoredRegular
         .filter(({ meta }) =>
           meta == null ||
-          meta.rating == null || meta.rating < 4.0 ||
-          meta.userRatingCount == null || meta.userRatingCount < 15,
+          meta.rating == null || meta.rating < gate.minRating ||
+          meta.userRatingCount == null || meta.userRatingCount < gate.minReviews,
         )
         .map((s) => s.place.placeId),
     );

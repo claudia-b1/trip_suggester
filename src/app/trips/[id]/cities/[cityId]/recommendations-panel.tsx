@@ -20,7 +20,9 @@ const CATEGORY_ICONS: Record<RecommendableCategory, string> = {
   ENTERTAINMENT: "🎡",
   NIGHTLIFE:  "🌃",
   SHOPPING:   "🛍️",
+  GROCERIES:  "🛒",
   WELLNESS:   "🧘",
+  OUTDOORS:   "🚴",
 };
 
 const DEFAULT_COUNTS: Record<RecommendableCategory, number> = {
@@ -30,7 +32,9 @@ const DEFAULT_COUNTS: Record<RecommendableCategory, number> = {
   ENTERTAINMENT: 10,
   NIGHTLIFE:  10,
   SHOPPING:   10,
+  GROCERIES:  10,
   WELLNESS:   10,
+  OUTDOORS:   10,
 };
 
 const PREFERENCES = [

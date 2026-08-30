@@ -4,6 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
+import { CopyToUserModal } from "@/components/user/copy-to-user-modal";
+import { useUser } from "@/components/user/user-provider";
 
 type TripItem = {
   id: number;
@@ -60,9 +62,11 @@ export function TripGrid({
 }) {
   const router = useRouter();
   const { toast } = useToast();
+  const { users } = useUser();
 
   const [sortBy, setSortBy] = useState<SortOption>("date-asc");
   const [showArchived, setShowArchived] = useState(false);
+  const [copyTrip, setCopyTrip] = useState<TripItem | null>(null);
 
   // Restore sort preference from localStorage
   useEffect(() => {
@@ -207,7 +211,24 @@ export function TripGrid({
                 </div>
               </Link>
 
-              {/* Archive toggle button */}
+              {/* Copy + Archive buttons */}
+              {users.length > 1 && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setCopyTrip(trip);
+                  }}
+                  className="absolute right-10 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/60"
+                  title="Copy to another user"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                  </svg>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={(e) => {
@@ -244,6 +265,26 @@ export function TripGrid({
             Show archived trips
           </button>
         </p>
+      )}
+
+      {copyTrip && (
+        <CopyToUserModal
+          entityType="trip"
+          entityName={copyTrip.name}
+          onCopy={async (targetUserId) => {
+            const res = await fetch(`/api/trips/${copyTrip.id}/copy`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ targetUserId }),
+            });
+            if (res.ok) {
+              toast("Trip copied successfully");
+            } else {
+              toast("Failed to copy trip", { variant: "error" });
+            }
+          }}
+          onClose={() => setCopyTrip(null)}
+        />
       )}
     </div>
   );

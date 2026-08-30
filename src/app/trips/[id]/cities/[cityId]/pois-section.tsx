@@ -18,6 +18,8 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { useFavourites } from "@/components/favourites/favourites-provider";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
+import { EditPoiModal, type EditPoiData } from "@/components/ui/edit-poi-modal";
+import { getPhotoSource, PHOTO_SOURCE_LABELS } from "@/lib/photo-source";
 
 export type PoiDTO = {
   id: number;
@@ -43,6 +45,8 @@ export type PoiDTO = {
   fee: string | null;
   userRatingCount: number | null;
   subcategory: string | null;
+  favouriteItemId: number | null;
+  hasOriginalData?: boolean;
 };
 
 type View = "list" | "map";
@@ -60,25 +64,7 @@ function poiPhotoSrc(poi: { id: number; photoUrl: string | null }): string | nul
   return `/api/pois/${poi.id}/photo`;
 }
 
-/** Resize an image file client-side, return as JPEG data URI */
-function resizeImageFile(file: File, maxWidth: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxWidth / img.width);
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL("image/jpeg", 0.8));
-    };
-    img.onerror = reject;
-    img.src = URL.createObjectURL(file);
-  });
-}
+import { resizeImageFile } from "@/lib/resize-image";
 
 function formatReviewCount(n: number): string {
   if (n >= 10000) return `${Math.round(n / 1000)}K`;
@@ -373,6 +359,7 @@ function PoiCard({
   dayPlans,
   onChangeCategory,
   onUploadPhoto,
+  onEdit,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -391,6 +378,7 @@ function PoiCard({
   dayPlans: DayPlanOption[];
   onChangeCategory: (poiId: number, cat: Category) => void;
   onUploadPhoto: (poiId: number, dataUri: string) => void;
+  onEdit: (poi: PoiDTO) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -484,6 +472,15 @@ function PoiCard({
                 className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                 onError={() => setImgError(true)}
               />
+              {/* Photo source badge */}
+              {(() => {
+                const source = getPhotoSource(poi.photoUrl);
+                return source ? (
+                  <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white/90 font-medium pointer-events-none">
+                    {PHOTO_SOURCE_LABELS[source]}
+                  </span>
+                ) : null;
+              })()}
               {/* Change photo button — top-right corner */}
               <button
                 type="button"
@@ -585,8 +582,20 @@ function PoiCard({
 
       {/* ── Content area ──────────────────────────────────────── */}
       <div className="flex flex-1 flex-col p-3 min-h-0">
-        {/* Name */}
-        <h3 className="font-semibold text-sm leading-snug mb-1.5 line-clamp-2">{poi.name}</h3>
+        {/* Name + edit button */}
+        <div className="flex items-start justify-between gap-1 mb-1.5">
+          <h3 className="font-semibold text-sm leading-snug line-clamp-2">{poi.name}</h3>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
+            className="rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
+            title="Edit place"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+        </div>
 
         {/* Price level (Google rating moved to left strip) */}
         {poi.priceLevel != null && (
@@ -728,6 +737,7 @@ function CompactPoiCard({
   dayPlans,
   onChangeCategory,
   onUploadPhoto,
+  onEdit,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -745,6 +755,7 @@ function CompactPoiCard({
   dayPlans: DayPlanOption[];
   onChangeCategory: (poiId: number, cat: Category) => void;
   onUploadPhoto: (poiId: number, dataUri: string) => void;
+  onEdit: (poi: PoiDTO) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [tipsOpen, setTipsOpen] = useState(false);
@@ -758,7 +769,7 @@ function CompactPoiCard({
   const hasDetails = poi.openingHours || poi.phoneNumber || poi.inceptionYear || poi.fee;
 
   return (
-    <div className={`group relative rounded-lg border transition-shadow hover:shadow-md ${isAssigned ? "bg-[hsl(var(--card))]/80 ring-1 ring-green-300" : "bg-[hsl(var(--card))]"} ${userRating != null ? "border-[hsl(var(--primary))]" : "border-[hsl(var(--border))]"}`}>
+    <div data-poi-id={poi.id} className={`group relative rounded-lg border transition-shadow hover:shadow-md ${isAssigned ? "bg-[hsl(var(--card))]/80 ring-1 ring-green-300" : "bg-[hsl(var(--card))]"} ${userRating != null ? "border-[hsl(var(--primary))]" : "border-[hsl(var(--border))]"}`}>
       {/* Status indicators — left side (offset to right of drag handle) */}
       <div className="absolute left-7 top-2.5 z-10 flex items-center gap-1">
         {isAssigned && (
@@ -878,6 +889,18 @@ function CompactPoiCard({
             </div>
           )}
         </span>
+
+        {/* Edit pencil */}
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
+          className="flex-shrink-0 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+          title="Edit place"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+          </svg>
+        </button>
 
         {/* Favourite heart — always visible, tap-friendly for mobile */}
         <button
@@ -1180,17 +1203,22 @@ export function PoisSection({
   const [addLat, setAddLat] = useState("");
   const [addLng, setAddLng] = useState("");
   const [coordsInput, setCoordsInput] = useState("");
+  const [addPhotoUrl, setAddPhotoUrl] = useState("");
+  const [addWebsite, setAddWebsite] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [editingPoi, setEditingPoi] = useState<EditPoiData | null>(null);
 
-  const { showAddModal, favouritedPlaceIds, favouritedNameCityKeys, setCurrentCity, refreshLists } = useFavourites();
+  const { showAddModal, favouritedPlaceIds, favouritedNames, favouritedItemIds, setCurrentCity, refreshLists } = useFavourites();
 
   const isPoiFavourited = useCallback((poi: PoiDTO) => {
+    // 1. Linked via favouriteItemId (auto-synced POIs)
+    if (poi.favouriteItemId && favouritedItemIds.has(poi.favouriteItemId)) return true;
+    // 2. Matching placeId in global favourites
     if (poi.placeId && favouritedPlaceIds.has(poi.placeId)) return true;
-    if (poi.name && cityName) {
-      return favouritedNameCityKeys.has(`${poi.name.toLowerCase()}|${cityName.toLowerCase()}`);
-    }
+    // 3. Matching name in global favourites (name-only, no city scoping)
+    if (poi.name && favouritedNames.has(poi.name.toLowerCase())) return true;
     return false;
-  }, [favouritedPlaceIds, favouritedNameCityKeys, cityName]);
+  }, [favouritedPlaceIds, favouritedItemIds, favouritedNames]);
 
   const handleFavourite = useCallback((poi: PoiDTO) => {
     showAddModal({
@@ -1226,8 +1254,16 @@ export function PoisSection({
 
   useEffect(() => {
     if (view !== "list" || focusPoiId == null) return;
-    const el = document.querySelector(`[data-poi-id="${focusPoiId}"]`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const el = document.querySelector(`[data-poi-id="${focusPoiId}"]`) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Add highlight ring
+    el.classList.add("ring-2", "ring-[hsl(var(--primary))]", "ring-offset-2");
+    const timer = setTimeout(() => {
+      el.classList.remove("ring-2", "ring-[hsl(var(--primary))]", "ring-offset-2");
+      setFocusPoiId(null);
+    }, 3000);
+    return () => clearTimeout(timer);
   }, [view, focusPoiId]);
 
   // Listen for "focus-poi-on-map" events from ActivityRecommendations
@@ -1636,6 +1672,8 @@ export function PoisSection({
         description,
         latitude: lat && !isNaN(lat) ? lat : undefined,
         longitude: lng && !isNaN(lng) ? lng : undefined,
+        photoUrl: addPhotoUrl.trim() || undefined,
+        website: addWebsite.trim() || undefined,
       }),
     });
     if (!res.ok) {
@@ -1647,6 +1685,8 @@ export function PoisSection({
     setCategory("CULTURE");
     setAddSubcategory("");
     setDescription("");
+    setAddPhotoUrl("");
+    setAddWebsite("");
     setAddLat("");
     setAddLng("");
     setCoordsInput("");
@@ -2085,6 +2125,14 @@ export function PoisSection({
                     dayPlans={dayPlanOptions}
                     onChangeCategory={onChangeCategory}
                     onUploadPhoto={onUploadPhoto}
+                    onEdit={(p) => setEditingPoi({
+                      id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
+                      description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                      openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
+                      fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
+                      estimatedDurationMinutes: p.estimatedDurationMinutes,
+                      hasOriginalData: p.hasOriginalData,
+                    })}
                   />
                 ))}
               </div>
@@ -2110,6 +2158,14 @@ export function PoisSection({
                     dayPlans={dayPlanOptions}
                     onChangeCategory={onChangeCategory}
                     onUploadPhoto={onUploadPhoto}
+                    onEdit={(p) => setEditingPoi({
+                      id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
+                      description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                      openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
+                      fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
+                      estimatedDurationMinutes: p.estimatedDurationMinutes,
+                      hasOriginalData: p.hasOriginalData,
+                    })}
                   />
                 ))}
               </div>
@@ -2120,12 +2176,12 @@ export function PoisSection({
         {/* Add POI Modal — triggered by right-click on map → "Add POI at this location" */}
         {addOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/50" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} />
+            <div className="absolute inset-0 bg-black/50" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddPhotoUrl(""); setAddWebsite(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} />
             <div className="relative z-10 mx-4 w-full max-w-lg rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-[hsl(var(--foreground))]">Add POI</h3>
                 <button
-                  onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }}
+                  onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddPhotoUrl(""); setAddWebsite(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
                 >
                   ✕
@@ -2223,6 +2279,48 @@ export function PoisSection({
                     placeholder="Optional"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="poi-website">Website <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
+                    <Input
+                      id="poi-website"
+                      type="url"
+                      value={addWebsite}
+                      onChange={(e) => setAddWebsite(e.target.value)}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="poi-photo-file">Image <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
+                    <div className="flex items-center gap-2">
+                      <label
+                        htmlFor="poi-photo-file"
+                        className="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm hover:bg-[hsl(var(--accent))] transition-colors"
+                      >
+                        📷 {addPhotoUrl ? "Change" : "Choose file"}
+                      </label>
+                      <input
+                        id="poi-photo-file"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const dataUri = await resizeImageFile(file, 600);
+                          setAddPhotoUrl(dataUri);
+                        }}
+                      />
+                      {addPhotoUrl && (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={addPhotoUrl} alt="Preview" className="h-8 w-8 rounded object-cover" />
+                          <button type="button" onClick={() => setAddPhotoUrl("")} className="text-xs text-red-400 hover:text-red-300">✕</button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="poi-coords">
                     Coordinates <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(auto-filled from map click or search)</span>
@@ -2244,7 +2342,7 @@ export function PoisSection({
                 </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="outline" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} disabled={submitting}>
+                  <Button type="button" variant="outline" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddPhotoUrl(""); setAddWebsite(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} disabled={submitting}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={submitting}>
@@ -2320,6 +2418,9 @@ export function PoisSection({
     )}
     {lightbox && (
       <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
+    )}
+    {editingPoi && (
+      <EditPoiModal poi={editingPoi} onClose={() => setEditingPoi(null)} />
     )}
     </div>
     </div>

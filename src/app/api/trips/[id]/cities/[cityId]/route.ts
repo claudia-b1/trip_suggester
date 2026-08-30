@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyTripOwnership } from "@/lib/ownership";
 
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string; cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { id, cityId } = await params;
   const tripId = Number(id);
+  if (!await verifyTripOwnership(tripId, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const cityIdNum = Number(cityId);
   if (!Number.isInteger(cityIdNum)) {
     return NextResponse.json({ error: "Invalid cityId" }, { status: 400 });
@@ -23,6 +31,7 @@ export async function PATCH(
   if (typeof body.timezone === "string") data.timezone = body.timezone;
   if (typeof body.order === "number") data.order = body.order;
   if ("nickname" in body) data.nickname = body.nickname === "" ? null : (body.nickname ?? null);
+  if (body.type === "destination" || body.type === "stop") data.type = body.type;
 
   // Handle parentCityId changes (convert to sub-destination or detach)
   if ("parentCityId" in body) {
@@ -75,7 +84,14 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string; cityId: string }> },
 ) {
-  const { cityId } = await params;
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
+  const { id, cityId } = await params;
+  if (!await verifyTripOwnership(Number(id), userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await prisma.city.delete({ where: { id: Number(cityId) } });
   return new NextResponse(null, { status: 204 });
 }

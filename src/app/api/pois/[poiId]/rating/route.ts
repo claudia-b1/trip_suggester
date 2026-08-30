@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyPoiOwnership } from "@/lib/ownership";
 
 /** PUT /api/pois/:poiId/rating — upsert rating/notInterested/visited + sync to favourites */
 export async function PUT(
   req: Request,
   { params }: { params: Promise<{ poiId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { poiId } = await params;
+  const poiIdNum = Number(poiId);
+
+  if (!await verifyPoiOwnership(poiIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
@@ -30,9 +41,10 @@ export async function PUT(
   }
 
   const result = await prisma.poiRating.upsert({
-    where: { poiId: Number(poiId) },
+    where: { poiId_userId: { poiId: poiIdNum, userId } },
     create: {
-      poiId: Number(poiId),
+      poiId: poiIdNum,
+      userId,
       rating: data.rating ?? null,
       notInterested: data.notInterested ?? false,
       visited: data.visited ?? false,

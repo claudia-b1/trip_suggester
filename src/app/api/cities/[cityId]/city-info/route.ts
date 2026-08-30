@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 import { parseAIResponse, type GeneratedCityInfo } from "@/lib/city-info";
 
 // ── Prompt builder ─────────────────────────────────────────────────────────────
@@ -327,10 +329,17 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId } = await params;
   const cityIdNum = Number(cityId);
   if (!Number.isInteger(cityIdNum)) {
     return NextResponse.json({ error: "Invalid cityId" }, { status: 400 });
+  }
+
+  if (!await verifyCityOwnership(cityIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const apiKey = process.env.OPENROUTER_API_KEY;

@@ -21,7 +21,9 @@ export const RECOMMENDABLE_CATEGORIES = [
   "ENTERTAINMENT",
   "NIGHTLIFE",
   "SHOPPING",
+  "GROCERIES",
   "WELLNESS",
+  "OUTDOORS",
 ] as const;
 
 export type RecommendableCategory = (typeof RECOMMENDABLE_CATEGORIES)[number];

@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isCategory } from "@/lib/categories";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId } = await params;
+  const cityIdNum = Number(cityId);
+  if (!await verifyCityOwnership(cityIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const pois = await prisma.poi.findMany({
-    where: { cityId: Number(cityId) },
+    where: { cityId: cityIdNum },
     orderBy: { createdAt: "asc" },
   });
   return NextResponse.json(pois);
@@ -18,7 +27,13 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId } = await params;
+  if (!await verifyCityOwnership(Number(cityId), userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const { name, category, subcategory, description, latitude, longitude, photoUrl, website, placeId } = await req.json();
 
   if (!isCategory(category)) {
@@ -46,11 +61,18 @@ export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId } = await params;
   const id = Number(cityId);
   if (!Number.isInteger(id)) {
     return NextResponse.json({ error: "Invalid cityId" }, { status: 400 });
   }
+  if (!await verifyCityOwnership(id, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await prisma.poi.deleteMany({ where: { cityId: id } });
   return new NextResponse(null, { status: 204 });
 }

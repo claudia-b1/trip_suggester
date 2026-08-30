@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isCategory } from "@/lib/categories";
+import { getActiveUserId } from "@/lib/active-user";
+import { syncFavouriteUpdateToPois } from "@/lib/favourite-poi-sync";
 
 /** PATCH /api/favourites/items/:itemId — update item fields + sync to POI ratings */
 export async function PATCH(
@@ -93,67 +95,45 @@ export async function PATCH(
       }
 
       // Upsert PoiRating for each matching POI
-      for (const poiId of matchingPoiIds) {
-        const upsertData: { rating?: number | null; visited?: boolean } = {};
-        if (syncRating) upsertData.rating = updated.personalRating;
-        if (syncVisited) upsertData.visited = updated.visited;
+      const activeUserId = await getActiveUserId();
+      if (activeUserId) {
+        for (const poiId of matchingPoiIds) {
+          const upsertData: { rating?: number | null; visited?: boolean } = {};
+          if (syncRating) upsertData.rating = updated.personalRating;
+          if (syncVisited) upsertData.visited = updated.visited;
 
-        await prisma.poiRating.upsert({
-          where: { poiId },
-          create: {
-            poiId,
-            rating: syncRating ? (updated.personalRating ?? null) : null,
-            notInterested: false,
-            visited: syncVisited ? updated.visited : false,
-          },
-          update: upsertData,
-        });
+          await prisma.poiRating.upsert({
+            where: { poiId_userId: { poiId, userId: activeUserId } },
+            create: {
+              poiId,
+              userId: activeUserId,
+              rating: syncRating ? (updated.personalRating ?? null) : null,
+              notInterested: false,
+              visited: syncVisited ? updated.visited : false,
+            },
+            update: upsertData,
+          });
+        }
       }
     }
   } catch {
     // Sync is best-effort — don't fail the main operation
   }
 
-  // ── Sync category & subcategory changes to matching Poi records ──
+  // ── Sync all field changes to linked POIs (via favouriteItemId) ──
   try {
-    const needsCatSync =
-      data.category !== undefined || data.subcategory !== undefined;
-
-    if (needsCatSync) {
-      const syncData: Record<string, unknown> = {};
-      if (data.category !== undefined) syncData.category = data.category;
-      if (data.subcategory !== undefined) syncData.subcategory = data.subcategory ?? null;
-
-      let matchingPoiIds: number[] = [];
-
-      if (updated.sourcePlaceId) {
-        const pois = await prisma.poi.findMany({
-          where: { placeId: updated.sourcePlaceId },
-          select: { id: true },
-        });
-        matchingPoiIds = pois.map((p) => p.id);
-      }
-
-      if (matchingPoiIds.length === 0 && updated.name && updated.city) {
-        const pois = await prisma.poi.findMany({
-          where: {
-            name: { equals: updated.name, mode: "insensitive" },
-            city: { name: { equals: updated.city, mode: "insensitive" } },
-          },
-          select: { id: true },
-        });
-        matchingPoiIds = pois.map((p) => p.id);
-      }
-
-      for (const poiId of matchingPoiIds) {
-        await prisma.poi.update({
-          where: { id: poiId },
-          data: syncData,
-        });
-      }
-    }
+    await syncFavouriteUpdateToPois(Number(itemId), {
+      name: typeof data.name === "string" ? data.name as string : undefined,
+      category: typeof data.category === "string" ? data.category as string : undefined,
+      subcategory: data.subcategory !== undefined ? (data.subcategory as string | null) : undefined,
+      description: data.description !== undefined ? (data.description as string | null) : undefined,
+      latitude: typeof data.latitude === "number" ? data.latitude as number : undefined,
+      longitude: typeof data.longitude === "number" ? data.longitude as number : undefined,
+      photoUrl: data.photoUrl !== undefined ? (data.photoUrl as string | null) : undefined,
+      website: data.website !== undefined ? (data.website as string | null) : undefined,
+    });
   } catch {
-    // Category sync is best-effort
+    // Sync is best-effort
   }
 
   return NextResponse.json(updated);

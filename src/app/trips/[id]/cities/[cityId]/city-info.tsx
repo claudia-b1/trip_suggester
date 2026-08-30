@@ -37,11 +37,10 @@ function GeneratedInfoPanel({
   generated: GeneratedCityInfo;
   thumbnailUrl?: string;
 }) {
-  const [selectedName, setSelectedName] = useState(
-    () => generated.categories[0]?.name ?? "",
-  );
+  const ALL = "__ALL__";
+  const [selectedName, setSelectedName] = useState(ALL);
 
-  const selectedCat = generated.categories.find((c) => c.name === selectedName);
+  const selectedCat = selectedName === ALL ? null : generated.categories.find((c) => c.name === selectedName);
 
   const daysAgo = Math.floor(
     (Date.now() - new Date(generated.generatedAt).getTime()) / (1000 * 60 * 60 * 24),
@@ -73,6 +72,17 @@ function GeneratedInfoPanel({
 
         {/* Category pills */}
         <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-2.5">
+          <button
+            type="button"
+            onClick={() => setSelectedName(ALL)}
+            className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+              selectedName === ALL
+                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                : "border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+            }`}
+          >
+            <span>All</span>
+          </button>
           {generated.categories.map((cat) => {
             const active = cat.name === selectedName;
             return (
@@ -93,8 +103,38 @@ function GeneratedInfoPanel({
           })}
         </div>
 
-        {/* Selected category content */}
-        {selectedCat && (
+        {/* Category content */}
+        {selectedName === ALL ? (
+          <div className="flex-1 px-4 pt-2 pb-4 border-t border-[hsl(var(--border))] space-y-5 max-h-[60vh] overflow-y-auto">
+            {generated.categories.map((cat) => (
+              <div key={cat.name}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-base">{cat.icon}</span>
+                  <span className="text-sm font-semibold">{cat.name}</span>
+                  <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+                    confidence: <ConfidenceBadge level={cat.confidence} />
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed text-[hsl(var(--foreground))]">
+                  {cat.summary}
+                </p>
+                {cat.dishes && cat.dishes.length > 0 && (
+                  <ul className="mt-3 space-y-1.5">
+                    {cat.dishes.map((d, idx) => (
+                      <li key={idx} className="text-sm flex gap-1.5">
+                        <span className="text-[hsl(var(--muted-foreground))] shrink-0">•</span>
+                        <span>
+                          <span className="font-medium">{d.name}</span>
+                          <span className="text-[hsl(var(--muted-foreground))]"> — {d.description}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : selectedCat ? (
           <div className="flex-1 px-4 pt-2 pb-4 border-t border-[hsl(var(--border))]">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-base">{selectedCat.icon}</span>
@@ -120,7 +160,7 @@ function GeneratedInfoPanel({
               </ul>
             )}
           </div>
-        )}
+        ) : null}
 
         {/* Footer */}
         <div className="px-4 py-2.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--muted))]/20 mt-auto">

@@ -66,6 +66,8 @@ export function getExtraFieldDefs(
   if (category === "NATURE") return NATURE_FIELDS;
   // ── ENTERTAINMENT ──
   if (category === "ENTERTAINMENT") return ENTERTAINMENT_FIELDS;
+  // ── OUTDOORS ──
+  if (category === "OUTDOORS") return OUTDOORS_FIELDS;
   // Others: no extra fields
   return [];
 }
@@ -131,6 +133,18 @@ const NATURE_FIELDS: ExtraFieldDef[] = [
   ]},
   { type: "text", key: "durationHours", label: "Duration (hours)" },
   { type: "boolean", key: "dogFriendly", label: "Dog friendly" },
+];
+
+const OUTDOORS_FIELDS: ExtraFieldDef[] = [
+  { type: "select", key: "difficulty", label: "Difficulty", options: [
+    { value: "easy", label: "Easy" },
+    { value: "moderate", label: "Moderate" },
+    { value: "hard", label: "Hard" },
+  ]},
+  { type: "text", key: "distance", label: "Distance" },
+  { type: "text", key: "durationHours", label: "Duration" },
+  { type: "boolean", key: "guidedTour", label: "Guided tour available" },
+  { type: "boolean", key: "equipmentRental", label: "Equipment rental" },
 ];
 
 const ENTERTAINMENT_FIELDS: ExtraFieldDef[] = [

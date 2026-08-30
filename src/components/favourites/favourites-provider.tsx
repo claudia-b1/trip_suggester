@@ -90,8 +90,10 @@ type FavouritesContextType = {
   refreshLists: () => Promise<void>;
   /** Set of sourcePlaceId values that are favourited (for filled heart) */
   favouritedPlaceIds: Set<string>;
-  /** Set of "name|city" lowercase keys for fallback duplicate detection */
-  favouritedNameCityKeys: Set<string>;
+  /** Set of favourite item IDs (for matching POIs linked via favouriteItemId) */
+  favouritedItemIds: Set<number>;
+  /** Set of lowercased favourite names (for name-only matching) */
+  favouritedNames: Set<string>;
   /** Open the add-to-favourites modal with pre-filled data */
   showAddModal: (prefill: NewFavouriteItemPrefill) => void;
   addModalPrefill: NewFavouriteItemPrefill | null;
@@ -138,10 +140,22 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Eagerly fetch favourites on mount so hearts show correct state immediately
+  // Eagerly fetch favourites on mount so hearts show correct state immediately.
+  // Also re-fetch when the active-user-id cookie changes (user switch).
   useEffect(() => {
-    if (!hasFetched) fetchLists();
+    setHasFetched(false);
+    fetchLists();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch when cookie changes (detected via a custom event dispatched by switchUser)
+  useEffect(() => {
+    function onUserSwitch() {
+      setHasFetched(false);
+      fetchLists();
+    }
+    window.addEventListener("user-switched", onUserSwitch);
+    return () => window.removeEventListener("user-switched", onUserSwitch);
+  }, [fetchLists]);
 
   const open = useCallback(() => {
     setIsOpen(true);
@@ -175,22 +189,21 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
 
   const closeEditModal = useCallback(() => setEditModalItem(null), []);
 
-  // Build set of favourited placeIds and name|city keys from all items across all lists
+  // Build set of favourited placeIds, name|city keys, names, and item IDs from all items across all lists
   const favouritedPlaceIds = new Set<string>();
-  const favouritedNameCityKeys = new Set<string>();
+  const favouritedItemIds = new Set<number>();
+  const favouritedNames = new Set<string>();
   for (const list of lists) {
     for (const item of list.items) {
+      favouritedItemIds.add(item.id);
+      if (item.name) favouritedNames.add(item.name.toLowerCase());
       if (item.sourcePlaceId) favouritedPlaceIds.add(item.sourcePlaceId);
-      if (item.name && item.city) {
-        favouritedNameCityKeys.add(`${item.name.toLowerCase()}|${item.city.toLowerCase()}`);
-      }
     }
     for (const sub of list.sublists) {
       for (const item of sub.items) {
+        favouritedItemIds.add(item.id);
+        if (item.name) favouritedNames.add(item.name.toLowerCase());
         if (item.sourcePlaceId) favouritedPlaceIds.add(item.sourcePlaceId);
-        if (item.name && item.city) {
-          favouritedNameCityKeys.add(`${item.name.toLowerCase()}|${item.city.toLowerCase()}`);
-        }
       }
     }
   }
@@ -215,7 +228,8 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
         loading,
         refreshLists,
         favouritedPlaceIds,
-        favouritedNameCityKeys,
+        favouritedItemIds,
+        favouritedNames,
         showAddModal,
         addModalPrefill,
         closeAddModal,

@@ -43,6 +43,8 @@ export function ActivityRecommendations({
   tripId,
   tripStartDate,
   tripEndDate,
+  cityStartDate,
+  cityEndDate,
   initialData,
   pois,
   parentCityId,
@@ -53,6 +55,9 @@ export function ActivityRecommendations({
   tripId: number;
   tripStartDate: string;
   tripEndDate: string;
+  /** The current city's own date range — used for sub-destination date picker */
+  cityStartDate: string;
+  cityEndDate: string;
   initialData: ActivityRecommendationsResult | null;
   /** Existing POIs — used to link recommendations to POIs and show their photos */
   pois?: { id: number; name: string; photoUrl?: string | null }[];
@@ -310,7 +315,21 @@ export function ActivityRecommendations({
 
   const [addingCityName, setAddingCityName] = useState<string | null>(null);
 
-  async function addCityAsSubdestination(city: NearbyCityRecommendation) {
+  // Date picker state for sub-destination
+  const [pendingSubdestCity, setPendingSubdestCity] = useState<NearbyCityRecommendation | null>(null);
+  const [subdestStartDate, setSubdestStartDate] = useState(cityStartDate.slice(0, 10));
+  const [subdestEndDate, setSubdestEndDate] = useState(cityEndDate.slice(0, 10));
+
+  function promptSubdestinationDates(city: NearbyCityRecommendation) {
+    setSubdestStartDate(cityStartDate.slice(0, 10));
+    setSubdestEndDate(cityEndDate.slice(0, 10));
+    setPendingSubdestCity(city);
+  }
+
+  async function confirmAddSubdestination() {
+    const city = pendingSubdestCity;
+    if (!city) return;
+    setPendingSubdestCity(null);
     setAddingCityName(city.name);
     try {
       // First verify coordinates via geocoding
@@ -327,8 +346,8 @@ export function ActivityRecommendations({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: city.name,
-          startDate: tripStartDate,
-          endDate: tripEndDate,
+          startDate: new Date(subdestStartDate).toISOString(),
+          endDate: new Date(subdestEndDate).toISOString(),
           parentCityId: subcityParentId,
           ...(city.country && { country: city.country }),
           ...(lat != null && { latitude: lat }),
@@ -419,15 +438,18 @@ export function ActivityRecommendations({
                   <input type="checkbox" checked={genMustDo} onChange={(e) => setGenMustDo(e.target.checked)} className="rounded" />
                   Must-do activities
                 </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded" />
-                  Nearby cities
+                <div className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded" />
+                    Nearby cities
+                  </label>
                   {genNearbyCities && (
                     <span className="inline-flex items-center gap-1 ml-1">
                       <input
                         type="number"
                         value={maxCitiesKm}
-                        onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                        onChange={(e) => setMaxCitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                        onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(150); }}
                         className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                         min={10}
                         max={500}
@@ -435,16 +457,19 @@ export function ActivityRecommendations({
                       <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
                     </span>
                   )}
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded" />
-                  Recommended activities nearby
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded" />
+                    Recommended activities nearby
+                  </label>
                   {genNearbyActivities && (
                     <span className="inline-flex items-center gap-1 ml-1">
                       <input
                         type="number"
                         value={maxActivitiesKm}
-                        onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                        onChange={(e) => setMaxActivitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                        onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(50); }}
                         className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                         min={5}
                         max={200}
@@ -452,7 +477,7 @@ export function ActivityRecommendations({
                       <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
                     </span>
                   )}
-                </label>
+                </div>
               </div>
 
               <div className="text-center">
@@ -519,18 +544,19 @@ export function ActivityRecommendations({
               settingsOpen={regenSettingsFor === "nearbyActivities"}
               settingsPanel={
                 <div className="flex flex-wrap items-center gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
-                  <label className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
                     Max distance
                     <input
                       type="number"
                       value={maxActivitiesKm}
-                      onChange={(e) => setMaxActivitiesKm(Number(e.target.value) || 50)}
+                      onChange={(e) => setMaxActivitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                      onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(50); }}
                       className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                       min={5}
                       max={200}
                     />
                     km
-                  </label>
+                  </span>
                   <div className="ml-auto flex items-center gap-1.5">
                     <Button
                       type="button"
@@ -641,18 +667,19 @@ export function ActivityRecommendations({
               settingsOpen={regenSettingsFor === "nearbyCities"}
               settingsPanel={
                 <div className="flex flex-wrap items-center gap-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
-                  <label className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))]">
                     Max distance
                     <input
                       type="number"
                       value={maxCitiesKm}
-                      onChange={(e) => setMaxCitiesKm(Number(e.target.value) || 150)}
+                      onChange={(e) => setMaxCitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                      onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(150); }}
                       className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                       min={10}
                       max={500}
                     />
                     km
-                  </label>
+                  </span>
                   <div className="ml-auto flex items-center gap-1.5">
                     <Button
                       type="button"
@@ -683,7 +710,7 @@ export function ActivityRecommendations({
                   <NearbyCityCard
                     key={i}
                     city={city}
-                    onAddAsSubdestination={() => addCityAsSubdestination(city)}
+                    onAddAsSubdestination={() => promptSubdestinationDates(city)}
                     onAddAsDestination={() => addCityAsDestination(city)}
                     adding={addingCityName === city.name}
                   />
@@ -748,6 +775,50 @@ export function ActivityRecommendations({
           )}
         </CardContent>
       )}
+
+      {/* Date picker modal for sub-destination */}
+      {pendingSubdestCity && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setPendingSubdestCity(null)} />
+          <div className="relative z-10 w-full max-w-sm rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-xl space-y-4">
+            <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">
+              Add {pendingSubdestCity.name} as sub-destination
+            </h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[hsl(var(--foreground))]">Start date</label>
+                <input
+                  type="date"
+                  value={subdestStartDate}
+                  min={cityStartDate.slice(0, 10)}
+                  max={subdestEndDate}
+                  onChange={(e) => setSubdestStartDate(e.target.value)}
+                  className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))]"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-[hsl(var(--foreground))]">End date</label>
+                <input
+                  type="date"
+                  value={subdestEndDate}
+                  min={subdestStartDate}
+                  max={cityEndDate.slice(0, 10)}
+                  onChange={(e) => setSubdestEndDate(e.target.value)}
+                  className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))]"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => setPendingSubdestCity(null)}>
+                Cancel
+              </Button>
+              <Button type="button" size="sm" onClick={confirmAddSubdestination}>
+                Add
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -779,15 +850,15 @@ function CollapsibleSubsection({
 }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between border-b border-[hsl(var(--border))] pb-2">
         <button
           type="button"
           onClick={onToggle}
-          className="flex items-center gap-1.5 group text-left"
+          className="flex items-center gap-2 group text-left"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className={`h-3 w-3 text-[hsl(var(--muted-foreground))] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
+            className={`h-3.5 w-3.5 text-[hsl(var(--muted-foreground))] transition-transform duration-150 ${open ? "rotate-90" : ""}`}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -797,11 +868,11 @@ function CollapsibleSubsection({
           >
             <polyline points="9 18 15 12 9 6" />
           </svg>
-          <span className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))] transition-colors">
+          <span className="text-sm font-bold text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--primary))] transition-colors">
             {title}
           </span>
-          <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
-            ({count})
+          <span className="rounded-full bg-[hsl(var(--muted))] px-1.5 py-0.5 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+            {count}
           </span>
         </button>
         {onRegenerate && (

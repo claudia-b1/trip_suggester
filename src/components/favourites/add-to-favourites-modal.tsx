@@ -11,6 +11,7 @@ import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 import { ACCOMMODATION_SUBCATEGORIES, getExtraFieldDefs, PROXIMITY_OPTIONS, type ExtraFieldDef } from "@/lib/favourite-fields";
 import { useFavourites, type FavouriteItemDTO } from "./favourites-provider";
 import { useToast } from "@/components/ui/toast";
+import { resizeImageFile } from "@/lib/resize-image";
 
 /* ── Subcategory lookup helper ─────────────────────────────────────────── */
 
@@ -410,6 +411,7 @@ export function AddToFavouritesModal() {
   const [longitude, setLongitude] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [extraFields, setExtraFields] = useState<Record<string, unknown>>({});
   const [listId, setListId] = useState<number | "">("");
@@ -481,6 +483,7 @@ export function AddToFavouritesModal() {
       setLocMode(editModalItem.address ? "address" : "coords");
       setDescription(editModalItem.description ?? "");
       setWebsite(editModalItem.website ?? "");
+      setPhotoUrl(editModalItem.photoUrl ?? "");
       setNotes(editModalItem.notes ?? "");
       setExtraFields((editModalItem.extraFields as Record<string, unknown>) ?? {});
       setListId(editModalItem.listId);
@@ -503,6 +506,7 @@ export function AddToFavouritesModal() {
       setLocMode(addModalPrefill.latitude != null ? "coords" : "address");
       setDescription(addModalPrefill.description ?? "");
       setWebsite(addModalPrefill.website ?? "");
+      setPhotoUrl(addModalPrefill.photoUrl ?? "");
       setNotes("");
       setExtraFields(addModalPrefill.extraFields ?? {});
       setShowCreateList(false);
@@ -840,10 +844,10 @@ export function AddToFavouritesModal() {
         description: description || null,
         notes: notes || null,
         website: website || null,
+        photoUrl: photoUrl.trim() || null,
         extraFields: cleanExtraFields(extraFields),
         listId: targetListId,
         ...(isEditMode ? {} : {
-          photoUrl: addModalPrefill?.photoUrl || null,
           sourcePlaceId: addModalPrefill?.sourcePlaceId || null,
         }),
       };
@@ -1099,6 +1103,36 @@ export function AddToFavouritesModal() {
               Website <span className="text-[hsl(var(--muted-foreground))]">(optional)</span>
             </label>
             <input type="text" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." className={inputCls} />
+          </div>
+
+          {/* Image upload */}
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
+              Image <span className="text-[hsl(var(--muted-foreground))]">(optional)</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm hover:bg-[hsl(var(--accent))] transition-colors">
+                📷 {photoUrl ? "Change" : "Choose file"}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const dataUri = await resizeImageFile(file, 600);
+                    setPhotoUrl(dataUri);
+                  }}
+                />
+              </label>
+              {photoUrl && (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoUrl} alt="Preview" className="h-8 w-8 rounded object-cover" />
+                  <button type="button" onClick={() => setPhotoUrl("")} className="text-xs text-red-400 hover:text-red-300">✕</button>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Description (edit mode) */}
