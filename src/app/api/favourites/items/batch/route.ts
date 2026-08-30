@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
 
 /** PATCH /api/favourites/items/batch — bulk update (e.g. move to list) */
 export async function PATCH(req: Request) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const body = await req.json().catch(() => null);
   if (!body || !Array.isArray(body.ids) || !body.data) {
     return NextResponse.json(
@@ -14,11 +18,11 @@ export async function PATCH(req: Request) {
   const { ids, data } = body as { ids: number[]; data: { listId?: number } };
 
   if (typeof data.listId === "number") {
-    // Verify target list exists
+    // Verify target list exists and belongs to the active user
     const list = await prisma.favouriteList.findUnique({
       where: { id: data.listId },
     });
-    if (!list) {
+    if (!list || list.userId !== userId) {
       return NextResponse.json({ error: "Target list not found" }, { status: 404 });
     }
   }
@@ -33,6 +37,9 @@ export async function PATCH(req: Request) {
 
 /** DELETE /api/favourites/items/batch — bulk delete */
 export async function DELETE(req: Request) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const body = await req.json().catch(() => null);
   if (!body || !Array.isArray(body.ids)) {
     return NextResponse.json({ error: "ids array required" }, { status: 400 });

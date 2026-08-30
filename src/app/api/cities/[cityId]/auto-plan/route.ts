@@ -13,6 +13,8 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 import type { TimeSlot } from "@/lib/slots";
 import { haversineKm } from "@/lib/recommendations/_shared";
 
@@ -118,8 +120,15 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId } = await params;
   const cityIdNum = Number(cityId);
+
+  if (!await verifyCityOwnership(cityIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   // Optional: only plan specific days
   let selectedDayPlanIds: number[] | null = null;

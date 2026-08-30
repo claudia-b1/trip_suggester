@@ -36,6 +36,14 @@ async function main() {
     createdAt: number; updatedAt: number;
   }>("SELECT * FROM Trip ORDER BY id");
 
+  // Ensure at least one user exists for migration
+  let defaultUser = await prisma.user.findFirst({ orderBy: { id: "asc" } });
+  if (!defaultUser) {
+    defaultUser = await prisma.user.create({
+      data: { name: "Me", color: "#3B82F6" },
+    });
+  }
+
   for (const t of trips) {
     await prisma.trip.create({
       data: {
@@ -45,6 +53,7 @@ async function main() {
         endDate: toDate(t.endDate),
         createdAt: toDate(t.createdAt),
         updatedAt: toDate(t.updatedAt),
+        userId: defaultUser.id,
       },
     });
   }

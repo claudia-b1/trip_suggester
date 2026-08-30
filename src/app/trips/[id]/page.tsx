@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DeleteTripButton } from "./delete-button";
 import { EditTripButton } from "./edit-trip-button";
@@ -34,12 +35,15 @@ export default async function TripDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const userId = await getActiveUserId();
+  if (!userId) notFound();
+
   const { id } = await params;
   const tripId = Number(id);
   if (!Number.isInteger(tripId)) notFound();
 
   const trip = await prisma.trip.findUnique({
-    where: { id: tripId },
+    where: { id: tripId, userId },
     include: {
       cities: {
         where: { parentCityId: null },
@@ -122,6 +126,7 @@ export default async function TripDetailPage({
                 endDate: c.endDate.toISOString(),
                 order: c.order,
                 parentCityId: null,
+                type: c.type,
                 subcities: c.subcities.map((s) => ({
                   id: s.id,
                   name: s.nickname ?? s.name,
@@ -129,6 +134,7 @@ export default async function TripDetailPage({
                   endDate: s.endDate.toISOString(),
                   order: s.order,
                   parentCityId: c.id,
+                  type: s.type,
                 })),
               }))}
               tripStartDate={trip.startDate.toISOString()}
@@ -156,6 +162,7 @@ export default async function TripDetailPage({
             longitude: c.longitude ?? null,
             order: c.order,
             parentCityId: null,
+            type: c.type,
             subcities: c.subcities.map((s) => ({
               id: s.id,
               name: s.name,
@@ -166,6 +173,7 @@ export default async function TripDetailPage({
               longitude: s.longitude ?? null,
               order: s.order,
               parentCityId: c.id,
+              type: s.type,
               subcities: [],
             })),
           }))}

@@ -18,10 +18,12 @@ export const CATEGORY_CATEGORIES: Record<RecommendableCategory, string> = {
   CULTURE:    "entertainment.museum,entertainment.culture,tourism.sights.memorial,tourism.sights.castle,tourism.sights.fort,tourism.sights.ruines,tourism.sights.archaeological_site,tourism.sights.place_of_worship,tourism.sights.tower,tourism.sights.bridge,tourism.sights.monastery,tourism.sights.city_gate,heritage,building.historic,tourism.attraction",
   FOOD:       "catering.restaurant,catering.cafe,catering.fast_food,catering.ice_cream,catering.food_court,commercial.food_and_drink.bakery,commercial.food_and_drink.ice_cream,craft.winery,tourism.winery,commercial.food_and_drink.wine,catering.wine_bar",
   NATURE:     "leisure.park,natural.forest,natural.water,natural.mountain,national_park,beach,leisure.park.garden,leisure.park.nature_reserve,natural.protected_area,natural.water.hot_spring,natural.water.spring,natural.water.whitewater,waterway.whitewater,tourism.attraction.viewpoint",
-  ENTERTAINMENT: "sport.stadium,sport.sports_centre,entertainment.theme_park,entertainment.zoo,entertainment.aquarium,entertainment.water_park,entertainment.activity_park,entertainment.planetarium,leisure.playground",
+  ENTERTAINMENT: "entertainment.theme_park,entertainment.zoo,entertainment.aquarium,entertainment.water_park,entertainment.activity_park,entertainment.planetarium,leisure.playground",
   NIGHTLIFE:  "catering.bar,catering.pub,catering.biergarten,adult.nightclub,adult.casino,entertainment.cinema,entertainment.culture.theatre",
   SHOPPING:   "commercial.shopping_mall,commercial.marketplace,commercial.clothing,commercial.gift_and_souvenir,commercial.department_store",
+  GROCERIES:  "commercial.supermarket,commercial.food_and_drink.bakery,commercial.food_and_drink.butcher,commercial.food_and_drink.seafood,commercial.food_and_drink",
   WELLNESS:   "leisure.spa,sport.fitness.fitness_centre,service.beauty.spa",
+  OUTDOORS:   "sport.climbing,sport.diving,sport.horse_riding,sport.swimming_pool,sport.pitch,sport.track,sport.dive_center,leisure.park.nature_reserve,natural.mountain,beach",
 };
 
 export const SUBCAT_CATEGORIES: Record<string, string> = {
@@ -70,10 +72,26 @@ export const SUBCAT_CATEGORIES: Record<string, string> = {
   boutiques:         "commercial.clothing",
   souvenirs:         "commercial.gift_and_souvenir",
   shopping_streets:  "commercial.shopping_mall,commercial.clothing",
+  // GROCERIES
+  supermarket:       "commercial.supermarket",
+  shop_bakery:       "commercial.food_and_drink.bakery",
+  butcher:           "commercial.food_and_drink.butcher",
+  fishmonger:        "commercial.food_and_drink.seafood",
   // WELLNESS
   spas:              "leisure.spa,service.beauty.spa",
   wellness_centres:  "leisure.spa,sport.fitness.fitness_centre,service.beauty.spa",
   yoga_fitness:      "sport.fitness.fitness_centre",
+  // OUTDOORS
+  hiking:            "leisure.park.nature_reserve,natural.mountain,tourism.attraction.viewpoint",
+  cycling:           "sport.cycling,sport.track",
+  kayaking:          "sport.swimming_pool,natural.water",
+  climbing:          "sport.climbing",
+  surfing:           "beach,sport.swimming_pool",
+  skiing:            "sport.skiing,sport.ice_rink",
+  diving:            "sport.dive_center,sport.diving",
+  horseback:         "sport.horse_riding",
+  sailing:           "sport.swimming_pool,natural.water",
+  fishing:           "natural.water,leisure.fishing",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -310,11 +328,13 @@ export async function searchPlaces(
 
   const CROSS_FILTERS: Partial<Record<RecommendableCategory, string[]>> = {
     CULTURE:    ["catering.", "commercial.food"],
-    NATURE:     ["catering.", "commercial.", "sport."],
+    NATURE:     ["catering.", "commercial.", "sport.", "leisure.playground"],
     ENTERTAINMENT: ["catering.", "commercial.food", "tourism.sights."],
     NIGHTLIFE:  ["tourism.sights.", "entertainment.museum"],
     SHOPPING:   ["catering.", "tourism.sights.", "natural.", "sport."],
+    GROCERIES:  ["catering.", "tourism.sights.", "natural.", "sport.", "entertainment."],
     WELLNESS:   ["catering.", "commercial.food", "tourism.sights."],
+    OUTDOORS:   ["catering.", "commercial.food", "entertainment.museum"],
   };
 
   const blockPrefixes = CROSS_FILTERS[category];
@@ -349,7 +369,7 @@ export async function searchPlaces(
         longitude:    p.lon ?? lon,
         placeCategory,
         categories:   p.categories ?? [],
-        description:  undefined,
+        description:  p.formatted ?? p.address_line1 ?? undefined,
         tel:          p.phone ?? raw?.phone ?? undefined,
         website:      p.website ?? raw?.website ?? undefined,
         openingHours: p.opening_hours ?? raw?.opening_hours ?? undefined,

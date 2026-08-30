@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
 import { isCategory } from "@/lib/categories";
+import { syncFavouriteToTrips } from "@/lib/favourite-poi-sync";
 
 /** GET /api/favourites/items — filtered items */
 export async function GET(req: Request) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const url = new URL(req.url);
   const city = url.searchParams.get("city");
   const country = url.searchParams.get("country");
@@ -12,7 +17,7 @@ export async function GET(req: Request) {
   const listId = url.searchParams.get("listId");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: any = {};
+  const where: any = { list: { userId } };
   if (city) where.city = { equals: city, mode: "insensitive" };
   if (country) where.country = { equals: country, mode: "insensitive" };
   if (category && isCategory(category)) where.category = category;
@@ -30,6 +35,9 @@ export async function GET(req: Request) {
 
 /** POST /api/favourites/items — create a favourite item */
 export async function POST(req: Request) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const body = await req.json().catch(() => null);
   if (!body) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
@@ -57,9 +65,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "listId is required" }, { status: 400 });
   }
 
-  // Verify list exists
+  // Verify list exists and belongs to the active user
   const list = await prisma.favouriteList.findUnique({ where: { id: listId } });
-  if (!list) {
+  if (!list || list.userId !== userId) {
     return NextResponse.json({ error: "List not found" }, { status: 404 });
   }
 
@@ -84,47 +92,24 @@ export async function POST(req: Request) {
     include: { list: { select: { id: true, name: true } } },
   });
 
-  // ── Auto-create POI in matching trip cities ────────────────────────────
-  // Find cities whose name+country match this favourite (case-insensitive)
+  // ── Auto-create POI in matching trip cities (distance-based) ────────────
   try {
-    const matchingCities = await prisma.city.findMany({
-      where: {
-        name: { equals: city.trim(), mode: "insensitive" },
-        ...(country.trim() ? { country: { equals: country.trim(), mode: "insensitive" } } : {}),
+    await syncFavouriteToTrips(
+      {
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        subcategory: item.subcategory,
+        description: item.description,
+        latitude: item.latitude,
+        longitude: item.longitude,
+        photoUrl: item.photoUrl,
+        website: item.website,
+        sourcePlaceId: item.sourcePlaceId,
+        country: item.country,
       },
-      select: { id: true },
-    });
-
-    for (const mc of matchingCities) {
-      // Check if a POI with same sourcePlaceId or name already exists in this city
-      const existingPoi = await prisma.poi.findFirst({
-        where: {
-          cityId: mc.id,
-          OR: [
-            ...(sourcePlaceId ? [{ placeId: sourcePlaceId }] : []),
-            { name: { equals: name.trim(), mode: "insensitive" as const } },
-          ],
-        },
-        select: { id: true },
-      });
-
-      if (!existingPoi) {
-        await prisma.poi.create({
-          data: {
-            name: name.trim(),
-            category,
-            subcategory: subcategory || null,
-            description: description || null,
-            latitude,
-            longitude,
-            photoUrl: photoUrl || null,
-            website: website || null,
-            placeId: sourcePlaceId || null,
-            cityId: mc.id,
-          },
-        });
-      }
-    }
+      userId,
+    );
   } catch {
     // Auto-POI creation is best-effort — don't fail the favourite save
   }

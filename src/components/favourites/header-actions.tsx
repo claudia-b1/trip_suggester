@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { UserSwitcher } from "@/components/user/user-switcher";
 import { FavouritesButton } from "./favourites-button";
 
 export function HeaderActions() {
   return (
     <div className="flex items-center gap-2">
+      <UserSwitcher />
       <ThemeToggle />
       <FavouritesButton />
       <Button asChild size="sm">

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Inter } from "next/font/google";
-import { Button } from "@/components/ui/button";
 import { ToastProvider } from "@/components/ui/toast";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 import { ScrollToTop } from "@/components/ui/scroll-to-top";
@@ -10,6 +9,8 @@ import { FavouritesProvider } from "@/components/favourites/favourites-provider"
 import { FavouritesPanel } from "@/components/favourites/favourites-panel";
 import { AddToFavouritesModal } from "@/components/favourites/add-to-favourites-modal";
 import { HeaderActions } from "@/components/favourites/header-actions";
+import { UserProvider } from "@/components/user/user-provider";
+import { UserOnboarding } from "@/components/user/user-onboarding";
 import "./globals.css";
 
 const inter = Inter({
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className={`min-h-screen flex flex-col ${inter.className}`}>
         <ToastProvider>
           <ConfirmProvider>
+            <UserProvider>
             <FavouritesProvider>
               <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg">
                 <div className="mx-auto flex w-full items-center justify-between gap-3 px-6 py-3">
@@ -61,6 +63,8 @@ export default function RootLayout({
               <FavouritesPanel />
               <AddToFavouritesModal />
             </FavouritesProvider>
+            <UserOnboarding />
+            </UserProvider>
           </ConfirmProvider>
         </ToastProvider>
       </body>

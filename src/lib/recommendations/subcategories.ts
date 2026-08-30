@@ -60,10 +60,28 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "souvenirs",        label: "Souvenirs",         emoji: "🎁",  apiValues: [] },
     { id: "shopping_streets", label: "Shopping Streets",  emoji: "🛤",  apiValues: [] },
   ],
+  GROCERIES: [
+    { id: "supermarket",      label: "Supermarket",       emoji: "🛒",  apiValues: [] },
+    { id: "shop_bakery",      label: "Bakery",            emoji: "🥖",  apiValues: [] },
+    { id: "butcher",          label: "Butcher",           emoji: "🥩",  apiValues: [] },
+    { id: "fishmonger",       label: "Fishmonger",        emoji: "🐟",  apiValues: [] },
+  ],
   WELLNESS: [
     { id: "spas",            label: "Spas & Saunas",    emoji: "🧖",  apiValues: [] },
     { id: "wellness_centres",label: "Wellness Centers", emoji: "🌸",  apiValues: [] },
     { id: "yoga_fitness",    label: "Yoga / Fitness",   emoji: "🏃",  apiValues: [] },
+  ],
+  OUTDOORS: [
+    { id: "hiking",          label: "Hiking",            emoji: "🥾",  apiValues: [] },
+    { id: "cycling",         label: "Cycling",           emoji: "🚴",  apiValues: [] },
+    { id: "kayaking",        label: "Kayaking / Canoeing", emoji: "🛶", apiValues: [] },
+    { id: "climbing",        label: "Climbing",          emoji: "🧗",  apiValues: [] },
+    { id: "surfing",         label: "Surfing / Water Sports", emoji: "🏄", apiValues: [] },
+    { id: "skiing",          label: "Skiing / Snowboarding", emoji: "⛷️", apiValues: [] },
+    { id: "diving",          label: "Diving / Snorkeling", emoji: "🤿", apiValues: [] },
+    { id: "horseback",       label: "Horseback Riding",  emoji: "🐴",  apiValues: [] },
+    { id: "sailing",         label: "Sailing / Boating", emoji: "⛵",  apiValues: [] },
+    { id: "fishing",         label: "Fishing",           emoji: "🎣",  apiValues: [] },
   ],
 };
 

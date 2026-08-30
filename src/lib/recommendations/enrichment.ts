@@ -108,12 +108,13 @@ export async function enrichPlace(
   const w = wiki.status === "fulfilled" ? wiki.value : null;
   const g = google.status === "fulfilled" ? google.value : null;
 
-  // Build description: prefer Wikidata, then Google editorial, then source
+  // Build description: prefer Wikidata, then Google editorial, then address
   const description =
     w?.description ??
     g?.editorialSummary ??
     place.description ??
-    `${place.placeCategory} in ${cityName}.`;
+    place.address ??
+    "";
 
   // Rating: prefer Google (1–5), normalize source rating (1–10) as fallback
   const rating =
@@ -123,8 +124,8 @@ export async function enrichPlace(
   // Price level: Google takes priority
   const priceLevel = g?.priceLevel ?? place.priceLevel;
 
-  // Photo: Google high-res > discovery photo
-  const photoUrl = g?.photoUrl ?? place.photoUrl;
+  // Photo: Wikipedia/Wikidata > Google > discovery
+  const photoUrl = w?.imageUrl ?? g?.photoUrl ?? place.photoUrl;
 
   // Hours / contact: discovery already has these, Google can override
   const openingHours = g?.openingHours ?? place.openingHours;

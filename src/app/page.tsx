@@ -2,16 +2,37 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { TripGrid } from "@/components/trip-grid";
+import { getActiveUserId } from "@/lib/active-user";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  const userId = await getActiveUserId();
+
+  // If no active user, show empty state (onboarding overlay will handle user creation)
+  if (!userId) {
+    return (
+      <div className="space-y-8">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[hsl(var(--primary))]/10 via-[hsl(var(--primary))]/5 to-transparent border border-[hsl(var(--border))] px-8 py-12">
+          <div className="absolute -right-8 -top-8 text-[120px] opacity-10 select-none">🌍</div>
+          <div className="relative">
+            <h1 className="text-4xl font-bold tracking-tight text-gradient">Where to next?</h1>
+            <p className="mt-2 text-lg text-[hsl(var(--muted-foreground))]">
+              Plan your perfect trip with smart recommendations and daily itineraries.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [trips, archivedCount] = await Promise.all([
     prisma.trip.findMany({
+      where: { userId },
       orderBy: { startDate: "asc" },
       include: { cities: { select: { id: true } } },
     }),
-    prisma.trip.count({ where: { archived: true } }),
+    prisma.trip.count({ where: { archived: true, userId } }),
   ]);
 
   const serializedTrips = trips.map((t) => ({

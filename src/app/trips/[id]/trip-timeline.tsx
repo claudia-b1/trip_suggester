@@ -11,6 +11,7 @@ type TimelineSubcity = {
   endDate: string;
   order: number;
   parentCityId: number | null;
+  type?: string;
 };
 
 type TimelineCity = {
@@ -20,6 +21,7 @@ type TimelineCity = {
   endDate: string;
   order: number;
   parentCityId: number | null;
+  type?: string;
   subcities: TimelineSubcity[];
 };
 
@@ -95,7 +97,8 @@ export function TripTimeline({
           </div>
           {/* City rows */}
           {sortedCities.map((city, i) => {
-            const color = MARKER_COLORS[i % MARKER_COLORS.length];
+            const destIndex = sortedCities.filter((c, ci) => ci < i && c.type !== "stop").length;
+            const color = city.type === "stop" ? "#6b7280" : MARKER_COLORS[destIndex % MARKER_COLORS.length];
             const cityStart = new Date(city.startDate).getTime();
             const cityEnd = new Date(city.endDate).getTime();
             const left = ((cityStart - tripStart) / tripDuration) * 100;
@@ -113,8 +116,12 @@ export function TripTimeline({
                 <div className="flex items-center gap-2">
                   {/* City label */}
                   <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1.5 min-w-0">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
-                    <span className="text-xs font-medium truncate">{city.name}</span>
+                    {city.type === "stop" ? (
+                      <span className="h-2.5 w-2.5 shrink-0 text-[10px] leading-none">{"🚗"}</span>
+                    ) : (
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                    )}
+                    <span className={`text-xs truncate ${city.type === "stop" ? "text-[hsl(var(--muted-foreground))]" : "font-medium"}`}>{city.name}</span>
                   </div>
                   {/* Bar track */}
                   <div className="relative h-7 flex-1 rounded-md bg-[hsl(var(--muted))]/50">
@@ -128,11 +135,11 @@ export function TripTimeline({
                     ))}
                     {/* City bar */}
                     <div
-                      className="absolute top-1 bottom-1 rounded-md shadow-sm flex items-center justify-center overflow-hidden"
-                      style={{ left: `${left}%`, width: `${width}%`, backgroundColor: color }}
+                      className={`absolute top-1 bottom-1 rounded-md flex items-center justify-center overflow-hidden ${city.type === "stop" ? "border border-dashed border-gray-400 bg-gray-200/30 dark:bg-gray-700/30" : "shadow-sm"}`}
+                      style={{ left: `${left}%`, width: `${width}%`, ...(city.type !== "stop" ? { backgroundColor: color } : {}) }}
                     >
-                      <span className="text-[10px] font-medium text-white/90 whitespace-nowrap px-1.5 drop-shadow-sm">
-                        {cityDays}d
+                      <span className={`text-[10px] font-medium whitespace-nowrap px-1.5 ${city.type === "stop" ? "text-gray-500 dark:text-gray-400" : "text-white/90 drop-shadow-sm"}`}>
+                        {city.type === "stop" ? "stop" : `${cityDays}d`}
                       </span>
                     </div>
                   </div>

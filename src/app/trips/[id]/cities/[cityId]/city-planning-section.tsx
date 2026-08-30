@@ -58,6 +58,7 @@ export function CityPlanningSection({
   initialVisitedPoiIds,
   dayNotes,
   subcityDayPlans,
+  initialRadiusKm,
 }: {
   cityId: number;
   pois: PoiDTO[];
@@ -72,8 +73,9 @@ export function CityPlanningSection({
   initialVisitedPoiIds?: number[];
   dayNotes?: Record<number, { id: number; content: string }>;
   subcityDayPlans?: SubcityDayPlanDTO[];
+  initialRadiusKm?: number;
 }) {
-  const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
+  const [radiusKm, setRadiusKm] = useState(initialRadiusKm ?? DEFAULT_RADIUS_KM);
   const [nearbyEnabled, setNearbyEnabled] = useState(false);
   const [nearbyRadiusKm, setNearbyRadiusKm] = useState(DEFAULT_NEARBY_RADIUS_KM);
 

@@ -139,11 +139,11 @@ Focus on:
 - Local customs, events, or traditions to participate in
 - Food or drink experiences specific to the region (types of cuisine, local specialties to seek out)
 
-For each recommendation, determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, WELLNESS, ACCOMMODATION.
+For each recommendation, determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, GROCERIES, WELLNESS, OUTDOORS, ACCOMMODATION.
 
 If the recommendation is tied to a specific named landmark or place, include its approximate GPS coordinates (latitude, longitude).`);
 
-    outputFields.push(`- "recommendations": array of objects with "title" (string), "description" (string), "linkedPlace" (string or null — only for specific named landmarks), "category" (string — one of CULTURE/FOOD/NATURE/ENTERTAINMENT/NIGHTLIFE/SHOPPING/WELLNESS/ACCOMMODATION), "latitude" (number or null), "longitude" (number or null)`);
+    outputFields.push(`- "recommendations": array of objects with "title" (string), "description" (string), "linkedPlace" (string or null — only for specific named landmarks), "category" (string — one of CULTURE/FOOD/NATURE/ENTERTAINMENT/NIGHTLIFE/SHOPPING/GROCERIES/WELLNESS/OUTDOORS/ACCOMMODATION), "latitude" (number or null), "longitude" (number or null)`);
   }
 
   if (includeNearbyCities) {
@@ -167,7 +167,7 @@ Suggest specific activities, attractions, or experiences in the area SURROUNDING
 - Include the town or area name where the activity is located
 - Include approximate distance from ${cityName}
 - Include approximate GPS coordinates (latitude, longitude)
-- Determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, WELLNESS`);
+- Determine the best-fit category from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, GROCERIES, WELLNESS, OUTDOORS`);
 
     outputFields.push(`- "nearbyActivities": array of objects with "title" (string), "description" (string), "location" (string — the nearby town/area), "distance" (string like "~30 km"), "category" (string), "latitude" (number or null), "longitude" (number or null)`);
   }
@@ -253,11 +253,14 @@ export function parseActivityResponse(raw: string): {
 } {
   const empty = { recommendations: [] as ActivityRecommendation[], nearbyCities: [] as NearbyCityRecommendation[], nearbyActivities: [] as NearbyActivityRecommendation[], hikes: [] as HikeRecommendation[], cycling: [] as CyclingRecommendation[] };
 
-  // Try to extract JSON object from response (model may wrap in markdown code block)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  // Strip markdown code fences if present
+  const cleaned = raw.replace(/^```(?:json)?\s*/gm, "").replace(/^```\s*$/gm, "").trim();
+
+  // Try to extract JSON object from response
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     // Fallback: try array format (old format)
-    const arrayMatch = raw.match(/\[[\s\S]*\]/);
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
     if (arrayMatch) {
       try {
         const parsed = JSON.parse(arrayMatch[0]);
@@ -275,12 +278,19 @@ export function parseActivityResponse(raw: string): {
       return empty;
     }
 
-    const recommendations = Array.isArray(parsed.recommendations)
-      ? parseRecommendationArray(parsed.recommendations)
+    // Resolve alternative key names the model might use
+    const recsArr = parsed.recommendations ?? parsed.must_do ?? parsed.mustDo ?? parsed.must_do_activities ?? parsed.activities;
+    const nearbyCitiesArr = parsed.nearbyCities ?? parsed.nearby_cities ?? parsed.nearbyCitiesWorthVisiting;
+    const nearbyActivitiesArr = parsed.nearbyActivities ?? parsed.nearby_activities ?? parsed.recommendedActivitiesNearby;
+    const hikesArr = parsed.hikes ?? parsed.hikes_and_walks ?? parsed.hikesAndWalks;
+    const cyclingArr = parsed.cycling ?? parsed.cycling_routes ?? parsed.cyclingRoutes;
+
+    const recommendations = Array.isArray(recsArr)
+      ? parseRecommendationArray(recsArr)
       : [];
 
-    const nearbyCities = Array.isArray(parsed.nearbyCities)
-      ? parsed.nearbyCities
+    const nearbyCities = Array.isArray(nearbyCitiesArr)
+      ? nearbyCitiesArr
           .filter(
             (item: unknown): item is Record<string, unknown> =>
               typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).name === "string",
@@ -296,8 +306,8 @@ export function parseActivityResponse(raw: string): {
           }))
       : [];
 
-    const nearbyActivities = Array.isArray(parsed.nearbyActivities)
-      ? parsed.nearbyActivities
+    const nearbyActivities = Array.isArray(nearbyActivitiesArr)
+      ? nearbyActivitiesArr
           .filter(
             (item: unknown): item is Record<string, unknown> =>
               typeof item === "object" && item !== null &&
@@ -316,8 +326,8 @@ export function parseActivityResponse(raw: string): {
           }))
       : [];
 
-    const hikes = Array.isArray(parsed.hikes)
-      ? parsed.hikes
+    const hikes = Array.isArray(hikesArr)
+      ? hikesArr
           .filter(
             (item: unknown): item is Record<string, unknown> =>
               typeof item === "object" && item !== null &&
@@ -337,8 +347,8 @@ export function parseActivityResponse(raw: string): {
           }))
       : [];
 
-    const cycling = Array.isArray(parsed.cycling)
-      ? parsed.cycling
+    const cycling = Array.isArray(cyclingArr)
+      ? cyclingArr
           .filter(
             (item: unknown): item is Record<string, unknown> =>
               typeof item === "object" && item !== null &&

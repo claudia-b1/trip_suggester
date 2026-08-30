@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model User {
+  id        Int       @id @default(autoincrement())
+  name      String
+  color     String    @default("#3B82F6")
+  avatar    String?   // emoji, e.g. "🧑‍💻"
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  trips          Trip[]
+  favouriteLists FavouriteList[]
+  poiRatings     PoiRating[]
+}
+
 model Trip {
   id         Int        @id @default(autoincrement())
   name       String
@@ -14,10 +27,14 @@ model Trip {
   endDate    DateTime
   archived   Boolean    @default(false)
   coverImage String?
+  userId     Int
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
   cities     City[]
   notes      TripNote[]
+
+  @@index([userId])
 }
 
 model City {
@@ -31,8 +48,10 @@ model City {
   countryCode   String?
   latitude      Float?
   longitude     Float?
-  timezone      String?
-  tripId        Int
+  timezone         String?
+  discoverRadiusKm Float?
+  type             String    @default("destination") // "destination" | "stop"
+  tripId           Int
   trip          Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   parentCityId  Int?
   parentCity    City?           @relation("CitySubcity", fields: [parentCityId], references: [id], onDelete: Cascade)
@@ -74,11 +93,15 @@ model Poi {
   scoreBreakdown           String?       // JSON: {rating,proximity,notability,categoryMatch,hiddenGem,unesco,photo,preferences,total}
   userRatingCount          Int?
   subcategory              String?
+  originalData             String?       // JSON snapshot of discovered values, saved on first user edit
+  favouriteItemId          Int?          // link to source FavouriteItem for auto-sync
   cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities  DayActivity[]
-  poiRating   PoiRating?
+  poiRatings  PoiRating[]
   createdAt   DateTime      @default(now())
+
+  @@index([favouriteItemId])
 }
 
 model DayPlan {
@@ -191,10 +214,13 @@ model FavouriteList {
   parent    FavouriteList?   @relation("ListSublist", fields: [parentId], references: [id], onDelete: Cascade)
   sublists  FavouriteList[]  @relation("ListSublist")
   items     FavouriteItem[]
+  userId    Int
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 
   @@index([parentId])
+  @@index([userId])
 }
 
 model FavouriteItem {
@@ -223,15 +249,20 @@ model FavouriteItem {
 
   @@index([listId])
   @@index([city])
+  @@index([country])
 }
 
 model PoiRating {
   id            Int      @id @default(autoincrement())
-  poiId         Int      @unique
+  poiId         Int
   poi           Poi      @relation(fields: [poiId], references: [id], onDelete: Cascade)
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   rating        Int?     // 1-5 personal rating
   notInterested Boolean  @default(false)
   visited       Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@unique([poiId, userId])
 }

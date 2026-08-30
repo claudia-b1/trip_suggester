@@ -58,7 +58,7 @@ export type PoiMapProps = {
   /** Add a POI to favourites */
   onFavourite?: (poi: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number; longitude: number; photoUrl?: string | null; placeId?: string | null; website?: string | null }) => void;
   /** Check if a POI is already favourited */
-  isPoiFavourited?: (poi: { id: number; name: string; placeId?: string | null }) => boolean;
+  isPoiFavourited?: (poi: { id: number; name: string; placeId?: string | null; favouriteItemId?: number | null }) => boolean;
   /** Optional numbered labels for POIs (poiId → display number). When set, markers show the number instead of the category emoji. */
   poiNumbers?: Record<number, number>;
 };
@@ -299,23 +299,25 @@ function PopupContent({
           {CATEGORY_ICONS[poi.category]} {poi.category}
         </span>
       </div>
-      {/* Drag handle for timeline */}
-      <div
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.effectAllowed = "copy";
-          e.dataTransfer.setData("application/x-poi-id", String(poi.id));
-        }}
-        className="flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
-        title="Drag to timeline"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-          <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
-          <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
-          <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
-        </svg>
-        <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
-      </div>
+      {/* Drag handle for timeline — only shown when day plans exist */}
+      {dayPlans.length > 0 && (
+        <div
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.effectAllowed = "copy";
+            e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+          }}
+          className="flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
+          title="Drag to timeline"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+            <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
+            <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
+            <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
+          </svg>
+          <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
+        </div>
+      )}
       {poi.description && (
         <p className="text-xs text-gray-600 leading-snug">
           {expanded || poi.description.length <= 100
@@ -720,20 +722,28 @@ export function PoiMapImpl(props: PoiMapProps) {
   );
 
   // Track which POIs are also favourited (for heart indicator on markers)
+  // Uses the global isPoiFavourited check (from favourites provider) when available,
+  // otherwise falls back to matching against the local favouriteItems prop.
   const favouritedPoiIds = useMemo(() => {
     const ids = new Set<number>();
-    const favPlaceIds = new Set<string>();
-    const favNames = new Set<string>();
-    for (const fav of favouriteItems) {
-      if (fav.sourcePlaceId) favPlaceIds.add(fav.sourcePlaceId);
-      if (fav.name) favNames.add(fav.name.toLowerCase());
-    }
-    for (const poi of pois) {
-      if (poi.placeId && favPlaceIds.has(poi.placeId)) { ids.add(poi.id); continue; }
-      if (favNames.has(poi.name.toLowerCase())) ids.add(poi.id);
+    if (isPoiFavourited) {
+      for (const poi of pois) {
+        if (isPoiFavourited(poi)) ids.add(poi.id);
+      }
+    } else {
+      const favPlaceIds = new Set<string>();
+      const favNames = new Set<string>();
+      for (const fav of favouriteItems) {
+        if (fav.sourcePlaceId) favPlaceIds.add(fav.sourcePlaceId);
+        if (fav.name) favNames.add(fav.name.toLowerCase());
+      }
+      for (const poi of pois) {
+        if (poi.placeId && favPlaceIds.has(poi.placeId)) { ids.add(poi.id); continue; }
+        if (favNames.has(poi.name.toLowerCase())) ids.add(poi.id);
+      }
     }
     return ids;
-  }, [pois, favouriteItems],
+  }, [pois, favouriteItems, isPoiFavourited],
   );
 
   // Floor to integer so sub-pixel zoom differences don't re-trigger clustering

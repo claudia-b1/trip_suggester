@@ -23,6 +23,7 @@ type City = {
   longitude: number | null;
   order: number;
   parentCityId: number | null;
+  type: string; // "destination" | "stop"
   subcities: City[];
 };
 
@@ -265,6 +266,8 @@ export function CitiesSection({
   const [cityMeta, setCityMeta] = useState<CityDetails | null>(null);
   const [nickname, setNickname] = useState("");
   const [showNickname, setShowNickname] = useState(false);
+  // Travel stop toggle
+  const [isStop, setIsStop] = useState(false);
   // When adding a sub-destination, this is set to the parent city id
   const [addParentCityId, setAddParentCityId] = useState<number | null>(null);
   // "Move under" dropdown state
@@ -305,6 +308,7 @@ export function CitiesSection({
     setName("");
     setNickname("");
     setShowNickname(false);
+    setIsStop(false);
     setStartDate("");
     setEndDate("");
     setCityMeta(null);
@@ -328,7 +332,8 @@ export function CitiesSection({
         name,
         ...(nickname.trim() && { nickname: nickname.trim() }),
         startDate,
-        endDate,
+        endDate: isStop ? startDate : endDate,
+        ...(isStop && { type: "stop" }),
         ...(addParentCityId != null && { parentCityId: addParentCityId }),
         ...(cityMeta && {
           country: cityMeta.country,
@@ -348,9 +353,9 @@ export function CitiesSection({
     const newCityId = newCity.id;
     setSubmitting(false);
 
-    // Run background generation tasks
-    const shouldGenAbout = genAbout;
-    const shouldGenRecs = genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities);
+    // Run background generation tasks (skip for travel stops)
+    const shouldGenAbout = genAbout && !isStop;
+    const shouldGenRecs = genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities) && !isStop;
 
     if (shouldGenAbout || shouldGenRecs) {
       // Show generating state and keep form open
@@ -560,18 +565,30 @@ export function CitiesSection({
             </button>
           </div>
 
-          {/* Number badge */}
-          <span
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
-            style={{ backgroundColor: color }}
-          >
-            {index + 1}
-          </span>
+          {/* Badge: number for destinations, car icon for stops */}
+          {city.type === "stop" ? (
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-sm bg-[hsl(var(--muted))] border border-dashed border-[hsl(var(--border))]" title="Travel stop">
+              {"🚗"}
+            </span>
+          ) : (() => {
+            // Destination number excludes stops
+            const destIndex = localCities.filter((c, ci) => ci < index && c.type !== "stop").length;
+            return (
+              <span
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white shadow-sm"
+                style={{ backgroundColor: MARKER_COLORS[destIndex % MARKER_COLORS.length] }}
+              >
+                {destIndex + 1}
+              </span>
+            );
+          })()}
 
           <Link href={`/trips/${tripId}/cities/${city.id}`} className="flex-1 min-w-0">
-            <p className="truncate text-sm font-medium group-hover:text-[hsl(var(--primary))] transition-colors">{displayName(city)}</p>
+            <p className={`truncate font-medium group-hover:text-[hsl(var(--primary))] transition-colors ${city.type === "stop" ? "text-xs text-[hsl(var(--muted-foreground))]" : "text-sm"}`}>{displayName(city)}</p>
             <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
-              {sameDay
+              {city.type === "stop"
+                ? fmtShort(city.startDate)
+                : sameDay
                 ? `${fmtShort(city.startDate)} · ${days}d`
                 : `${fmtShort(city.startDate)} – ${fmtShort(city.endDate)} · ${days}d`}
             </p>
@@ -754,9 +771,22 @@ export function CitiesSection({
               </div>
             )}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Travel stop toggle (not for sub-destinations) */}
+          {!addParentCityId && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isStop}
+                onChange={(e) => setIsStop(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-[hsl(var(--muted-foreground))]">Travel stop (passing through)</span>
+            </label>
+          )}
+
+          <div className={isStop ? "" : "grid gap-4 sm:grid-cols-2"}>
             <div className="space-y-2">
-              <Label htmlFor="city-start">Start</Label>
+              <Label htmlFor="city-start">{isStop ? "Date" : "Start"}</Label>
               <Input
                 id="city-start"
                 type="date"
@@ -765,37 +795,41 @@ export function CitiesSection({
                 max={tripEndDate.slice(0, 10)}
                 onChange={(e) => {
                   setStartDate(e.target.value);
-                  setDateError(validateDates(e.target.value, endDate));
-                  if (endDate && endDate < e.target.value) {
-                    setEndDate(e.target.value);
+                  if (!isStop) {
+                    setDateError(validateDates(e.target.value, endDate));
+                    if (endDate && endDate < e.target.value) {
+                      setEndDate(e.target.value);
+                    }
                   }
                 }}
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="city-end">End</Label>
-              <Input
-                id="city-end"
-                type="date"
-                value={endDate}
-                min={startDate || tripStartDate.slice(0, 10)}
-                max={tripEndDate.slice(0, 10)}
-                onChange={(e) => {
-                  setEndDate(e.target.value);
-                  setDateError(validateDates(startDate, e.target.value));
-                }}
-                required
-                aria-invalid={dateError ? "true" : undefined}
-              />
-            </div>
+            {!isStop && (
+              <div className="space-y-2">
+                <Label htmlFor="city-end">End</Label>
+                <Input
+                  id="city-end"
+                  type="date"
+                  value={endDate}
+                  min={startDate || tripStartDate.slice(0, 10)}
+                  max={tripEndDate.slice(0, 10)}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setDateError(validateDates(startDate, e.target.value));
+                  }}
+                  required
+                  aria-invalid={dateError ? "true" : undefined}
+                />
+              </div>
+            )}
           </div>
-          {dateError && (
+          {dateError && !isStop && (
             <p className="text-sm text-red-600">{dateError}</p>
           )}
 
-          {/* Generation options */}
-          <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30">
+          {/* Generation options (hidden for travel stops) */}
+          {!isStop && <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30">
             <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
               Generate on creation
             </p>
@@ -849,7 +883,7 @@ export function CitiesSection({
                 </label>
               </div>
             )}
-          </div>
+          </div>}
 
           {generating && (
             <div className="flex items-center gap-2 text-sm text-[hsl(var(--primary))] animate-pulse">
@@ -860,7 +894,7 @@ export function CitiesSection({
 
           <div className="flex gap-2">
             <Button type="submit" disabled={submitting || !!generating || !!dateError}>
-              {submitting ? "Adding…" : generating ? "Generating…" : addParentCityId ? "Add sub-destination" : "Add destination"}
+              {submitting ? "Adding…" : generating ? "Generating…" : isStop ? "Add travel stop" : addParentCityId ? "Add sub-destination" : "Add destination"}
             </Button>
             <Button type="button" variant="outline" onClick={closeAddForm} disabled={submitting || !!generating}>
               Cancel

@@ -77,6 +77,8 @@ export type CityHeaderProps = {
     tripStartDate: string;
     tripEndDate: string;
   };
+  /** Whether this is a travel stop (simplified page — no auto-plan) */
+  isStop?: boolean;
 };
 
 export function CityHeader({
@@ -100,6 +102,7 @@ export function CityHeader({
   plannedCount,
   totalPois,
   editProps,
+  isStop,
 }: CityHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -274,15 +277,17 @@ export function CityHeader({
         >
           🗺 Map
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleAutoPlan}
-          disabled={autoPlanLoading || totalPois === 0}
-          className="rounded-full text-xs"
-        >
-          {autoPlanLoading ? "Planning…" : "📋 Auto-plan"}
-        </Button>
+        {!isStop && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleAutoPlan}
+            disabled={autoPlanLoading || totalPois === 0}
+            className="rounded-full text-xs"
+          >
+            {autoPlanLoading ? "Planning…" : "📋 Auto-plan"}
+          </Button>
+        )}
         <Button
           variant="outline"
           size="sm"

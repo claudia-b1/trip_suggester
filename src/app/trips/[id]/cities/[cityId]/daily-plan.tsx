@@ -477,6 +477,11 @@ export function DailyPlan({
     };
   }, []);
 
+  // Move day plan state
+  const [moveModalOpen, setMoveModalOpen] = useState(false);
+  const [moveTargetDayPlanId, setMoveTargetDayPlanId] = useState<number | null>(null);
+  const [moveMode, setMoveMode] = useState<"replace" | "merge">("replace");
+
   // Cross-slot rearrangement suggestion shown after route optimisation
   type CrossSlotSuggestion = {
     activityId: number;
@@ -671,6 +676,31 @@ export function DailyPlan({
       toast("Day cleared.");
     }
     router.refresh();
+  }
+
+  async function moveDayTo() {
+    if (!currentDayPlan || !moveTargetDayPlanId || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/day-plans/${currentDayPlan.id}/copy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetDayPlanId: moveTargetDayPlanId, mode: moveMode }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to move");
+      }
+      const { moved } = await res.json();
+      const targetIndex = dayPlans.findIndex((dp) => dp.id === moveTargetDayPlanId);
+      toast(`Moved ${moved} activities to Dag ${targetIndex + 1}`);
+      setMoveModalOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Failed to move", { variant: "error" });
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function clearAll() {
@@ -1483,6 +1513,19 @@ export function DailyPlan({
                       </button>
                       <button
                         type="button"
+                        onClick={() => {
+                          setMoveTargetDayPlanId(null);
+                          setMoveMode("replace");
+                          setMoveModalOpen((v) => !v);
+                        }}
+                        disabled={busy}
+                        className="text-xs text-purple-600 hover:text-purple-800 transition-colors flex items-center gap-1"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                        Move to...
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => clearDay(currentDayPlan.id)}
                         disabled={busy}
                         className="text-xs text-[hsl(var(--muted-foreground))] hover:text-red-600 transition-colors"
@@ -1496,6 +1539,76 @@ export function DailyPlan({
                   </span>
                 </div>
               </div>
+
+              {/* Move day plan modal */}
+              {moveModalOpen && (
+                <div className="rounded-lg border border-purple-200 bg-purple-50/30 dark:border-purple-800 dark:bg-purple-950/20 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-purple-700 dark:text-purple-300">Move activities to another day</span>
+                    <button type="button" onClick={() => setMoveModalOpen(false)} className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">Cancel</button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {dayPlans.map((dp, idx) => {
+                      const isCurrentDay = dp.id === currentDayPlan.id;
+                      const isSelected = dp.id === moveTargetDayPlanId;
+                      return (
+                        <button
+                          key={dp.id}
+                          type="button"
+                          disabled={isCurrentDay}
+                          onClick={() => setMoveTargetDayPlanId(dp.id)}
+                          className={`rounded-md px-2 py-1 text-[11px] border transition-colors ${
+                            isCurrentDay
+                              ? "opacity-30 cursor-not-allowed border-transparent bg-[hsl(var(--muted))]"
+                              : isSelected
+                              ? "border-purple-500 bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                              : "border-[hsl(var(--border))] hover:border-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/30"
+                          }`}
+                          title={isCurrentDay ? "Current day" : `Move to Dag ${idx + 1}`}
+                        >
+                          <div className="font-medium">Dag {idx + 1}</div>
+                          <div className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                            {formatDay(dp.date)}
+                          </div>
+                          {dp.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length > 0 && (
+                            <div className="text-[9px] text-amber-600 dark:text-amber-400 mt-0.5">
+                              {dp.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length} activities
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {moveTargetDayPlanId && (() => {
+                    const targetDp = dayPlans.find((dp) => dp.id === moveTargetDayPlanId);
+                    const targetNonAccom = targetDp?.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length ?? 0;
+                    return (
+                      <div className="space-y-2">
+                        {targetNonAccom > 0 && (
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                              <input type="radio" name="moveMode" checked={moveMode === "replace"} onChange={() => setMoveMode("replace")} className="accent-purple-600" />
+                              Replace existing ({targetNonAccom} activities)
+                            </label>
+                            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                              <input type="radio" name="moveMode" checked={moveMode === "merge"} onChange={() => setMoveMode("merge")} className="accent-purple-600" />
+                              Merge (add to existing)
+                            </label>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={moveDayTo}
+                          disabled={busy}
+                          className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 transition-colors disabled:opacity-50"
+                        >
+                          {busy ? "Moving..." : `Move ${currentDayPlan.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length} activities`}
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
 
               {/* Cross-slot rearrangement suggestion */}
               {crossSlotSuggestion && currentDayPlan.activities.some((a) => a.id === crossSlotSuggestion.activityId) && (
