@@ -10,6 +10,32 @@ import {
   type GenerateOptions,
 } from "@/lib/activity-recommendations";
 
+/** DELETE /api/cities/[cityId]/activities — clear cached activity recommendations */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ cityId: string }> },
+) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
+  const { cityId } = await params;
+  const cityIdNum = Number(cityId);
+  if (!Number.isInteger(cityIdNum)) {
+    return NextResponse.json({ error: "Invalid cityId" }, { status: 400 });
+  }
+
+  if (!await verifyCityOwnership(cityIdNum, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Delete cached activities entry
+  await prisma.cityInfoCache.deleteMany({
+    where: { cityId: cityIdNum, type: "activities" },
+  });
+
+  return NextResponse.json({ deleted: true });
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ cityId: string }> },

@@ -61,6 +61,8 @@ export type PoiMapProps = {
   isPoiFavourited?: (poi: { id: number; name: string; placeId?: string | null; favouriteItemId?: number | null }) => boolean;
   /** Optional numbered labels for POIs (poiId → display number). When set, markers show the number instead of the category emoji. */
   poiNumbers?: Record<number, number>;
+  /** When true, only the drag handle is shown in the popup — the day-plan assign UI is hidden. */
+  dragOnly?: boolean;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -200,6 +202,7 @@ function PopupContent({
   poi,
   cityId,
   dayPlans,
+  dragOnly,
   onClose,
   onViewInList,
   userRatings,
@@ -212,6 +215,7 @@ function PopupContent({
   poi: LocatedPoi;
   cityId: number;
   dayPlans: DayPlanOption[];
+  dragOnly?: boolean;
   onClose: () => void;
   onViewInList?: (poiId: number) => void;
   userRatings?: Record<number, number>;
@@ -382,7 +386,7 @@ function PopupContent({
           {isFavourited ? "Saved to favourites" : "Add to favourites"}
         </button>
       )}
-      {dayPlans.length > 0 && (
+      {dayPlans.length > 0 && !dragOnly && (
         <details className="group" onClick={(e) => e.stopPropagation()}>
           <summary className="cursor-pointer select-none text-xs font-medium text-blue-600 hover:underline list-none flex items-center gap-1">
             <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
@@ -598,7 +602,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -1221,6 +1225,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               poi={visiblePoi}
               cityId={cityId ?? 0}
               dayPlans={dayPlans}
+              dragOnly={dragOnly}
               onClose={() => { setActiveId(null); setHoverId(null); }}
               onViewInList={onViewInList}
               userRatings={userRatings}

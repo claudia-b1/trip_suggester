@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
+import type { TimeSlot } from "@/lib/slots";
 import type { RecommendableCategory } from "@/lib/recommendations";
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 import { PoiMap } from "./poi-map";
@@ -15,6 +16,8 @@ import type { FavouriteItemDTO } from "@/components/favourites/favourites-provid
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { EditPoiModal, type EditPoiData } from "@/components/ui/edit-poi-modal";
 import { getPhotoSource, PHOTO_SOURCE_LABELS } from "@/lib/photo-source";
+import type { DayPlanDTO } from "./daily-plan";
+import { TimelineSidebar } from "./timeline-sidebar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -60,7 +63,7 @@ const CATEGORY_ICON_MAP: Record<string, string> = {
   FUEL: "⛽",
 };
 
-const DEFAULT_STOP_RADIUS_KM = 10;
+const DEFAULT_STOP_RADIUS_KM = 5;
 const DEFAULT_STOP_COUNTS: Record<string, number> = {
   FOOD: 10,
   GROCERIES: 10,
@@ -225,6 +228,22 @@ function StopPoiCard({
 
         {/* Action links */}
         <div className="mt-auto flex items-center gap-2 pt-1">
+          {/* Drag handle */}
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+              e.dataTransfer.effectAllowed = "copy";
+            }}
+            title="Drag to timeline"
+            className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] flex-shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/>
+              <circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>
+              <circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>
+            </svg>
+          </div>
           {hasCoords && (
             <>
               <button
@@ -271,6 +290,8 @@ export function StopPlanningSection({
   country,
   favouriteItems,
   initialAccommodation,
+  dayPlans,
+  initialNote,
 }: {
   cityId: number;
   pois: StopPoiDTO[];
@@ -280,15 +301,29 @@ export function StopPlanningSection({
   country?: string;
   favouriteItems?: FavouriteItemDTO[];
   /** Pre-existing ACCOMMODATION POI for this stop (persisted center) */
-  initialAccommodation?: { id: number; name: string; latitude: number; longitude: number } | null;
+  initialAccommodation?: { id: number; name: string; latitude: number; longitude: number; address?: string } | null;
+  dayPlans: DayPlanDTO[];
+  initialNote: { id: number; content: string } | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const { showAddModal, favouritedPlaceIds, favouritedNames, favouritedItemIds } = useFavourites();
   const [editingPoi, setEditingPoi] = useState<EditPoiData | null>(null);
 
+  // ── Notes state ──
+  const [noteId, setNoteId] = useState<number | null>(initialNote?.id ?? null);
+  const [noteContent, setNoteContent] = useState(initialNote?.content ?? "");
+  const [noteEditing, setNoteEditing] = useState(false);
+  const [noteSaving, setNoteSaving] = useState(false);
+  const noteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteLastSavedRef = useRef(initialNote?.content ?? "");
+
+  // ── Timeline / day plans state ──
+  const [liveDayPlans, setLiveDayPlans] = useState(dayPlans);
+  useEffect(() => { setLiveDayPlans(dayPlans); }, [dayPlans]);
+
   // ── Accommodation / center state ──
-  const [accommodation, setAccommodation] = useState<{ id: number; name: string; latitude: number; longitude: number } | null>(
+  const [accommodation, setAccommodation] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
     initialAccommodation ?? null,
   );
   const [accomDropdownOpen, setAccomDropdownOpen] = useState(false);
@@ -297,6 +332,32 @@ export function StopPlanningSection({
   const [accomSearchOpen, setAccomSearchOpen] = useState(false);
   const accomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [settingAccom, setSettingAccom] = useState(false);
+
+  // Backfill address for existing accommodation that was created before address storage
+  useEffect(() => {
+    if (!accommodation || accommodation.address) return;
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${accommodation.longitude},${accommodation.latitude}.json?types=poi,address&limit=1&access_token=${token}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json() as { features?: Array<{ place_name: string }> };
+        const address = data.features?.[0]?.place_name;
+        if (address) {
+          setAccommodation((prev) => prev ? { ...prev, address } : prev);
+          // Persist address to POI description
+          fetch(`/api/pois/${accommodation.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: address }),
+          });
+        }
+      } catch { /* best-effort */ }
+    })();
+  }, [accommodation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The effective center for discover + map radius
   const centerLat = accommodation?.latitude ?? cityLat;
@@ -328,7 +389,7 @@ export function StopPlanningSection({
 
   // ── Filter state ──
   const [filterCategories, setFilterCategories] = useState<Set<string>>(() => new Set());
-  const [filterExcludedSubcats, setFilterExcludedSubcats] = useState<Set<string>>(() => new Set());
+  const [filterIncludedSubcats, setFilterIncludedSubcats] = useState<Set<string>>(() => new Set());
   const [filterSearch, setFilterSearch] = useState("");
   const [filterSort, setFilterSort] = useState<"rating" | "name" | "reviews">("rating");
   const [filterFavouritesOnly, setFilterFavouritesOnly] = useState(false);
@@ -373,23 +434,24 @@ export function StopPlanningSection({
     });
   }, [pois]);
 
-  // Subcategories present in POIs (for filter chips)
+  // Subcategories present in POIs (for filter chips) — only from selected categories
   const presentSubcategories = useMemo(() => {
     const subs = new Map<string, number>();
     for (const p of pois) {
+      if (filterCategories.size > 0 && !filterCategories.has(p.category)) continue;
       if (p.subcategory) {
         subs.set(p.subcategory, (subs.get(p.subcategory) ?? 0) + 1);
       }
     }
     return subs;
-  }, [pois]);
+  }, [pois, filterCategories]);
 
   const filteredPois = useMemo(() => {
     let result = pois.filter((p) => {
       // Category filter (empty set = show all)
       if (filterCategories.size > 0 && !filterCategories.has(p.category)) return false;
-      // Subcategory exclusion filter
-      if (filterExcludedSubcats.size > 0 && p.subcategory && filterExcludedSubcats.has(p.subcategory)) return false;
+      // Subcategory inclusion filter
+      if (filterIncludedSubcats.size > 0 && p.subcategory && !filterIncludedSubcats.has(p.subcategory)) return false;
       // Text search
       if (filterSearch && !p.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
       // Favourites only
@@ -412,7 +474,7 @@ export function StopPlanningSection({
     });
 
     return result;
-  }, [pois, filterCategories, filterExcludedSubcats, filterSearch, filterSort, filterFavouritesOnly, isPoiFavourited]);
+  }, [pois, filterCategories, filterIncludedSubcats, filterSearch, filterSort, filterFavouritesOnly, isPoiFavourited]);
 
   // Group POIs by category for list view — ordered by practical priority
   const LIST_CATEGORY_ORDER = ["GROCERIES", "FUEL", "FOOD", "ACCOMMODATION"];
@@ -463,7 +525,7 @@ export function StopPlanningSection({
     }, 300);
   }
 
-  async function setAccommodationFromCoords(name: string, lat: number, lon: number) {
+  async function setAccommodationFromCoords(name: string, lat: number, lon: number, address?: string) {
     setSettingAccom(true);
     try {
       // Delete any existing ACCOMMODATION POI for this city
@@ -480,11 +542,31 @@ export function StopPlanningSection({
           category: "ACCOMMODATION",
           latitude: lat,
           longitude: lon,
+          ...(address && { description: address }),
         }),
       });
       if (res.ok) {
         const poi = await res.json();
-        setAccommodation({ id: poi.id, name, latitude: lat, longitude: lon });
+        setAccommodation({ id: poi.id, name, latitude: lat, longitude: lon, address });
+
+        // Auto-assign accommodation to evening slot of all days except last
+        if (liveDayPlans.length > 1) {
+          const daysToAssign = liveDayPlans.slice(0, -1);
+          for (const dp of daysToAssign) {
+            await fetch(`/api/cities/${cityId}/day-plans`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dayPlanId: dp.id, poiId: poi.id, timeSlot: "EVENING" }),
+            });
+          }
+        } else if (liveDayPlans.length === 1) {
+          await fetch(`/api/cities/${cityId}/day-plans`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dayPlanId: liveDayPlans[0].id, poiId: poi.id, timeSlot: "EVENING" }),
+          });
+        }
+
         toast(`Accommodation set: ${name}`);
         router.refresh();
       }
@@ -518,6 +600,81 @@ export function StopPlanningSection({
   const accomFavourites = useMemo(() => {
     return (favouriteItems ?? []).filter((f) => f.latitude != null && f.longitude != null);
   }, [favouriteItems]);
+
+  // ── Note handlers ──
+  const saveNote = useCallback(async (text: string) => {
+    if (text === noteLastSavedRef.current) return;
+    setNoteSaving(true);
+    try {
+      if (noteId) {
+        const res = await fetch(`/api/notes/${noteId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: text }),
+        });
+        if (res.ok) noteLastSavedRef.current = text;
+      } else if (text.trim()) {
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cityId, content: text }),
+        });
+        if (res.ok) {
+          const note = await res.json();
+          setNoteId(note.id);
+          noteLastSavedRef.current = text;
+        }
+      }
+    } finally {
+      setNoteSaving(false);
+    }
+  }, [noteId, cityId]);
+
+  function handleNoteChange(newContent: string) {
+    setNoteContent(newContent);
+    if (noteDebounceRef.current) clearTimeout(noteDebounceRef.current);
+    noteDebounceRef.current = setTimeout(() => saveNote(newContent), 1000);
+  }
+
+  function handleNoteBlur() {
+    if (noteDebounceRef.current) clearTimeout(noteDebounceRef.current);
+    saveNote(noteContent);
+    setNoteEditing(false);
+  }
+
+  // Cleanup note debounce on unmount
+  useEffect(() => {
+    return () => {
+      if (noteDebounceRef.current) clearTimeout(noteDebounceRef.current);
+    };
+  }, []);
+
+  // ── Timeline drop handler ──
+  const handleDropPoiOnTimeline = useCallback(async (dayPlanId: number, timeSlot: TimeSlot, poiId: number) => {
+    // Optimistic update
+    const dp = liveDayPlans.find((d) => d.id === dayPlanId);
+    if (!dp) return;
+    const tempId = -Date.now();
+    const poi = pois.find((p) => p.id === poiId);
+    setLiveDayPlans((prev) =>
+      prev.map((d) =>
+        d.id === dayPlanId
+          ? { ...d, activities: [...d.activities, { id: tempId, poiId, poiName: poi?.name ?? "Place", poiCategory: (poi?.category ?? "FOOD") as Category, timeSlot: timeSlot as TimeSlot }] }
+          : d
+      )
+    );
+    // API call
+    const res = await fetch(`/api/cities/${cityId}/day-plans`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dayPlanId, poiId, timeSlot }),
+    });
+    if (res.ok) {
+      router.refresh();
+    }
+    // Toast
+    toast(`Added ${poi?.name ?? "place"} to timeline`);
+  }, [liveDayPlans, pois, cityId, router, toast]);
 
   // ── Discover handlers ──
   function toggleCat(cat: string) {
@@ -644,135 +801,144 @@ export function StopPlanningSection({
         <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
       )}
 
-      {/* ── Accommodation Selection Banner ── */}
-      <Card>
-        <CardContent className="py-4">
+      {/* ── Compact Accommodation Row ── */}
+      <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-sm shrink-0">🏠</span>
           {accommodation ? (
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-lg shrink-0">🏠</span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{accommodation.name}</p>
-                  <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                    Search radius centered here
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setAccomDropdownOpen((v) => !v)}
-                  className="text-xs"
-                >
-                  Change
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clearAccommodation}
-                  disabled={settingAccom}
-                  className="text-xs text-[hsl(var(--muted-foreground))]"
-                >
-                  ✕
-                </Button>
-              </div>
-            </div>
+            <>
+              <span className="text-sm font-medium truncate min-w-0">{accommodation.name}</span>
+              <button
+                type="button"
+                onClick={() => setAccomDropdownOpen((v) => !v)}
+                className="text-[11px] text-[hsl(var(--primary))] hover:underline shrink-0"
+              >
+                Change
+              </button>
+              <button
+                type="button"
+                onClick={clearAccommodation}
+                disabled={settingAccom}
+                className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0 disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </>
           ) : (
-            <div className="flex items-start gap-3">
-              <span className="text-lg shrink-0 mt-0.5">🏠</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Select your accommodation for more precise discovering</p>
-                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
-                  The search radius will center on your accommodation instead of the city center.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAccomDropdownOpen((v) => !v)}
-                  className="mt-2 text-xs"
-                >
-                  {accomDropdownOpen ? "Cancel" : "Select accommodation"}
-                </Button>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setAccomDropdownOpen((v) => !v)}
+              className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+            >
+              {accomDropdownOpen ? "Cancel" : "Select accommodation"}
+            </button>
           )}
+        </div>
 
-          {/* Accommodation picker */}
-          {accomDropdownOpen && (
-            <div className="mt-3 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
-              {/* Search by address */}
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))]">Search by name or address</p>
-                <div className="relative">
-                  <Input
-                    type="text"
-                    value={accomSearchQuery}
-                    onChange={(e) => handleAccomSearch(e.target.value)}
-                    onFocus={() => accomSuggestions.length > 0 && setAccomSearchOpen(true)}
-                    onBlur={() => setTimeout(() => setAccomSearchOpen(false), 200)}
-                    placeholder="e.g. Hotel Amara, Airbnb Bonn..."
-                    autoComplete="off"
-                    className="text-sm"
-                  />
-                  {accomSearchOpen && accomSuggestions.length > 0 && (
-                    <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-48 overflow-y-auto">
-                      {accomSuggestions.map((f) => (
-                        <li key={f.id}>
-                          <button
-                            type="button"
-                            className="w-full px-3 py-2 text-left text-sm hover:bg-[hsl(var(--muted))] transition-colors"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              const [lon, lat] = f.center;
-                              setAccommodationFromCoords(f.text, lat, lon);
-                            }}
-                          >
-                            <span className="font-medium">{f.text}</span>
-                            <br />
-                            <span className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              {/* Pick from favourites */}
-              {accomFavourites.length > 0 && (
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
-                  <div className="max-h-40 overflow-y-auto space-y-1">
-                    {accomFavourites.map((f) => (
-                      <button
-                        key={f.id}
-                        type="button"
-                        disabled={settingAccom}
-                        onClick={() => setAccommodationFromCoords(f.name, f.latitude, f.longitude)}
-                        className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
-                      >
-                        <span className="text-sm shrink-0">
-                          {f.category === "ACCOMMODATION" ? "🏠" : "❤️"}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium truncate">{f.name}</p>
-                          {f.city && (
-                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{f.city}</p>
-                          )}
-                        </div>
-                        {f.list?.name && (
-                          <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">{f.list.name}</span>
-                        )}
-                      </button>
+        {/* Accommodation picker dropdown */}
+        {accomDropdownOpen && (
+          <div className="mt-2 space-y-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-2.5">
+            <div className="space-y-1">
+              <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Search by name or address</p>
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={accomSearchQuery}
+                  onChange={(e) => handleAccomSearch(e.target.value)}
+                  onFocus={() => accomSuggestions.length > 0 && setAccomSearchOpen(true)}
+                  onBlur={() => setTimeout(() => setAccomSearchOpen(false), 200)}
+                  placeholder="e.g. Hotel Amara, Airbnb Bonn..."
+                  autoComplete="off"
+                  className="text-xs h-8"
+                />
+                {accomSearchOpen && accomSuggestions.length > 0 && (
+                  <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-40 overflow-y-auto">
+                    {accomSuggestions.map((f) => (
+                      <li key={f.id}>
+                        <button
+                          type="button"
+                          className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-[hsl(var(--muted))] transition-colors"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            const [lon, lat] = f.center;
+                            setAccommodationFromCoords(f.text, lat, lon, f.place_name);
+                          }}
+                        >
+                          <span className="font-medium">{f.text}</span>
+                          <br />
+                          <span className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
+                        </button>
+                      </li>
                     ))}
-                  </div>
-                </div>
-              )}
+                  </ul>
+                )}
+              </div>
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            {accomFavourites.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
+                <div className="max-h-32 overflow-y-auto space-y-0.5">
+                  {accomFavourites.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      disabled={settingAccom}
+                      onClick={() => setAccommodationFromCoords(f.name, f.latitude, f.longitude)}
+                      className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+                    >
+                      <span className="text-xs shrink-0">
+                        {f.category === "ACCOMMODATION" ? "🏠" : "❤️"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-medium truncate">{f.name}</p>
+                        {f.city && (
+                          <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{f.city}</p>
+                        )}
+                      </div>
+                      {f.list?.name && (
+                        <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">{f.list.name}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Notes Section ── */}
+      <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2.5">
+        {noteEditing ? (
+          <div className="space-y-1">
+            <textarea
+              value={noteContent}
+              onChange={(e) => handleNoteChange(e.target.value)}
+              onBlur={handleNoteBlur}
+              rows={3}
+              placeholder="Write your notes..."
+              className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] resize-y"
+              autoFocus
+            />
+            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              {noteSaving ? "Saving..." : "Auto-saved on blur"}
+            </p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setNoteEditing(true)}
+            className="w-full text-left"
+          >
+            {noteContent.trim() ? (
+              <p className="text-sm text-[hsl(var(--foreground))] whitespace-pre-wrap">{noteContent}</p>
+            ) : (
+              <p className="text-sm text-[hsl(var(--muted-foreground))]">📝 Add a note...</p>
+            )}
+          </button>
+        )}
+      </div>
 
       {/* ── Discover Section ── */}
       <Card id="discover-section">
@@ -1045,7 +1211,7 @@ export function StopPlanningSection({
         )}
       </Card>
 
-      {/* ── Map / List Section ── */}
+      {/* ── Map / List Section with Timeline Sidebar ── */}
       <Card id="pois-section">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
@@ -1053,7 +1219,7 @@ export function StopPlanningSection({
               📍 Places
               {pois.length > 0 && (
                 <span className="text-sm font-normal text-[hsl(var(--muted-foreground))]">
-                  ({filterCategories.size > 0 || filterSearch || filterFavouritesOnly
+                  ({filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly
                     ? `${filteredPois.length}/${pois.length}`
                     : pois.length})
                 </span>
@@ -1081,203 +1247,235 @@ export function StopPlanningSection({
           </div>
         </CardHeader>
         <CardContent>
-          {pois.length > 0 && (
-            <div className="space-y-2 mb-4">
-              {/* Category pills + favourites toggle */}
-              <div className="flex items-center gap-2 flex-wrap">
-                {presentCategories.map((cat) => {
-                  const active = filterCategories.size === 0 || filterCategories.has(cat);
-                  const catKey = cat as Category;
-                  const count = pois.filter((p) => p.category === cat).length;
-                  return (
+          <div className="flex gap-4">
+            {/* Left: map/list */}
+            <div className="flex-1 min-w-0">
+              {pois.length > 0 && (
+                <div className="space-y-2 mb-4">
+                  {/* Favourites toggle + category pills */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {/* Favourites toggle */}
                     <button
-                      key={cat}
+                      type="button"
+                      onClick={() => setFilterFavouritesOnly((v) => !v)}
+                      className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                        filterFavouritesOnly
+                          ? "border-pink-300 bg-pink-50 text-pink-700 dark:border-pink-700 dark:bg-pink-950/30 dark:text-pink-300"
+                          : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
+                      }`}
+                      title="Show favourites only"
+                    >
+                      <HeartIcon filled={filterFavouritesOnly} className="h-3 w-3" /> Favourites
+                    </button>
+
+                    {/* "All" button */}
+                    <button
                       type="button"
                       onClick={() => {
-                        setFilterCategories((prev) => {
-                          if (prev.size === 0) {
-                            return new Set([cat]);
-                          }
-                          const next = new Set(prev);
-                          if (next.has(cat)) {
-                            next.delete(cat);
-                            if (next.size === 0) return new Set();
-                          } else {
-                            next.add(cat);
-                            if (next.size === presentCategories.length) return new Set();
-                          }
-                          return next;
-                        });
+                        setFilterCategories(new Set());
+                        setFilterIncludedSubcats(new Set());
                       }}
                       className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
-                        active
-                          ? `${CATEGORY_STYLES[catKey].badge} ring-1 ring-[hsl(var(--primary))]/20`
+                        filterCategories.size === 0
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] ring-1 ring-[hsl(var(--primary))]/20"
                           : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] opacity-50"
                       }`}
                     >
-                      {CATEGORY_ICONS[catKey]} {CATEGORY_LABELS[catKey]} ({count})
+                      All
                     </button>
-                  );
-                })}
 
-                {/* Favourites toggle */}
-                <button
-                  type="button"
-                  onClick={() => setFilterFavouritesOnly((v) => !v)}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    filterFavouritesOnly
-                      ? "border-pink-300 bg-pink-50 text-pink-700 dark:border-pink-700 dark:bg-pink-950/30 dark:text-pink-300"
-                      : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
-                  }`}
-                  title="Show favourites only"
-                >
-                  <HeartIcon filled={filterFavouritesOnly} className="h-3 w-3" /> Favourites
-                </button>
-              </div>
+                    {presentCategories.map((cat) => {
+                      const active = filterCategories.size === 0 || filterCategories.has(cat);
+                      const catKey = cat as Category;
+                      const count = pois.filter((p) => p.category === cat).length;
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            setFilterCategories((prev) => {
+                              if (prev.size === 0) {
+                                return new Set([cat]);
+                              }
+                              const next = new Set(prev);
+                              if (next.has(cat)) {
+                                next.delete(cat);
+                                if (next.size === 0) return new Set();
+                              } else {
+                                next.add(cat);
+                                if (next.size === presentCategories.length) return new Set();
+                              }
+                              return next;
+                            });
+                            setFilterIncludedSubcats(new Set());
+                          }}
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                            active
+                              ? `${CATEGORY_STYLES[catKey].badge} ring-1 ring-[hsl(var(--primary))]/20`
+                              : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] opacity-50"
+                          }`}
+                        >
+                          {CATEGORY_ICONS[catKey]} {CATEGORY_LABELS[catKey]} ({count})
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              {/* Subcategory chips */}
-              {presentSubcategories.size > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {Array.from(presentSubcategories.entries()).map(([sub, count]) => {
-                    const excluded = filterExcludedSubcats.has(sub);
-                    return (
+                  {/* Subcategory chips */}
+                  {presentSubcategories.size > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {Array.from(presentSubcategories.entries()).map(([sub, count]) => {
+                        const included = filterIncludedSubcats.has(sub);
+                        const isActive = filterIncludedSubcats.size === 0 || included;
+                        return (
+                          <button
+                            key={sub}
+                            type="button"
+                            onClick={() => {
+                              setFilterIncludedSubcats((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(sub)) next.delete(sub);
+                                else next.add(sub);
+                                return next;
+                              });
+                            }}
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              isActive
+                                ? "bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
+                                : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] opacity-50"
+                            }`}
+                          >
+                            {sub.replace(/_/g, " ")} ({count})
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Search + sort row (sort only in list view) */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={filterSearch}
+                        onChange={(e) => setFilterSearch(e.target.value)}
+                        placeholder="Search places..."
+                        className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
+                      />
+                      {filterSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    {view === "list" && (
+                      <select
+                        value={filterSort}
+                        onChange={(e) => setFilterSort(e.target.value as "rating" | "name" | "reviews")}
+                        className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-xs"
+                      >
+                        <option value="rating">Rating</option>
+                        <option value="name">Name</option>
+                        <option value="reviews">Reviews</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Active filter count */}
+                  {(filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                        Showing {filteredPois.length} of {pois.length} places
+                      </span>
                       <button
-                        key={sub}
                         type="button"
                         onClick={() => {
-                          setFilterExcludedSubcats((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(sub)) next.delete(sub);
-                            else next.add(sub);
-                            return next;
-                          });
+                          setFilterCategories(new Set());
+                          setFilterIncludedSubcats(new Set());
+                          setFilterSearch("");
+                          setFilterFavouritesOnly(false);
                         }}
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                          excluded
-                            ? "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] opacity-50 line-through"
-                            : "bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
-                        }`}
+                        className="text-[10px] text-[hsl(var(--primary))] hover:underline"
                       >
-                        {sub.replace(/_/g, " ")} ({count})
+                        Clear filters
                       </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Search + sort row (sort only in list view) */}
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    value={filterSearch}
-                    onChange={(e) => setFilterSearch(e.target.value)}
-                    placeholder="Search places..."
-                    className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
-                  />
-                  {filterSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setFilterSearch("")}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                    >
-                      ✕
-                    </button>
+                    </div>
                   )}
                 </div>
-                {view === "list" && (
-                  <select
-                    value={filterSort}
-                    onChange={(e) => setFilterSort(e.target.value as "rating" | "name" | "reviews")}
-                    className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-xs"
-                  >
-                    <option value="rating">Rating</option>
-                    <option value="name">Name</option>
-                    <option value="reviews">Reviews</option>
-                  </select>
-                )}
-              </div>
-
-              {/* Active filter count */}
-              {(filterCategories.size > 0 || filterExcludedSubcats.size > 0 || filterSearch || filterFavouritesOnly) && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                    Showing {filteredPois.length} of {pois.length} places
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFilterCategories(new Set());
-                      setFilterExcludedSubcats(new Set());
-                      setFilterSearch("");
-                      setFilterFavouritesOnly(false);
-                    }}
-                    className="text-[10px] text-[hsl(var(--primary))] hover:underline"
-                  >
-                    Clear filters
-                  </button>
+              )}
+              {view === "map" ? (
+                <div className="relative min-h-[400px] lg:min-h-[500px]">
+                  <PoiMap
+                    pois={filteredPois}
+                    cityId={cityId}
+                    cityLat={centerLat}
+                    cityLon={centerLon}
+                    radiusKm={radiusKm}
+                    dayPlans={liveDayPlans.map((d) => ({ id: d.id, label: d.date }))}
+                    dragOnly
+                    focusPoiId={focusPoiId}
+                    onFocusConsumed={() => setFocusPoiId(null)}
+                    onViewInList={(poiId) => { setFocusPoiId(poiId); setView("list"); }}
+                    favouriteItems={favouriteItems}
+                    onFavourite={(poi) => handleFavourite(poi as StopPoiDTO)}
+                    isPoiFavourited={(poi) => isPoiFavourited(poi as StopPoiDTO)}
+                  />
+                </div>
+              ) : pois.length === 0 ? (
+                <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
+                  No places discovered yet. Use the Discover section above to find restaurants, groceries, and gas stations nearby.
+                </p>
+              ) : filteredPois.length === 0 ? (
+                <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
+                  No places match the current filters.
+                </p>
+              ) : (
+                <div className="space-y-6">
+                  {Object.entries(poisByCategory).map(([cat, catPois]) => (
+                    <div key={cat} className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{CATEGORY_ICONS[cat as Category]}</span>
+                        <h3 className="text-sm font-semibold">{CATEGORY_LABELS[cat as Category]}</h3>
+                        <span className="text-xs text-[hsl(var(--muted-foreground))]">({catPois.length})</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {catPois.map((poi) => (
+                          <StopPoiCard
+                            key={poi.id}
+                            poi={poi}
+                            onViewOnMap={(id) => { setFocusPoiId(id); setView("map"); }}
+                            onFavourite={handleFavourite}
+                            isFavourited={isPoiFavourited(poi)}
+                            onOpenLightbox={(src, alt) => setLightbox({ src, alt })}
+                            onEdit={(p) => setEditingPoi({
+                              id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
+                              description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                              openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
+                              fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
+                              estimatedDurationMinutes: p.estimatedDurationMinutes,
+                              hasOriginalData: p.hasOriginalData,
+                            })}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          )}
-          {view === "map" ? (
-            <div className="relative min-h-[400px] lg:min-h-[500px]">
-              <PoiMap
-                pois={filteredPois}
-                cityId={cityId}
-                cityLat={centerLat}
-                cityLon={centerLon}
-                radiusKm={radiusKm}
-                dayPlans={[]}
-                focusPoiId={focusPoiId}
-                onFocusConsumed={() => setFocusPoiId(null)}
-                onViewInList={(poiId) => { setFocusPoiId(poiId); setView("list"); }}
-                favouriteItems={favouriteItems}
-                onFavourite={(poi) => handleFavourite(poi as StopPoiDTO)}
-                isPoiFavourited={(poi) => isPoiFavourited(poi as StopPoiDTO)}
+            {/* Right: timeline sidebar */}
+            <div className="hidden lg:block w-56 shrink-0">
+              <TimelineSidebar
+                dayPlans={liveDayPlans}
+                onDropPoi={handleDropPoiOnTimeline}
+                compact
               />
             </div>
-          ) : pois.length === 0 ? (
-            <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
-              No places discovered yet. Use the Discover section above to find restaurants, groceries, and gas stations nearby.
-            </p>
-          ) : filteredPois.length === 0 ? (
-            <p className="text-sm text-[hsl(var(--muted-foreground))] py-4 text-center">
-              No places match the current filters.
-            </p>
-          ) : (
-            <div className="space-y-6">
-              {Object.entries(poisByCategory).map(([cat, catPois]) => (
-                <div key={cat} className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-base">{CATEGORY_ICONS[cat as Category]}</span>
-                    <h3 className="text-sm font-semibold">{CATEGORY_LABELS[cat as Category]}</h3>
-                    <span className="text-xs text-[hsl(var(--muted-foreground))]">({catPois.length})</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {catPois.map((poi) => (
-                      <StopPoiCard
-                        key={poi.id}
-                        poi={poi}
-                        onViewOnMap={(id) => { setFocusPoiId(id); setView("map"); }}
-                        onFavourite={handleFavourite}
-                        isFavourited={isPoiFavourited(poi)}
-                        onOpenLightbox={(src, alt) => setLightbox({ src, alt })}
-                        onEdit={(p) => setEditingPoi({
-                          id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
-                          description: p.description, website: p.website, phoneNumber: p.phoneNumber,
-                          openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
-                          fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
-                          estimatedDurationMinutes: p.estimatedDurationMinutes,
-                          hasOriginalData: p.hasOriginalData,
-                        })}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          </div>
         </CardContent>
       </Card>
       {editingPoi && (

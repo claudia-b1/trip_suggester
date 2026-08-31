@@ -79,6 +79,7 @@ export type CityHeaderProps = {
   };
   /** Whether this is a travel stop (simplified page — no auto-plan) */
   isStop?: boolean;
+  accommodations?: { name: string; address?: string }[];
 };
 
 export function CityHeader({
@@ -103,6 +104,7 @@ export function CityHeader({
   totalPois,
   editProps,
   isStop,
+  accommodations,
 }: CityHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -229,8 +231,25 @@ export function CityHeader({
         )}
       </div>
 
+      {/* Accommodation addresses */}
+      {accommodations && accommodations.length > 0 && (
+        <div className="flex items-start gap-2 text-sm">
+          <span className="shrink-0 mt-0.5">🏠</span>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            {accommodations.map((a, i) => (
+              <p key={i} className="text-xs truncate">
+                <span className="font-medium">{a.name}</span>
+                {a.address && a.address !== a.name && (
+                  <span className="text-[hsl(var(--muted-foreground))] ml-1.5">{a.address}</span>
+                )}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Row 3: POI stats + planning progress */}
-      {(hasCategories || totalPois > 0) && (
+      {!isStop && (hasCategories || totalPois > 0) && (
         <div className="flex items-center gap-4 flex-wrap">
           {hasCategories && (
             <div className="flex items-center gap-2">
@@ -268,16 +287,16 @@ export function CityHeader({
       )}
 
       {/* Row 4: Quick action chips */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => scrollTo("pois-section")}
-          className="rounded-full text-xs"
-        >
-          🗺 Map
-        </Button>
-        {!isStop && (
+      {!isStop && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => scrollTo("pois-section")}
+            className="rounded-full text-xs"
+          >
+            🗺 Map
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -287,16 +306,16 @@ export function CityHeader({
           >
             {autoPlanLoading ? "Planning…" : "📋 Auto-plan"}
           </Button>
-        )}
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => scrollTo("discover-section")}
-          className="rounded-full text-xs"
-        >
-          🧭 Discover
-        </Button>
-      </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => scrollTo("discover-section")}
+            className="rounded-full text-xs"
+          >
+            🧭 Discover
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
