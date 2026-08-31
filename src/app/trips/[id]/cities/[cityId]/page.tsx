@@ -154,9 +154,7 @@ export default async function CityDetailPage({
 
   const isStop = city.type === "stop";
 
-  if (!isStop) {
-    await ensureDayPlans(city.id, city.startDate, city.endDate);
-  }
+  await ensureDayPlans(city.id, city.startDate, city.endDate);
 
   // Auto-sync: ensure all matching favourites are added as POIs
   if (city.latitude != null && city.longitude != null && !isStop) {
@@ -373,6 +371,34 @@ export default async function CityDetailPage({
     0,
   );
 
+  // Backfill accommodation addresses via Mapbox reverse geocode
+  const accomPois = city.pois.filter((p) => p.category === "ACCOMMODATION");
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  if (mapboxToken) {
+    const needsAddress = accomPois.filter((p) => !p.description && p.latitude != null && p.longitude != null);
+    if (needsAddress.length > 0) {
+      await Promise.allSettled(
+        needsAddress.map(async (p) => {
+          try {
+            const res = await fetch(
+              `https://api.mapbox.com/geocoding/v5/mapbox.places/${p.longitude},${p.latitude}.json?types=poi,address&limit=1&access_token=${mapboxToken}`,
+            );
+            if (!res.ok) return;
+            const data = await res.json() as { features?: Array<{ place_name: string }> };
+            const address = data.features?.[0]?.place_name;
+            if (address) {
+              await prisma.poi.update({ where: { id: p.id }, data: { description: address } });
+              p.description = address;
+            }
+          } catch { /* best-effort */ }
+        }),
+      );
+    }
+  }
+
+  const accommodations = accomPois
+    .map((p) => ({ name: p.name, address: p.description ?? undefined }));
+
   return (
     <div className="space-y-4">
       <Breadcrumbs
@@ -421,6 +447,7 @@ export default async function CityDetailPage({
           tripEndDate: city.trip.endDate.toISOString(),
         }}
         isStop={isStop}
+        accommodations={accommodations}
       />
 
       {subcityTabData && (
@@ -435,18 +462,6 @@ export default async function CityDetailPage({
       {isStop ? (
         <>
           {/* Simplified view for travel stops */}
-          <TripNoteEditor
-            initialNote={cityNote ?? null}
-            scope={{ cityId: city.id }}
-          />
-          {wikiInfo && (
-            <CityInfoSection
-              cityId={city.id}
-              cityName={city.nickname ?? city.name}
-              info={wikiInfo}
-              initialGenerated={cachedCityInfo}
-            />
-          )}
           <StopPlanningSection
             cityId={city.id}
             pois={pois as StopPoiDTO[]}
@@ -459,11 +474,13 @@ export default async function CityDetailPage({
               (() => {
                 const accom = city.pois.find((p) => p.category === "ACCOMMODATION");
                 if (accom && accom.latitude != null && accom.longitude != null) {
-                  return { id: accom.id, name: accom.name, latitude: accom.latitude, longitude: accom.longitude };
+                  return { id: accom.id, name: accom.name, latitude: accom.latitude, longitude: accom.longitude, address: accom.description ?? undefined };
                 }
                 return null;
               })()
             }
+            dayPlans={dayPlans}
+            initialNote={cityNote ?? null}
           />
         </>
       ) : (

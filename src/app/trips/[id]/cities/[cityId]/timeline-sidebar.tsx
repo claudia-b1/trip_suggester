@@ -29,6 +29,7 @@ export function TimelineSidebar({
   onDropPoi,
   subcityDayPlans,
   favouritedPoiIds,
+  compact,
 }: {
   dayPlans: DayPlanDTO[];
   onActivityClick?: (dayDate: string, activityId: number) => void;
@@ -36,6 +37,8 @@ export function TimelineSidebar({
   onDropPoi?: (dayPlanId: number, timeSlot: TimeSlot, poiId: number) => void;
   subcityDayPlans?: SubcityDayPlanForTimeline[];
   favouritedPoiIds?: Set<number>;
+  /** Compact mode: skip view-mode toggle, always show all days, tighter spacing */
+  compact?: boolean;
 }) {
   // Track which slot is being dragged over for visual feedback
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
@@ -85,7 +88,8 @@ export function TimelineSidebar({
   // Collapsible state
   const [timelineOpen, setTimelineOpen] = useState(true);
   // View mode: "active" = only days with activities (default), "all" = all days, "today" = from today onward
-  const [viewMode, setViewMode] = useState<"active" | "all" | "today">("active");
+  // In compact mode, always show all days
+  const [viewMode, setViewMode] = useState<"active" | "all" | "today">(compact ? "all" : "active");
 
   // When dragging a POI, show all days (as drop targets); otherwise filter by view mode
   const isDragging = poiDragDetected || dragOverSlot !== null;
@@ -129,7 +133,8 @@ export function TimelineSidebar({
       </div>
 
       {timelineOpen && <>
-      {/* View mode toggle */}
+      {/* View mode toggle — hidden in compact mode */}
+      {!compact && (
       <div className="flex items-center gap-1">
         <button
           type="button"
@@ -166,6 +171,7 @@ export function TimelineSidebar({
           </button>
         )}
       </div>
+      )}
 
       {visibleDays.length === 0 ? (
         <p className="text-xs text-[hsl(var(--muted-foreground))] italic pl-6">

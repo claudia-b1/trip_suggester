@@ -72,9 +72,11 @@ function AutocompleteInput({
   const [loading, setLoading] = useState(false);
   const debounced = useDebounce(value, 300);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Track whether the user has actively typed — skip autocomplete for initial/prepopulated values
+  const userTypedRef = useRef(false);
 
   useEffect(() => {
-    if (debounced.trim().length < 2) {
+    if (!userTypedRef.current || debounced.trim().length < 2) {
       setSuggestions([]);
       return;
     }
@@ -125,7 +127,7 @@ function AutocompleteInput({
         <input
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => { userTypedRef.current = true; onChange(e.target.value); }}
           onFocus={() => suggestions.length > 0 && setOpen(true)}
           placeholder={placeholder}
           required={required}
@@ -147,6 +149,7 @@ function AutocompleteInput({
                 className="w-full px-3 py-2 text-left text-sm hover:bg-[hsl(var(--muted))] transition-colors"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
+                  userTypedRef.current = false;
                   onSelect(s);
                   setOpen(false);
                   setSuggestions([]);

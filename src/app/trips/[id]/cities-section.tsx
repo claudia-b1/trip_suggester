@@ -332,7 +332,17 @@ export function CitiesSection({
         name,
         ...(nickname.trim() && { nickname: nickname.trim() }),
         startDate,
-        endDate: isStop ? startDate : endDate,
+        endDate: isStop
+          ? (() => {
+              const d = new Date(startDate);
+              d.setDate(d.getDate() + 1);
+              const computed = d.toISOString().slice(0, 10);
+              // Don't exceed trip end date
+              const parentCity = addParentCityId ? localCities.find((c) => c.id === addParentCityId) : null;
+              const maxDate = parentCity ? parentCity.endDate.slice(0, 10) : tripEndDate.slice(0, 10);
+              return computed > maxDate ? maxDate : computed;
+            })()
+          : endDate,
         ...(isStop && { type: "stop" }),
         ...(addParentCityId != null && { parentCityId: addParentCityId }),
         ...(cityMeta && {
@@ -719,7 +729,7 @@ export function CitiesSection({
             </div>
           )}
           <div className="space-y-2">
-            <Label htmlFor="city-name">Name</Label>
+            <Label htmlFor="city-name">Location</Label>
             <CityAutocomplete
               id="city-name"
               value={name}
