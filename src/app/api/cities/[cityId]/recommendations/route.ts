@@ -126,15 +126,21 @@ export async function POST(
   if (!city) return NextResponse.json({ error: "Destination not found" }, { status: 404 });
 
   // ── Delete existing POIs if overwrite requested ──────────────────────────────
-  // Preserve POIs that were added from favourites
+  // Preserve: POIs from favourites (favouriteItemId set) and ACCOMMODATION POIs
   if (overwrite) {
-    await prisma.poi.deleteMany({ where: { cityId: cityIdNum, favouriteItemId: null } });
+    await prisma.poi.deleteMany({
+      where: {
+        cityId: cityIdNum,
+        favouriteItemId: null,
+        category: { not: "ACCOMMODATION" },
+      },
+    });
   }
 
   // ── Existing POIs — for deduplication (#1) ──────────────────────────────────
   const existingPois = await prisma.poi.findMany({
     where: { cityId: cityIdNum },
-    select: { placeId: true, name: true, latitude: true, longitude: true },
+    select: { placeId: true, name: true, latitude: true, longitude: true, category: true },
   });
   const existingPlaceIds = new Set(
     existingPois.map((p) => p.placeId).filter((id): id is string => !!id),
@@ -443,7 +449,7 @@ export async function POST(
         const meta = await withEnrichCache<GoogleMeta>(
           place.placeId,
           "google-meta",
-          () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName),
+          () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName, place.address),
           undefined,   // ttlDays — use default
           nearbyOnlyPlaceIds.has(place.placeId), // skipCachedNull for nearby (cache-healing for old wrong-city nulls)
         );
@@ -478,14 +484,22 @@ export async function POST(
     );
   }
 
-  /** Map a POI's Geoapify category tags to the first matching subcategory ID. */
+  /** Map a POI's Geoapify category tags to the first matching subcategory ID.
+   *  Matches when:
+   *  - POI cat equals a tag exactly ("catering.restaurant" = "catering.restaurant")
+   *  - POI cat is a child of a tag ("catering.restaurant.italian" starts with "catering.restaurant.")
+   *  - POI cat is a parent of a tag ("tourism.sights" → tag "tourism.sights.castle" starts with "tourism.sights.")
+   *    This covers generic Geoapify tags that don't specify a sub-type.
+   */
   function getPoiSubcat(poiCats: string[], mainCat: RecommendableCategory): string | null {
     for (const def of SUBCATEGORIES[mainCat]) {
       const tags = (SUBCAT_CATEGORIES[def.id] ?? "")
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      if (poiCats.some((c) => tags.some((t) => c === t || c.startsWith(t + ".")))) return def.id;
+      if (poiCats.some((c) => tags.some((t) =>
+        c === t || c.startsWith(t + ".") || t.startsWith(c + ".")
+      ))) return def.id;
     }
     return null;
   }
@@ -502,11 +516,21 @@ export async function POST(
   const topPlaces: Array<{ place: DiscoveredPlace; category: RecommendableCategory; googleMeta: GoogleMeta | null }> = [];
   const seenIds = new Set<string>();
   const seenNames = new Set<string>();
-  // Pre-seed with existing POI coordinates so cross-run, cross-category duplicates
+  // Pre-seed with existing POI coordinates so cross-run duplicates
   // (same physical place, different placeId or slightly different name) are caught.
-  const seenCoords: Array<{ lat: number; lon: number }> = existingPois
-    .filter((p) => p.latitude != null && p.longitude != null)
-    .map((p) => ({ lat: p.latitude!, lon: p.longitude! }));
+  // Only dedup within the SAME category — a supermarket next to a campsite
+  // are different POIs even if they're 50m apart.
+  const seenCoordsByCategory = new Map<string, Array<{ lat: number; lon: number }>>();
+  for (const p of existingPois) {
+    if (p.latitude == null || p.longitude == null || !p.category) continue;
+    const arr = seenCoordsByCategory.get(p.category) ?? [];
+    arr.push({ lat: p.latitude, lon: p.longitude });
+    seenCoordsByCategory.set(p.category, arr);
+  }
+  // Also keep a flat list for cross-category dedup of newly selected POIs
+  const seenCoords: Array<{ lat: number; lon: number; category: string }> = existingPois
+    .filter((p) => p.latitude != null && p.longitude != null && p.category)
+    .map((p) => ({ lat: p.latitude!, lon: p.longitude!, category: p.category! }));
   // 100 m threshold: same garden/museum complex can have different OSM nodes
   // tens of metres apart; 100 m catches those while keeping truly different POIs apart.
   const COORD_DEDUP_M = 100;
@@ -527,6 +551,8 @@ export async function POST(
     scoredItems: ScoredCandidate[],
     limit: number,
     qualityDroppedSet: Set<string>,
+    /** Category being selected — coord dedup only applies within the same category */
+    forCategory?: string,
   ): { selected: ScoredCandidate[]; coordDupSet: Set<string> } {
     scoredItems.sort((a, b) => b.score - a.score);
     const coordDupSet = new Set<string>();
@@ -538,7 +564,12 @@ export async function POST(
       const norm = item.place.name.toLowerCase().trim();
       if (existingPlaceIds.has(item.place.placeId) || existingNames.has(norm)) continue;
       if (seenIds.has(item.place.placeId) || seenNames.has(norm)) continue;
-      const nearSeen = seenCoords.some(
+      // Coord dedup: only against same-category POIs (a supermarket next to a
+      // campsite are different POIs even at 50m apart)
+      const sameCatCoords = forCategory
+        ? seenCoords.filter((c) => c.category === forCategory)
+        : seenCoords;
+      const nearSeen = sameCatCoords.some(
         (c) => haversineKm(c.lat, c.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
       );
       if (nearSeen) { coordDupSet.add(item.place.placeId); continue; }
@@ -608,10 +639,32 @@ export async function POST(
     );
     const qualifiedRegular = scoredRegular.filter((s) => !regularQualityDropped.has(s.place.placeId));
 
+    // Detailed quality gate logging
+    const noGoogleMatch = scoredRegular.filter(({ meta }) => meta == null);
+    const lowRating = scoredRegular.filter(({ meta }) => meta != null && meta.rating != null && meta.rating < gate.minRating);
+    const lowReviews = scoredRegular.filter(({ meta }) => meta != null && meta.userRatingCount != null && meta.userRatingCount < gate.minReviews && (meta.rating == null || meta.rating >= gate.minRating));
+    console.log(
+      `[scoring] cat=${cat} discovered=${regularPlaces.length} prescan=${scoredRegular.length}` +
+      ` qualityDropped=${regularQualityDropped.size} (noGoogle=${noGoogleMatch.length} lowRating=${lowRating.length} lowReviews=${lowReviews.length})` +
+      ` qualified=${qualifiedRegular.length} gate={${gate.minRating}★, ${gate.minReviews} reviews}`,
+    );
+    // Log quality-dropped candidates for debugging
+    for (const item of scoredRegular.filter((s) => s.meta != null && regularQualityDropped.has(s.place.placeId)).slice(0, 5)) {
+      console.log(`  [quality-dropped] "${item.place.name}" rating=${item.meta?.rating ?? "?"} reviews=${item.meta?.userRatingCount ?? "?"}`);
+    }
+    for (const item of noGoogleMatch.slice(0, 5)) {
+      console.log(`  [no-google-match] "${item.place.name}" addr=${item.place.address ?? "?"}`);
+    }
+
     const { selected: selectedRegular, coordDupSet: regularCoordDupSet } =
-      selectTopN(qualifiedRegular, limit, new Set());
+      selectTopN(qualifiedRegular, limit, new Set(), cat);
 
     const selectedRegularIds = new Set(selectedRegular.map((s) => s.place.placeId));
+
+    console.log(
+      `[scoring] cat=${cat} selected=${selectedRegular.length}/${limit}` +
+      ` names=[${selectedRegular.slice(0, 5).map((s) => s.place.name).join(", ")}${selectedRegular.length > 5 ? "..." : ""}]`,
+    );
 
     // Candidate logging for regular
     for (const { place, score, breakdown, meta, distKm } of scoredRegular) {
@@ -645,7 +698,7 @@ export async function POST(
     for (const { place, meta } of selectedRegular) {
       seenIds.add(place.placeId);
       seenNames.add(place.name.toLowerCase().trim());
-      seenCoords.push({ lat: place.latitude, lon: place.longitude });
+      seenCoords.push({ lat: place.latitude, lon: place.longitude, category: cat });
       topPlaces.push({ place, category: cat, googleMeta: meta ?? null });
     }
 
@@ -686,7 +739,7 @@ export async function POST(
       const qualifiedNearby = scoredNearby.filter((s) => !nearbyQualityDropped.has(s.place.placeId));
 
       const { selected: selectedNearby, coordDupSet: nearbyCoordDupSet } =
-        selectTopN(qualifiedNearby, NEARBY_PER_CAT_LIMIT, new Set());
+        selectTopN(qualifiedNearby, NEARBY_PER_CAT_LIMIT, new Set(), cat);
 
       const selectedNearbyIds = new Set(selectedNearby.map((s) => s.place.placeId));
 
@@ -724,7 +777,7 @@ export async function POST(
       for (const { place, meta } of selectedNearby) {
         seenIds.add(place.placeId);
         seenNames.add(place.name.toLowerCase().trim());
-        seenCoords.push({ lat: place.latitude, lon: place.longitude });
+        seenCoords.push({ lat: place.latitude, lon: place.longitude, category: cat });
         topPlaces.push({ place, category: cat, googleMeta: meta ?? null });
       }
     }

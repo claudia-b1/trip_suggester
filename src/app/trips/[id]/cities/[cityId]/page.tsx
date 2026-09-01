@@ -157,13 +157,13 @@ export default async function CityDetailPage({
   await ensureDayPlans(city.id, city.startDate, city.endDate);
 
   // Auto-sync: ensure all matching favourites are added as POIs
-  if (city.latitude != null && city.longitude != null && !isStop) {
+  if (city.latitude != null && city.longitude != null) {
     try {
       await syncFavouritesToCity(
         city.id,
         city.latitude,
         city.longitude,
-        city.country ?? null,
+        city.country?.trim() || null,
         city.discoverRadiusKm ?? null,
         userId,
       );
@@ -172,7 +172,7 @@ export default async function CityDetailPage({
     }
   }
 
-  const dayPlansRaw = await prisma.dayPlan.findMany({
+  let dayPlansRaw = await prisma.dayPlan.findMany({
     where: {
       cityId: city.id,
       date: { gte: city.startDate, lte: city.endDate },
@@ -186,9 +186,39 @@ export default async function CityDetailPage({
     },
   });
 
+  // Auto-assign accommodation to EVENING slot of day plans (all nights except last).
+  // Ensures accommodation shows in the timeline even if day plans were recreated.
+  const accomPoiForAssign = city.pois.find((p) => p.category === "ACCOMMODATION");
+  if (accomPoiForAssign && dayPlansRaw.length > 0) {
+    const daysNeedingAccom = (dayPlansRaw.length > 1 ? dayPlansRaw.slice(0, -1) : dayPlansRaw)
+      .filter((dp) => !dp.activities.some((a) => a.poi.category === "ACCOMMODATION"));
+    if (daysNeedingAccom.length > 0) {
+      await Promise.allSettled(
+        daysNeedingAccom.map((dp) =>
+          prisma.dayActivity.create({
+            data: {
+              dayPlanId: dp.id,
+              poiId: accomPoiForAssign.id,
+              timeSlot: "EVENING",
+              order: dp.activities.length,
+            },
+          }),
+        ),
+      );
+      // Re-query to include the new activities
+      dayPlansRaw = await prisma.dayPlan.findMany({
+        where: { cityId: city.id, date: { gte: city.startDate, lte: city.endDate } },
+        orderBy: { date: "asc" },
+        include: { activities: { orderBy: { order: "asc" }, include: { poi: true } } },
+      });
+    }
+  }
+
   // Fetch favourite items nearby, filter by country when available then by distance
-  const DEFAULT_FAV_RADIUS_KM = 10;
-  const favRadiusKm = city.discoverRadiusKm ?? DEFAULT_FAV_RADIUS_KM;
+  // Use at least 10 km so a tight discover radius (e.g. 3 km for a travel stop)
+  // doesn't prevent nearby favourites from appearing
+  const DEFAULT_FAV_RADIUS_KM = 100;
+  const favRadiusKm = Math.max(city.discoverRadiusKm ?? DEFAULT_FAV_RADIUS_KM, DEFAULT_FAV_RADIUS_KM);
   const allCountryFavs = await prisma.favouriteItem.findMany({
     where: {
       ...(city.country ? { country: { equals: city.country, mode: "insensitive" } } : {}),
@@ -228,6 +258,10 @@ export default async function CityDetailPage({
     notes: f.notes,
     photoUrl: f.photoUrl,
     website: f.website,
+    phoneNumber: f.phoneNumber ?? null,
+    openingHours: f.openingHours ?? null,
+    priceLevel: f.priceLevel ?? null,
+    fee: f.fee ?? null,
     sourcePlaceId: f.sourcePlaceId,
     visited: f.visited,
     personalRating: f.personalRating,
@@ -293,6 +327,8 @@ export default async function CityDetailPage({
     userRatingCount: p.userRatingCount ?? null,
     subcategory: p.subcategory ?? null,
     favouriteItemId: p.favouriteItemId ?? null,
+    address: p.address ?? null,
+    notes: p.notes ?? null,
     hasOriginalData: !!p.originalData,
   }));
 
@@ -396,8 +432,18 @@ export default async function CityDetailPage({
     }
   }
 
-  const accommodations = accomPois
-    .map((p) => ({ name: p.name, address: p.description ?? undefined }));
+  const accommodations = accomPois.map((p) => {
+    // Use favourite's address field when available (POI description may contain notes)
+    let address: string | undefined;
+    if (p.favouriteItemId) {
+      const fav = allCountryFavs.find((f) => f.id === p.favouriteItemId);
+      address = fav?.address ?? undefined;
+    }
+    if (!address && p.description && p.description.includes(",")) {
+      address = p.description;
+    }
+    return { name: p.name, address };
+  });
 
   return (
     <div className="space-y-4">
@@ -447,7 +493,33 @@ export default async function CityDetailPage({
           tripEndDate: city.trip.endDate.toISOString(),
         }}
         isStop={isStop}
-        accommodations={accommodations}
+        accommodations={isStop ? undefined : accommodations}
+        stopAccommodation={isStop ? {
+          initial: (() => {
+            const a = accomPois[0];
+            if (a && a.latitude != null && a.longitude != null) {
+              // Use favourite's address field (not POI description which may contain notes)
+              let address: string | undefined;
+              if (a.favouriteItemId) {
+                const fav = allCountryFavs.find((f) => f.id === a.favouriteItemId);
+                address = fav?.address ?? undefined;
+              }
+              // If not from a favourite, description may be a Mapbox-backfilled address — use it only
+              // if it looks like an address (contains a comma, typical of geocoded addresses)
+              if (!address && a.description && a.description.includes(",")) {
+                address = a.description;
+              }
+              // Otherwise, CityHeader's backfill useEffect will reverse-geocode
+              return { id: a.id, name: a.name, latitude: a.latitude, longitude: a.longitude, address };
+            }
+            return null;
+          })(),
+          favourites: favouriteItems,
+          cityLat: city.latitude,
+          cityLon: city.longitude,
+          pois: pois.map((p) => ({ id: p.id, category: p.category })),
+          dayPlanIds: dayPlans.map((dp) => dp.id),
+        } : undefined}
       />
 
       {subcityTabData && (
@@ -463,6 +535,7 @@ export default async function CityDetailPage({
         <>
           {/* Simplified view for travel stops */}
           <StopPlanningSection
+            tripId={tripId}
             cityId={city.id}
             pois={pois as StopPoiDTO[]}
             cityLat={city.latitude ?? undefined}
@@ -474,13 +547,23 @@ export default async function CityDetailPage({
               (() => {
                 const accom = city.pois.find((p) => p.category === "ACCOMMODATION");
                 if (accom && accom.latitude != null && accom.longitude != null) {
-                  return { id: accom.id, name: accom.name, latitude: accom.latitude, longitude: accom.longitude, address: accom.description ?? undefined };
+                  // Use favourite address (not POI description which may contain notes)
+                  let addr: string | undefined;
+                  if (accom.favouriteItemId) {
+                    const fav = allCountryFavs.find((f) => f.id === accom.favouriteItemId);
+                    addr = fav?.address ?? undefined;
+                  }
+                  if (!addr && accom.description && accom.description.includes(",")) {
+                    addr = accom.description;
+                  }
+                  return { id: accom.id, name: accom.name, latitude: accom.latitude, longitude: accom.longitude, address: addr };
                 }
                 return null;
               })()
             }
             dayPlans={dayPlans}
             initialNote={cityNote ?? null}
+            initialRadiusKm={city.discoverRadiusKm ?? undefined}
           />
         </>
       ) : (
@@ -512,6 +595,7 @@ export default async function CityDetailPage({
           />
 
           <CityPlanningSection
+            tripId={tripId}
             cityId={city.id}
             pois={pois}
             dayPlans={dayPlans}

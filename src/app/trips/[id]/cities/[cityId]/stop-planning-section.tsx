@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import type { TimeSlot } from "@/lib/slots";
 import type { RecommendableCategory } from "@/lib/recommendations";
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
+import { FUEL_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { PoiMap } from "./poi-map";
 import { useFavourites } from "@/components/favourites/favourites-provider";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
@@ -41,6 +41,8 @@ export type StopPoiDTO = {
   tips: string | null;
   bestTimeToVisit: string | null;
   estimatedDurationMinutes: number | null;
+  address: string | null;
+  notes: string | null;
   favouriteItemId: number | null;
   hasOriginalData?: boolean;
 };
@@ -50,8 +52,9 @@ type View = "map" | "list";
 // Only FOOD, GROCERIES, and FUEL for travel stops
 const STOP_CATEGORIES: RecommendableCategory[] = ["FOOD", "GROCERIES"];
 const STOP_SUBCATEGORY_IDS: Record<string, string[]> = {
-  FOOD: ["restaurant", "fine_dining", "fast_food"],
+  FOOD: ["restaurant", "fine_dining", "fast_food", "cafe"],
   GROCERIES: ["supermarket", "shop_bakery"],
+  FUEL: ["gas_station", "ev_charging", "lpg"],
 };
 
 // All category pills including FUEL (handled separately) — ordered by practical priority
@@ -126,7 +129,7 @@ function StopPoiCard({
   const showPhoto = photoSrc && !imgError;
 
   return (
-    <div className="group relative flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-all duration-200 hover:shadow-md overflow-hidden h-full">
+    <div data-poi-id={poi.id} className="group relative flex flex-col rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-sm transition-all duration-200 hover:shadow-md overflow-hidden h-full">
       {/* Header: category strip + photo */}
       <div className="flex h-24 w-full flex-shrink-0">
         {/* Category icon + rating */}
@@ -282,6 +285,7 @@ function StopPoiCard({
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export function StopPlanningSection({
+  tripId,
   cityId,
   pois,
   cityLat,
@@ -292,7 +296,9 @@ export function StopPlanningSection({
   initialAccommodation,
   dayPlans,
   initialNote,
+  initialRadiusKm,
 }: {
+  tripId: number;
   cityId: number;
   pois: StopPoiDTO[];
   cityLat?: number;
@@ -304,6 +310,8 @@ export function StopPlanningSection({
   initialAccommodation?: { id: number; name: string; latitude: number; longitude: number; address?: string } | null;
   dayPlans: DayPlanDTO[];
   initialNote: { id: number; content: string } | null;
+  /** Persisted discover radius from last run */
+  initialRadiusKm?: number;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -322,56 +330,19 @@ export function StopPlanningSection({
   const [liveDayPlans, setLiveDayPlans] = useState(dayPlans);
   useEffect(() => { setLiveDayPlans(dayPlans); }, [dayPlans]);
 
-  // ── Accommodation / center state ──
-  const [accommodation, setAccommodation] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
-    initialAccommodation ?? null,
-  );
-  const [accomDropdownOpen, setAccomDropdownOpen] = useState(false);
-  const [accomSearchQuery, setAccomSearchQuery] = useState("");
-  const [accomSuggestions, setAccomSuggestions] = useState<Array<{ id: string; place_name: string; text: string; center: [number, number] }>>([]);
-  const [accomSearchOpen, setAccomSearchOpen] = useState(false);
-  const accomDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [settingAccom, setSettingAccom] = useState(false);
-
-  // Backfill address for existing accommodation that was created before address storage
-  useEffect(() => {
-    if (!accommodation || accommodation.address) return;
-    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-    if (!token) return;
-    (async () => {
-      try {
-        const res = await fetch(
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${accommodation.longitude},${accommodation.latitude}.json?types=poi,address&limit=1&access_token=${token}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json() as { features?: Array<{ place_name: string }> };
-        const address = data.features?.[0]?.place_name;
-        if (address) {
-          setAccommodation((prev) => prev ? { ...prev, address } : prev);
-          // Persist address to POI description
-          fetch(`/api/pois/${accommodation.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ description: address }),
-          });
-        }
-      } catch { /* best-effort */ }
-    })();
-  }, [accommodation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The effective center for discover + map radius
-  const centerLat = accommodation?.latitude ?? cityLat;
-  const centerLon = accommodation?.longitude ?? cityLon;
+  // The effective center for discover + map radius (accommodation picker is in CityHeader)
+  const centerLat = initialAccommodation?.latitude ?? cityLat;
+  const centerLon = initialAccommodation?.longitude ?? cityLon;
 
   // ── Discover state ──
   const [discoverOpen, setDiscoverOpen] = useState(false);
-  const [radiusKm, setRadiusKm] = useState(DEFAULT_STOP_RADIUS_KM);
+  const [radiusKm, setRadiusKm] = useState(initialRadiusKm ?? DEFAULT_STOP_RADIUS_KM);
   const [selected, setSelected] = useState<Set<string>>(() => new Set(ALL_STOP_CATS));
   const [counts, setCounts] = useState<Record<string, number>>(() => ({ ...DEFAULT_STOP_COUNTS }));
   const [subcats, setSubcats] = useState<Record<string, Set<string>>>(
     () =>
       Object.fromEntries(
-        STOP_CATEGORIES.map((c) => [c, new Set(STOP_SUBCATEGORY_IDS[c])]),
+        Object.entries(STOP_SUBCATEGORY_IDS).map(([c, ids]) => [c, new Set(ids)]),
       ),
   );
   const [cuisineFilter, setCuisineFilter] = useState("");
@@ -386,6 +357,20 @@ export function StopPlanningSection({
   const [view, setView] = useState<View>("map");
   const [focusPoiId, setFocusPoiId] = useState<number | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+
+  // ── Focus POI highlight (scroll + pulse when clicking "View full details" from map) ──
+  useEffect(() => {
+    if (view !== "list" || focusPoiId == null) return;
+    const el = document.querySelector(`[data-poi-id="${focusPoiId}"]`) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("poi-focus-highlight");
+    const timer = setTimeout(() => {
+      el.classList.remove("poi-focus-highlight");
+      setFocusPoiId(null);
+    }, 3200);
+    return () => clearTimeout(timer);
+  }, [view, focusPoiId]);
 
   // ── Filter state ──
   const [filterCategories, setFilterCategories] = useState<Set<string>>(() => new Set());
@@ -494,112 +479,7 @@ export function StopPlanningSection({
     return groups;
   }, [filteredPois]);
 
-  // ── Accommodation handlers ──
-
-  function handleAccomSearch(query: string) {
-    setAccomSearchQuery(query);
-    if (accomDebounceRef.current) clearTimeout(accomDebounceRef.current);
-    if (query.trim().length < 2) {
-      setAccomSuggestions([]);
-      setAccomSearchOpen(false);
-      return;
-    }
-    accomDebounceRef.current = setTimeout(async () => {
-      try {
-        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-        if (!token) return;
-        const proximity =
-          cityLat != null && cityLon != null
-            ? `&proximity=${cityLon},${cityLat}`
-            : "";
-        const url =
-          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query.trim())}.json` +
-          `?types=poi,address,place&limit=5${proximity}&access_token=${token}`;
-        const res = await fetch(url);
-        if (!res.ok) return;
-        const data = await res.json() as { features?: Array<{ id: string; place_name: string; text: string; center: [number, number] }> };
-        const features = data.features ?? [];
-        setAccomSuggestions(features);
-        setAccomSearchOpen(features.length > 0);
-      } catch { /* ignore */ }
-    }, 300);
-  }
-
-  async function setAccommodationFromCoords(name: string, lat: number, lon: number, address?: string) {
-    setSettingAccom(true);
-    try {
-      // Delete any existing ACCOMMODATION POI for this city
-      const existingAccom = pois.find((p) => p.category === "ACCOMMODATION");
-      if (existingAccom) {
-        await fetch(`/api/pois/${existingAccom.id}`, { method: "DELETE" });
-      }
-      // Create new ACCOMMODATION POI
-      const res = await fetch(`/api/cities/${cityId}/pois`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          category: "ACCOMMODATION",
-          latitude: lat,
-          longitude: lon,
-          ...(address && { description: address }),
-        }),
-      });
-      if (res.ok) {
-        const poi = await res.json();
-        setAccommodation({ id: poi.id, name, latitude: lat, longitude: lon, address });
-
-        // Auto-assign accommodation to evening slot of all days except last
-        if (liveDayPlans.length > 1) {
-          const daysToAssign = liveDayPlans.slice(0, -1);
-          for (const dp of daysToAssign) {
-            await fetch(`/api/cities/${cityId}/day-plans`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dayPlanId: dp.id, poiId: poi.id, timeSlot: "EVENING" }),
-            });
-          }
-        } else if (liveDayPlans.length === 1) {
-          await fetch(`/api/cities/${cityId}/day-plans`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dayPlanId: liveDayPlans[0].id, poiId: poi.id, timeSlot: "EVENING" }),
-          });
-        }
-
-        toast(`Accommodation set: ${name}`);
-        router.refresh();
-      }
-    } catch {
-      toast("Failed to set accommodation", { variant: "error" });
-    } finally {
-      setSettingAccom(false);
-      setAccomDropdownOpen(false);
-      setAccomSearchQuery("");
-      setAccomSuggestions([]);
-      setAccomSearchOpen(false);
-    }
-  }
-
-  async function clearAccommodation() {
-    if (!accommodation) return;
-    setSettingAccom(true);
-    try {
-      await fetch(`/api/pois/${accommodation.id}`, { method: "DELETE" });
-      setAccommodation(null);
-      toast("Accommodation removed");
-      router.refresh();
-    } catch {
-      toast("Failed to remove accommodation", { variant: "error" });
-    } finally {
-      setSettingAccom(false);
-    }
-  }
-
-  // Accommodation-relevant favourites (those with coordinates)
-  const accomFavourites = useMemo(() => {
-    return (favouriteItems ?? []).filter((f) => f.latitude != null && f.longitude != null);
-  }, [favouriteItems]);
+  // (Accommodation picker moved to CityHeader)
 
   // ── Note handlers ──
   const saveNote = useCallback(async (text: string) => {
@@ -743,7 +623,7 @@ export function StopPlanningSection({
           overwrite,
           radiusKm,
           // Pass accommodation center if set
-          ...(accommodation ? { centerLat: accommodation.latitude, centerLon: accommodation.longitude } : {}),
+          ...(initialAccommodation ? { centerLat: initialAccommodation.latitude, centerLon: initialAccommodation.longitude } : {}),
         }),
       });
 
@@ -767,8 +647,8 @@ export function StopPlanningSection({
           body: JSON.stringify({
             radiusKm,
             overwrite,
-            ...(accommodation
-              ? { centerLat: accommodation.latitude, centerLon: accommodation.longitude }
+            ...(initialAccommodation
+              ? { centerLat: initialAccommodation.latitude, centerLon: initialAccommodation.longitude }
               : {}),
           }),
         });
@@ -792,6 +672,17 @@ export function StopPlanningSection({
         }`,
       );
     }
+    // Persist the discover radius (and accommodation center if used) to the database (best-effort)
+    const persistData: Record<string, unknown> = { discoverRadiusKm: radiusKm };
+    if (initialAccommodation) {
+      persistData.latitude = initialAccommodation.latitude;
+      persistData.longitude = initialAccommodation.longitude;
+    }
+    fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(persistData),
+    }).catch(() => {/* best-effort */});
     router.refresh();
   }
 
@@ -800,113 +691,6 @@ export function StopPlanningSection({
       {lightbox && (
         <ImageLightbox src={lightbox.src} alt={lightbox.alt} onClose={() => setLightbox(null)} />
       )}
-
-      {/* ── Compact Accommodation Row ── */}
-      <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="text-sm shrink-0">🏠</span>
-          {accommodation ? (
-            <>
-              <span className="text-sm font-medium truncate min-w-0">{accommodation.name}</span>
-              <button
-                type="button"
-                onClick={() => setAccomDropdownOpen((v) => !v)}
-                className="text-[11px] text-[hsl(var(--primary))] hover:underline shrink-0"
-              >
-                Change
-              </button>
-              <button
-                type="button"
-                onClick={clearAccommodation}
-                disabled={settingAccom}
-                className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0 disabled:opacity-50"
-              >
-                ✕
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setAccomDropdownOpen((v) => !v)}
-              className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-            >
-              {accomDropdownOpen ? "Cancel" : "Select accommodation"}
-            </button>
-          )}
-        </div>
-
-        {/* Accommodation picker dropdown */}
-        {accomDropdownOpen && (
-          <div className="mt-2 space-y-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-2.5">
-            <div className="space-y-1">
-              <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Search by name or address</p>
-              <div className="relative">
-                <Input
-                  type="text"
-                  value={accomSearchQuery}
-                  onChange={(e) => handleAccomSearch(e.target.value)}
-                  onFocus={() => accomSuggestions.length > 0 && setAccomSearchOpen(true)}
-                  onBlur={() => setTimeout(() => setAccomSearchOpen(false), 200)}
-                  placeholder="e.g. Hotel Amara, Airbnb Bonn..."
-                  autoComplete="off"
-                  className="text-xs h-8"
-                />
-                {accomSearchOpen && accomSuggestions.length > 0 && (
-                  <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-40 overflow-y-auto">
-                    {accomSuggestions.map((f) => (
-                      <li key={f.id}>
-                        <button
-                          type="button"
-                          className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-[hsl(var(--muted))] transition-colors"
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => {
-                            const [lon, lat] = f.center;
-                            setAccommodationFromCoords(f.text, lat, lon, f.place_name);
-                          }}
-                        >
-                          <span className="font-medium">{f.text}</span>
-                          <br />
-                          <span className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            {accomFavourites.length > 0 && (
-              <div className="space-y-1">
-                <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
-                <div className="max-h-32 overflow-y-auto space-y-0.5">
-                  {accomFavourites.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      disabled={settingAccom}
-                      onClick={() => setAccommodationFromCoords(f.name, f.latitude, f.longitude)}
-                      className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
-                    >
-                      <span className="text-xs shrink-0">
-                        {f.category === "ACCOMMODATION" ? "🏠" : "❤️"}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-medium truncate">{f.name}</p>
-                        {f.city && (
-                          <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{f.city}</p>
-                        )}
-                      </div>
-                      {f.list?.name && (
-                        <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">{f.list.name}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* ── Notes Section ── */}
       <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-4 py-2.5">
@@ -982,13 +766,15 @@ export function StopPlanningSection({
                 {ALL_STOP_CATS.map((cat) => {
                   const active = selected.has(cat);
                   const styles = CATEGORY_STYLES[cat as Category];
-                  // For FOOD/GROCERIES show subcategory description
+                  // Show subcategory description for categories with subcategories
                   let subDesc = "";
-                  if (cat !== "FUEL") {
+                  {
                     const selectedSubs = subcats[cat] ?? new Set();
                     const allowed = STOP_SUBCATEGORY_IDS[cat];
                     if (allowed) {
-                      const catSubDefs = SUBCATEGORIES[cat as RecommendableCategory].filter((s) => allowed.includes(s.id));
+                      const catSubDefs = cat === "FUEL"
+                        ? FUEL_SUBCATEGORIES.filter((s) => allowed.includes(s.id))
+                        : (SUBCATEGORIES[cat as RecommendableCategory]?.filter((s) => allowed.includes(s.id)) ?? []);
                       const allSelected = selectedSubs.size >= catSubDefs.length;
                       subDesc = allSelected
                         ? ""
@@ -1041,8 +827,8 @@ export function StopPlanningSection({
                 <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
               </div>
               <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                {accommodation
-                  ? `Centered on ${accommodation.name}`
+                {initialAccommodation
+                  ? `Centered on ${initialAccommodation.name}`
                   : "Centered on city center"}
                 {" · "}{radiusKm} km radius
               </p>
@@ -1070,12 +856,15 @@ export function StopPlanningSection({
 
                 {advancedOpen && (
                   <div className="mt-2 space-y-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
-                    {STOP_CATEGORIES.map((cat) => {
+                    {(["FOOD", "GROCERIES", "FUEL"] as const).map((cat) => {
                       const active = selected.has(cat);
                       if (!active) return null;
                       const styles = CATEGORY_STYLES[cat];
                       const allowedIds = STOP_SUBCATEGORY_IDS[cat];
-                      const catSubcats = SUBCATEGORIES[cat].filter((s) => allowedIds.includes(s.id));
+                      if (!allowedIds) return null;
+                      const catSubcats = cat === "FUEL"
+                        ? FUEL_SUBCATEGORIES.filter((s) => allowedIds.includes(s.id))
+                        : (SUBCATEGORIES[cat as RecommendableCategory]?.filter((s) => allowedIds.includes(s.id)) ?? []);
                       const selectedSubs = subcats[cat] ?? new Set();
 
                       return (
@@ -1453,10 +1242,12 @@ export function StopPlanningSection({
                             onOpenLightbox={(src, alt) => setLightbox({ src, alt })}
                             onEdit={(p) => setEditingPoi({
                               id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
-                              description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                              description: p.description, latitude: p.latitude, longitude: p.longitude,
+                              website: p.website, phoneNumber: p.phoneNumber,
                               openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
-                              fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
-                              estimatedDurationMinutes: p.estimatedDurationMinutes,
+                              fee: p.fee, address: p.address, notes: p.notes,
+                              cityName: cityName ?? null, country: country ?? null,
+                              visited: false, personalRating: null,
                               hasOriginalData: p.hasOriginalData,
                             })}
                           />

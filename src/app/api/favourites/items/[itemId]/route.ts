@@ -28,6 +28,10 @@ export async function PATCH(
   if (body.notes !== undefined) data.notes = body.notes || null;
   if (body.photoUrl !== undefined) data.photoUrl = body.photoUrl || null;
   if (body.website !== undefined) data.website = body.website || null;
+  if (body.phoneNumber !== undefined) data.phoneNumber = body.phoneNumber || null;
+  if (body.openingHours !== undefined) data.openingHours = body.openingHours || null;
+  if (body.priceLevel !== undefined) data.priceLevel = typeof body.priceLevel === "number" ? body.priceLevel : null;
+  if (body.fee !== undefined) data.fee = body.fee || null;
   if (typeof body.listId === "number") data.listId = body.listId;
   if (typeof body.visited === "boolean") data.visited = body.visited;
   if (body.personalRating !== undefined) {

@@ -28,52 +28,52 @@ export const CATEGORY_CATEGORIES: Record<RecommendableCategory, string> = {
 
 export const SUBCAT_CATEGORIES: Record<string, string> = {
   // CULTURE
-  museums:           "entertainment.museum",
+  museums:           "entertainment.museum,heritage",
   art:               "entertainment.culture.gallery",
-  historic:          "tourism.sights.castle,tourism.sights.fort,tourism.sights.ruines,tourism.sights.archaeological_site,tourism.sights.memorial",
+  historic:          "tourism.sights.castle,tourism.sights.fort,tourism.sights.ruines,tourism.sights.archaeological_site,tourism.sights.memorial,tourism.sights,tourism.attraction",
   architecture:      "tourism.sights.tower,building.historic,tourism.sights.bridge,tourism.sights.city_gate",
   religion:          "tourism.sights.place_of_worship,religion.place_of_worship,tourism.sights.monastery",
   theatre_cinema:    "entertainment.culture.theatre,entertainment.cinema",
   // FOOD
-  restaurant:        "catering.restaurant",
+  restaurant:        "catering.restaurant,catering",
   fine_dining:       "catering.restaurant",
   cafe:              "catering.cafe",
   fast_food:         "catering.fast_food",
-  bakery:            "commercial.food_and_drink.bakery,catering.cafe",
+  bakery:            "commercial.food_and_drink.bakery",
   ice_cream:         "catering.ice_cream,catering.cafe.ice_cream,commercial.food_and_drink.ice_cream",
   food_markets:      "commercial.marketplace,catering.food_court",
   wineries:          "craft.winery,tourism.winery",
   wine_shops:        "commercial.food_and_drink.wine",
   wine_bars:         "catering.wine_bar,catering.bar",
   // NATURE
-  parks:             "leisure.park,leisure.park.garden",
+  parks:             "leisure.park,leisure.park.garden,natural",
   beaches:           "beach",
   mountains:         "natural.mountain",
   lakes_rivers:      "natural.water,natural.water.lake,natural.water.river,natural.water.river_system",
   waterfalls:        "natural.water.whitewater,waterway.whitewater",
   reserves:          "leisure.park.nature_reserve,natural.protected_area,national_park",
   viewpoints:        "tourism.attraction.viewpoint",
-  scenic:            "tourism.attraction.viewpoint,natural.water,natural.water.whitewater,natural.mountain",
+  scenic:            "tourism.attraction.viewpoint,natural.water.whitewater",
   // ENTERTAINMENT
-  theme_parks:       "entertainment.theme_park,entertainment.activity_park",
+  theme_parks:       "entertainment.theme_park,entertainment.activity_park,entertainment",
   water_parks:       "entertainment.water_park",
   zoos:              "entertainment.zoo,entertainment.aquarium",
-  sport:             "sport.sports_centre,sport.stadium,sport.pitch,sport.swimming_pool,sport.track,sport.horse_riding,sport.dive_center,sport.ice_rink",
+  sport:             "sport.sports_centre,sport.stadium,sport.pitch,sport.swimming_pool,sport.track,sport.horse_riding,sport.dive_center,sport.ice_rink,sport",
   games:             "entertainment.activity_park,leisure.playground",
   // NIGHTLIFE
   bars:              "catering.bar,catering.pub,catering.biergarten",
-  clubs:             "adult.nightclub",
+  clubs:             "adult.nightclub,adult",
   live_music:        "entertainment.culture,catering.bar",
   comedy_shows:      "entertainment.culture.theatre",
   casino:            "adult.casino",
   // SHOPPING
-  shopping_malls:    "commercial.shopping_mall,commercial.department_store",
-  local_markets:     "commercial.market_place",
+  shopping_malls:    "commercial.shopping_mall,commercial.department_store,commercial",
+  local_markets:     "commercial.marketplace,commercial.market_place",
   boutiques:         "commercial.clothing",
   souvenirs:         "commercial.gift_and_souvenir",
   shopping_streets:  "commercial.shopping_mall,commercial.clothing",
   // GROCERIES
-  supermarket:       "commercial.supermarket",
+  supermarket:       "commercial.supermarket,commercial.food_and_drink",
   shop_bakery:       "commercial.food_and_drink.bakery",
   butcher:           "commercial.food_and_drink.butcher",
   fishmonger:        "commercial.food_and_drink.seafood",
@@ -337,11 +337,33 @@ export async function searchPlaces(
     OUTDOORS:   ["catering.", "commercial.food", "entertainment.museum"],
   };
 
-  const blockPrefixes = CROSS_FILTERS[category];
+  // For GROCERIES, block "catering." UNLESS the place also has a "commercial.food_and_drink" tag
+  // (bakeries, butchers, etc. are dual-tagged as both catering and commercial food shops)
+  const GROCERIES_CATERING_ALLOWLIST = ["commercial.food_and_drink"];
 
-  return (data.features ?? [])
-    .filter((f) => typeof f.properties.name === "string" && f.properties.name.trim() && f.geometry?.coordinates)
-    .filter((f) => !blockPrefixes || !hasCatPrefix(f, blockPrefixes))
+  /** Check if a feature should be blocked by the cross-contamination filter */
+  function isCrossFiltered(f: GeoFeature, cat: RecommendableCategory): boolean {
+    const blockPrefixes = CROSS_FILTERS[cat];
+    if (!blockPrefixes) return false;
+    if (!hasCatPrefix(f, blockPrefixes)) return false;
+    // GROCERIES exception: allow items that have both catering + commercial.food_and_drink tags
+    if (cat === "GROCERIES" && hasCatPrefix(f, GROCERIES_CATERING_ALLOWLIST)) return false;
+    return true;
+  }
+
+  const crossFilteredNames: string[] = [];
+
+  const allFeatures = (data.features ?? [])
+    .filter((f) => typeof f.properties.name === "string" && f.properties.name.trim() && f.geometry?.coordinates);
+
+  const result = allFeatures
+    .filter((f) => {
+      if (isCrossFiltered(f, category)) {
+        crossFilteredNames.push(f.properties.name ?? "?");
+        return false;
+      }
+      return true;
+    })
     .reduce<GeoFeature[]>((acc, f) => {
       // Deduplicate by place_id and by name (case-insensitive)
       const id = f.properties.place_id;
@@ -385,6 +407,14 @@ export async function searchPlaces(
         hasInternationalName: p.name_international != null && Object.keys(p.name_international).length > 0,
       };
     });
+
+  // Diagnostic logging
+  console.log(
+    `[geoapify] cat=${category} raw=${allFeatures.length} crossFiltered=${crossFilteredNames.length} returned=${result.length}` +
+    (crossFilteredNames.length > 0 ? ` dropped=[${crossFilteredNames.slice(0, 10).join(", ")}]` : ""),
+  );
+
+  return result;
 }
 
 // ─── Adaptive radius ──────────────────────────────────────────────────────────

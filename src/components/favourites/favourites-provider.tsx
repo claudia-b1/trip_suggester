@@ -26,6 +26,10 @@ export type FavouriteItemDTO = {
   notes: string | null;
   photoUrl: string | null;
   website: string | null;
+  phoneNumber: string | null;
+  openingHours: string | null;
+  priceLevel: number | null;
+  fee: string | null;
   sourcePlaceId: string | null;
   visited: boolean;
   personalRating: number | null;

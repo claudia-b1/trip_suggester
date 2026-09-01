@@ -93,6 +93,8 @@ model Poi {
   scoreBreakdown           String?       // JSON: {rating,proximity,notability,categoryMatch,hiddenGem,unesco,photo,preferences,total}
   userRatingCount          Int?
   subcategory              String?
+  address                  String?       // reverse-geocoded from lat/lng
+  notes                    String?       // user notes
   originalData             String?       // JSON snapshot of discovered values, saved on first user edit
   favouriteItemId          Int?          // link to source FavouriteItem for auto-sync
   cityId                   Int
@@ -237,6 +239,10 @@ model FavouriteItem {
   notes          String?
   photoUrl       String?
   website        String?
+  phoneNumber    String?
+  openingHours   String?
+  priceLevel     Int?           // 0 free – 4 expensive
+  fee            String?        // e.g. "5 EUR"
   sourcePlaceId  String?        // dedup link to Google placeId
   visited        Boolean        @default(false)
   personalRating Int?           // 1-5 personal star rating

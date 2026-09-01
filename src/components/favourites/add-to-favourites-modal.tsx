@@ -11,7 +11,7 @@ import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 import { ACCOMMODATION_SUBCATEGORIES, getExtraFieldDefs, PROXIMITY_OPTIONS, type ExtraFieldDef } from "@/lib/favourite-fields";
 import { useFavourites, type FavouriteItemDTO } from "./favourites-provider";
 import { useToast } from "@/components/ui/toast";
-import { resizeImageFile } from "@/lib/resize-image";
+import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
 
 /* ── Subcategory lookup helper ─────────────────────────────────────────── */
 
@@ -414,6 +414,10 @@ export function AddToFavouritesModal() {
   const [longitude, setLongitude] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [website, setWebsite] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [openingHours, setOpeningHours] = useState("");
+  const [priceLevel, setPriceLevel] = useState<number | null>(null);
+  const [fee, setFee] = useState("");
   const [photoUrl, setPhotoUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [extraFields, setExtraFields] = useState<Record<string, unknown>>({});
@@ -486,6 +490,10 @@ export function AddToFavouritesModal() {
       setLocMode(editModalItem.address ? "address" : "coords");
       setDescription(editModalItem.description ?? "");
       setWebsite(editModalItem.website ?? "");
+      setPhoneNumber(editModalItem.phoneNumber ?? "");
+      setOpeningHours(editModalItem.openingHours ?? "");
+      setPriceLevel(editModalItem.priceLevel ?? null);
+      setFee(editModalItem.fee ?? "");
       setPhotoUrl(editModalItem.photoUrl ?? "");
       setNotes(editModalItem.notes ?? "");
       setExtraFields((editModalItem.extraFields as Record<string, unknown>) ?? {});
@@ -509,6 +517,10 @@ export function AddToFavouritesModal() {
       setLocMode(addModalPrefill.latitude != null ? "coords" : "address");
       setDescription(addModalPrefill.description ?? "");
       setWebsite(addModalPrefill.website ?? "");
+      setPhoneNumber("");
+      setOpeningHours("");
+      setPriceLevel(null);
+      setFee("");
       setPhotoUrl(addModalPrefill.photoUrl ?? "");
       setNotes("");
       setExtraFields(addModalPrefill.extraFields ?? {});
@@ -847,6 +859,10 @@ export function AddToFavouritesModal() {
         description: description || null,
         notes: notes || null,
         website: website || null,
+        phoneNumber: phoneNumber || null,
+        openingHours: openingHours || null,
+        priceLevel: priceLevel,
+        fee: fee || null,
         photoUrl: photoUrl.trim() || null,
         extraFields: cleanExtraFields(extraFields),
         listId: targetListId,
@@ -911,13 +927,22 @@ export function AddToFavouritesModal() {
     }
   }
 
+  async function handlePaste(e: React.ClipboardEvent) {
+    const dataUri = await getImageFromClipboard(e, 600);
+    if (dataUri) {
+      e.preventDefault();
+      setPhotoUrl(dataUri);
+      toast("Image pasted");
+    }
+  }
+
   const inputCls = "w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/50" onClick={handleClose} />
 
-      <div className="relative z-10 mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl">
+      <div className="relative z-10 mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl" onPaste={handlePaste}>
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-[hsl(var(--foreground))]">
             {isEditMode ? "✏️ Edit Favourite" : "❤️ Add to Favourites"}
@@ -1100,12 +1125,51 @@ export function AddToFavouritesModal() {
             )}
           </div>
 
-          {/* Website */}
+          {/* Website + Phone row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
+                Website <span className="text-[hsl(var(--muted-foreground))]">(opt)</span>
+              </label>
+              <input type="text" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
+                Phone <span className="text-[hsl(var(--muted-foreground))]">(opt)</span>
+              </label>
+              <input type="text" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+
+          {/* Opening hours */}
           <div>
             <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
-              Website <span className="text-[hsl(var(--muted-foreground))]">(optional)</span>
+              Opening hours <span className="text-[hsl(var(--muted-foreground))]">(optional)</span>
             </label>
-            <input type="text" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." className={inputCls} />
+            <input type="text" value={openingHours} onChange={(e) => setOpeningHours(e.target.value)} placeholder="Mon-Fri 9:00-18:00" className={inputCls} />
+          </div>
+
+          {/* Price level + Fee row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
+                Price <span className="text-[hsl(var(--muted-foreground))]">(opt)</span>
+              </label>
+              <select value={priceLevel ?? ""} onChange={(e) => setPriceLevel(e.target.value ? Number(e.target.value) : null)} className={inputCls}>
+                <option value="">—</option>
+                <option value="0">Free</option>
+                <option value="1">$</option>
+                <option value="2">$$</option>
+                <option value="3">$$$</option>
+                <option value="4">$$$$</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">
+                Fee <span className="text-[hsl(var(--muted-foreground))]">(opt)</span>
+              </label>
+              <input type="text" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="e.g. 5 EUR" className={inputCls} />
+            </div>
           </div>
 
           {/* Image upload */}
@@ -1128,6 +1192,7 @@ export function AddToFavouritesModal() {
                   }}
                 />
               </label>
+              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste</span>
               {photoUrl && (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}

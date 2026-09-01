@@ -32,6 +32,7 @@ export async function PATCH(
   if (typeof body.order === "number") data.order = body.order;
   if ("nickname" in body) data.nickname = body.nickname === "" ? null : (body.nickname ?? null);
   if (body.type === "destination" || body.type === "stop") data.type = body.type;
+  if (typeof body.discoverRadiusKm === "number") data.discoverRadiusKm = body.discoverRadiusKm;
 
   // Handle parentCityId changes (convert to sub-destination or detach)
   if ("parentCityId" in body) {

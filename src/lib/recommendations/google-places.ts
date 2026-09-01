@@ -129,20 +129,16 @@ export async function fetchGoogleMeta(
   lon: number,
   tourism?: string,
   streetName?: string,
+  /** Full formatted address from Geoapify (e.g. "Edeka Klein, Himberger Straße 35, 53604 Bad Honnef") */
+  address?: string,
 ): Promise<GoogleMeta | null> {
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return null;
 
-  try {
-    // Build query: name + tourism type + street + city
-    // tourism values like "yes" / "attraction" are too generic — skip them
-    const SKIP_TOURISM = new Set(["yes", "attraction", "no"]);
-    const queryParts = [name];
-    if (tourism && !SKIP_TOURISM.has(tourism)) queryParts.push(tourism);
-    if (streetName) queryParts.push(streetName);
-    queryParts.push(cityName);
+  /** Run a single Google Places Text Search and parse the result */
+  async function doSearch(textQuery: string): Promise<GoogleMeta | null> {
     const body = {
-      textQuery: queryParts.join(" "),
+      textQuery,
       locationBias: {
         circle: {
           center: { latitude: lat, longitude: lon },
@@ -156,7 +152,7 @@ export async function fetchGoogleMeta(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
+        "X-Goog-Api-Key": apiKey!,
         "X-Goog-FieldMask": FIELD_MASK,
       },
       body: JSON.stringify(body),
@@ -181,6 +177,57 @@ export async function fetchGoogleMeta(
       latitude:        place.location?.latitude,
       longitude:       place.location?.longitude,
     };
+  }
+
+  /** Haversine distance in metres between two coordinates */
+  function distanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  try {
+    // Build query: name + tourism type + street + city
+    // tourism values like "yes" / "attraction" are too generic — skip them
+    const SKIP_TOURISM = new Set(["yes", "attraction", "no"]);
+    const queryParts = [name];
+    if (tourism && !SKIP_TOURISM.has(tourism)) queryParts.push(tourism);
+    if (streetName) queryParts.push(streetName);
+    queryParts.push(cityName);
+
+    const meta = await doSearch(queryParts.join(" "));
+
+    // If we got a result with a big coord mismatch (>500m), try an address-based
+    // query as fallback. This helps chain stores (e.g. "Edeka Klein") where
+    // Google may return a different branch than the one at our exact coordinates.
+    if (address && meta) {
+      const dist = meta.latitude != null && meta.longitude != null
+        ? distanceM(lat, lon, meta.latitude, meta.longitude)
+        : Infinity;
+      if (dist > 500) {
+        console.log(`[google-meta] coord mismatch for "${name}" (${Math.round(dist)}m), retrying with address`);
+        const addrMeta = await doSearch(address);
+        if (addrMeta?.latitude != null && addrMeta?.longitude != null) {
+          const addrDist = distanceM(lat, lon, addrMeta.latitude, addrMeta.longitude);
+          if (addrDist < dist) {
+            console.log(`[google-meta] address retry for "${name}": ${Math.round(addrDist)}m (was ${Math.round(dist)}m) — using address result`);
+            return addrMeta;
+          }
+        }
+      }
+    }
+
+    // If first query returned null, try address as fallback
+    if (!meta && address) {
+      console.log(`[google-meta] no result for "${name}", retrying with address`);
+      return await doSearch(address);
+    }
+
+    return meta;
   } catch {
     return null;
   }

@@ -46,6 +46,8 @@ export type PoiDTO = {
   userRatingCount: number | null;
   subcategory: string | null;
   favouriteItemId: number | null;
+  address: string | null;
+  notes: string | null;
   hasOriginalData?: boolean;
 };
 
@@ -64,7 +66,7 @@ function poiPhotoSrc(poi: { id: number; photoUrl: string | null }): string | nul
   return `/api/pois/${poi.id}/photo`;
 }
 
-import { resizeImageFile } from "@/lib/resize-image";
+import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
 
 function formatReviewCount(n: number): string {
   if (n >= 10000) return `${Math.round(n / 1000)}K`;
@@ -381,7 +383,6 @@ function PoiCard({
   onEdit: (poi: PoiDTO) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [tipsOpen, setTipsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [hoverStar, setHoverStar] = useState<number | null>(null);
@@ -622,36 +623,17 @@ function PoiCard({
           </div>
         )}
 
-        {/* Tips + Details toggle buttons */}
-        {(poi.tips || hasDetails) && (
+        {/* Details toggle button */}
+        {hasDetails && (
           <div className="mb-1.5 flex flex-wrap items-center gap-3">
-            {poi.tips && (
-              <button
-                type="button"
-                onClick={() => setTipsOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline"
-              >
-                <span className={`text-[9px] transition-transform ${tipsOpen ? "rotate-90" : ""}`}>▶</span>
-                💡 Tip
-              </button>
-            )}
-            {hasDetails && (
-              <button
-                type="button"
-                onClick={() => setDetailsOpen((v) => !v)}
-                className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
-              >
-                <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
-                ℹ Details
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Expanded tip */}
-        {tipsOpen && poi.tips && (
-          <div className="mb-2 border-l-2 border-amber-400 pl-2.5 py-1 text-xs text-amber-800">
-            💡 {poi.tips}
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((v) => !v)}
+              className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
+            >
+              <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
+              ℹ Details
+            </button>
           </div>
         )}
 
@@ -758,7 +740,6 @@ function CompactPoiCard({
   onEdit: (poi: PoiDTO) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [tipsOpen, setTipsOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
@@ -926,35 +907,17 @@ function CompactPoiCard({
             <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.description}</p>
           )}
 
-          {/* Tips + Details toggle buttons */}
-          {(poi.tips || hasDetails) && (
+          {/* Details toggle button */}
+          {hasDetails && (
             <div className="flex flex-wrap items-center gap-3">
-              {poi.tips && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setTipsOpen((v) => !v); }}
-                  className="flex items-center gap-1 text-xs font-medium text-amber-700 hover:underline"
-                >
-                  <span className={`text-[9px] transition-transform ${tipsOpen ? "rotate-90" : ""}`}>▶</span>
-                  💡 Tip
-                </button>
-              )}
-              {hasDetails && (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
-                  className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
-                >
-                  <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
-                  ℹ Details
-                </button>
-              )}
-            </div>
-          )}
-
-          {tipsOpen && poi.tips && (
-            <div className="border-l-2 border-amber-400 pl-2.5 py-1 text-xs text-amber-800">
-              💡 {poi.tips}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
+                className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
+              >
+                <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
+                ℹ Details
+              </button>
             </div>
           )}
 
@@ -1257,12 +1220,12 @@ export function PoisSection({
     const el = document.querySelector(`[data-poi-id="${focusPoiId}"]`) as HTMLElement | null;
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "center" });
-    // Add highlight ring
-    el.classList.add("ring-2", "ring-[hsl(var(--primary))]", "ring-offset-2");
+    // Add highlight pulse animation
+    el.classList.add("poi-focus-highlight");
     const timer = setTimeout(() => {
-      el.classList.remove("ring-2", "ring-[hsl(var(--primary))]", "ring-offset-2");
+      el.classList.remove("poi-focus-highlight");
       setFocusPoiId(null);
-    }, 3000);
+    }, 3200);
     return () => clearTimeout(timer);
   }, [view, focusPoiId]);
 
@@ -2127,10 +2090,13 @@ export function PoisSection({
                     onUploadPhoto={onUploadPhoto}
                     onEdit={(p) => setEditingPoi({
                       id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
-                      description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                      description: p.description, latitude: p.latitude, longitude: p.longitude,
+                      website: p.website, phoneNumber: p.phoneNumber,
                       openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
-                      fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
-                      estimatedDurationMinutes: p.estimatedDurationMinutes,
+                      fee: p.fee, address: p.address, notes: p.notes,
+                      cityName: cityName ?? null, country: country ?? null,
+                      visited: visitedIds.has(p.id),
+                      personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
                     })}
                   />
@@ -2160,10 +2126,13 @@ export function PoisSection({
                     onUploadPhoto={onUploadPhoto}
                     onEdit={(p) => setEditingPoi({
                       id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
-                      description: p.description, website: p.website, phoneNumber: p.phoneNumber,
+                      description: p.description, latitude: p.latitude, longitude: p.longitude,
+                      website: p.website, phoneNumber: p.phoneNumber,
                       openingHours: p.openingHours, photoUrl: p.photoUrl, priceLevel: p.priceLevel,
-                      fee: p.fee, tips: p.tips, bestTimeToVisit: p.bestTimeToVisit,
-                      estimatedDurationMinutes: p.estimatedDurationMinutes,
+                      fee: p.fee, address: p.address, notes: p.notes,
+                      cityName: cityName ?? null, country: country ?? null,
+                      visited: visitedIds.has(p.id),
+                      personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
                     })}
                   />
@@ -2177,7 +2146,7 @@ export function PoisSection({
         {addOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/50" onClick={() => { setName(""); setCategory("CULTURE"); setAddSubcategory(""); setDescription(""); setAddPhotoUrl(""); setAddWebsite(""); setAddLat(""); setAddLng(""); setCoordsInput(""); setMapboxQuery(""); setMapboxSuggestions([]); setError(null); setAddOpen(false); }} />
-            <div className="relative z-10 mx-4 w-full max-w-lg rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl">
+            <div className="relative z-10 mx-4 w-full max-w-lg rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-2xl" onPaste={async (e) => { const dataUri = await getImageFromClipboard(e, 600); if (dataUri) { e.preventDefault(); setAddPhotoUrl(dataUri); toast("Image pasted"); } }}>
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-lg font-semibold text-[hsl(var(--foreground))]">Add POI</h3>
                 <button
@@ -2311,6 +2280,7 @@ export function PoisSection({
                           setAddPhotoUrl(dataUri);
                         }}
                       />
+                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste</span>
                       {addPhotoUrl && (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}

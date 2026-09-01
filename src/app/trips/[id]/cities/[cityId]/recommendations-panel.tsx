@@ -53,6 +53,7 @@ type PreferenceId = (typeof PREFERENCES)[number]["id"];
 type Failure = { category: RecommendableCategory; error: string };
 
 export function RecommendationsPanel({
+  tripId,
   cityId,
   poisCount,
   radiusKm,
@@ -63,6 +64,7 @@ export function RecommendationsPanel({
   onNearbyRadiusChange,
   onNearbyRan,
 }: {
+  tripId: number;
   cityId: number;
   poisCount: number;
   radiusKm: number;
@@ -209,6 +211,12 @@ export function RecommendationsPanel({
     const body: { created: number; failures: Failure[] } = await res.json();
     setResult(body);
     if (nearbyEnabled) onNearbyRan?.(nearbyRadiusKm);
+    // Persist the discover radius to the database (best-effort)
+    fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discoverRadiusKm: radiusKm }),
+    }).catch(() => {/* best-effort */});
     toast(
       `Added ${body.created} POI${body.created === 1 ? "" : "s"}${
         body.failures.length > 0 ? ` · ${body.failures.length} failed` : ""

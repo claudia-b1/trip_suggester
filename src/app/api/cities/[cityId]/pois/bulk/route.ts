@@ -22,7 +22,10 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Delete all POIs for this city (cascade deletes day activities)
-  const result = await prisma.poi.deleteMany({ where: { cityId: cityIdNum } });
+  // Delete all non-favourite POIs for this city (cascade deletes day activities)
+  // Favourite-linked POIs are preserved — they'll be re-synced on next page load
+  const result = await prisma.poi.deleteMany({
+    where: { cityId: cityIdNum, favouriteItemId: null },
+  });
   return NextResponse.json({ deleted: result.count });
 }
