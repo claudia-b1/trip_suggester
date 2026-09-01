@@ -132,12 +132,15 @@ export async function syncFavouritesToCity(
   radiusKm: number | null,
   userId: number,
 ): Promise<number> {
-  const radius = radiusKm ?? DEFAULT_RADIUS_KM;
+  // Use at least DEFAULT_RADIUS_KM for favourite matching — a tight discover
+  // radius (e.g. 3 km for a travel stop) shouldn't prevent nearby favourites from syncing
+  const radius = Math.max(radiusKm ?? DEFAULT_RADIUS_KM, DEFAULT_RADIUS_KM);
 
   // Find favourites for this user — filter by country when available, otherwise check all
+  const hasCountry = country != null && country.trim() !== "";
   const favourites = await prisma.favouriteItem.findMany({
     where: {
-      ...(country ? { country: { equals: country, mode: "insensitive" } } : {}),
+      ...(hasCountry ? { country: { equals: country!, mode: "insensitive" } } : {}),
       list: { userId },
     },
     select: {

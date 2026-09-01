@@ -45,6 +45,7 @@ function deriveNearbyRadius(
 }
 
 export function CityPlanningSection({
+  tripId,
   cityId,
   pois,
   dayPlans,
@@ -60,6 +61,7 @@ export function CityPlanningSection({
   subcityDayPlans,
   initialRadiusKm,
 }: {
+  tripId: number;
   cityId: number;
   pois: PoiDTO[];
   dayPlans: DayPlanDTO[];
@@ -93,6 +95,7 @@ export function CityPlanningSection({
     <>
       <div id="discover-section">
         <RecommendationsPanel
+          tripId={tripId}
           cityId={cityId}
           poisCount={pois.length}
           radiusKm={radiusKm}

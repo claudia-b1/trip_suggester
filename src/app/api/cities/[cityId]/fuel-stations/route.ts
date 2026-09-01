@@ -87,6 +87,8 @@ export async function POST(
   url.searchParams.set("lang", "en");
   url.searchParams.set("apiKey", apiKey);
 
+  console.log(`[fuel-stations] searching at ${lat},${lon} radius=${radiusM}m`);
+
   let features: GeoFeature[] = [];
   try {
     const res = await fetch(url.toString());
@@ -99,17 +101,34 @@ export async function POST(
     return NextResponse.json({ error: "Geoapify request failed" }, { status: 502 });
   }
 
+  console.log(`[fuel-stations] Geoapify returned ${features.length} features: [${features.slice(0, 10).map((f) => f.properties.name ?? "?").join(", ")}]`);
+
   // Filter valid features with names
   const valid = features.filter(
     (f) => f.properties.name?.trim() && f.geometry?.coordinates,
   );
 
-  // Deduplicate by name (case-insensitive)
-  const seen = new Set<string>();
+  // Deduplicate by name + location — same name is allowed if stations are >200m apart
+  // (e.g. two different "Aral" stations: one in town, one Autohof on the highway)
+  const seenStations: Array<{ name: string; lat: number; lon: number }> = [];
   const deduped = valid.filter((f) => {
-    const key = f.properties.name!.toLowerCase().trim();
-    if (seen.has(key)) return false;
-    seen.add(key);
+    const name = f.properties.name!.toLowerCase().trim();
+    const [fLon, fLat] = f.geometry.coordinates;
+    const lat = f.properties.lat ?? fLat;
+    const lon = f.properties.lon ?? fLon;
+    const isDupe = seenStations.some((s) => {
+      if (s.name !== name) return false;
+      // Haversine distance check — treat as duplicate only if <200m
+      const R = 6371000;
+      const dLat = ((lat - s.lat) * Math.PI) / 180;
+      const dLon = ((lon - s.lon) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((s.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) < 100;
+    });
+    if (isDupe) return false;
+    seenStations.push({ name, lat, lon });
     return true;
   });
 
@@ -121,19 +140,39 @@ export async function POST(
   // Check existing FUEL POIs for deduplication
   const existingFuel = await prisma.poi.findMany({
     where: { cityId: cityIdNum, category: "FUEL" },
-    select: { placeId: true, name: true },
+    select: { placeId: true, name: true, latitude: true, longitude: true },
   });
   const existingPlaceIds = new Set(existingFuel.map((p) => p.placeId).filter(Boolean));
-  const existingNames = new Set(existingFuel.map((p) => p.name.toLowerCase().trim()));
 
-  // Create POI records
+  // Create POI records — dedup against existing by placeId or name+proximity
   const toCreate = deduped.filter((f) => {
     const id = f.properties.place_id;
-    const name = f.properties.name!.toLowerCase().trim();
     if (id && existingPlaceIds.has(id)) return false;
-    if (existingNames.has(name)) return false;
-    return true;
+    const name = f.properties.name!.toLowerCase().trim();
+    const [fLon, fLat] = f.geometry.coordinates;
+    const newLat = f.properties.lat ?? fLat;
+    const newLon = f.properties.lon ?? fLon;
+    // Same name + within 200m = duplicate
+    const nameMatch = existingFuel.some((p) => {
+      if (p.name.toLowerCase().trim() !== name) return false;
+      if (p.latitude == null || p.longitude == null) return true; // same name, no coords → assume dupe
+      const R = 6371000;
+      const dLat = ((newLat - p.latitude) * Math.PI) / 180;
+      const dLon = ((newLon - p.longitude) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos((p.latitude * Math.PI) / 180) * Math.cos((newLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) < 100;
+    });
+    return !nameMatch;
   });
+
+  // Count names to detect duplicates that need disambiguation
+  const nameCounts = new Map<string, number>();
+  for (const f of toCreate) {
+    const n = (f.properties.name || "").toLowerCase().trim();
+    nameCounts.set(n, (nameCounts.get(n) ?? 0) + 1);
+  }
 
   if (toCreate.length > 0) {
     await prisma.poi.createMany({
@@ -142,10 +181,29 @@ export async function POST(
         const raw = p.datasource?.raw;
         const [fLon, fLat] = f.geometry.coordinates;
         // Use brand name if no name, or combine brand + name
-        const name = p.name || raw?.brand || "Gas Station";
+        let name = p.name || raw?.brand || "Gas Station";
+        // Disambiguate same-name stations by appending street from formatted address
+        const nameKey = name.toLowerCase().trim();
+        if ((nameCounts.get(nameKey) ?? 0) > 1 || existingFuel.some((e) => e.name.toLowerCase().trim() === nameKey)) {
+          // Extract street from formatted address: "Aral, Rottbitzer Straße, 53604 Bad Honnef, Germany"
+          // → "Rottbitzer Straße"
+          const parts = (p.formatted ?? "").split(",").map((s) => s.trim());
+          // Skip first part (POI name) and last parts (postal code + city, country)
+          const street = parts.length > 2 ? parts[1] : p.city || "";
+          if (street) name = `${name} (${street})`;
+        }
+        // Determine subcategory from Geoapify categories
+        const cats = p.categories ?? [];
+        let subcategory = "gas_station";
+        if (cats.some((c) => c.includes("charging") || c.includes("electric"))) {
+          subcategory = "ev_charging";
+        } else if (cats.some((c) => c.includes("lpg"))) {
+          subcategory = "lpg";
+        }
         return {
           name,
           category: "FUEL",
+          subcategory,
           description: p.formatted ?? p.address_line1 ?? null,
           latitude: p.lat ?? fLat,
           longitude: p.lon ?? fLon,
@@ -158,6 +216,8 @@ export async function POST(
       }),
     });
   }
+
+  console.log(`[fuel-stations] valid=${valid.length} deduped=${deduped.length} existing=${existingFuel.length} toCreate=${toCreate.length}`);
 
   return NextResponse.json({ created: toCreate.length }, { status: 201 });
 }

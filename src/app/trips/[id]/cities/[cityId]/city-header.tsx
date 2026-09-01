@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { EditCityButton } from "./edit-city-button";
+import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 function countryCodeToFlag(code: string): string {
   return [...code.toUpperCase()]
@@ -80,6 +81,15 @@ export type CityHeaderProps = {
   /** Whether this is a travel stop (simplified page — no auto-plan) */
   isStop?: boolean;
   accommodations?: { name: string; address?: string }[];
+  /** Stop-only: interactive accommodation picker data */
+  stopAccommodation?: {
+    initial: { id: number; name: string; latitude: number; longitude: number; address?: string } | null;
+    favourites: FavouriteItemDTO[];
+    cityLat: number | null;
+    cityLon: number | null;
+    pois: { id: number; category: string }[];
+    dayPlanIds: number[];
+  };
 };
 
 export function CityHeader({
@@ -105,10 +115,159 @@ export function CityHeader({
   editProps,
   isStop,
   accommodations,
+  stopAccommodation,
 }: CityHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [autoPlanLoading, setAutoPlanLoading] = useState(false);
+
+  // ── Stop accommodation picker state ──
+  const [accom, setAccom] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
+    stopAccommodation?.initial ?? null,
+  );
+  const [accomOpen, setAccomOpen] = useState(false);
+  const [accomQuery, setAccomQuery] = useState("");
+  const [accomResults, setAccomResults] = useState<Array<{ id: string; place_name: string; text: string; center: [number, number] }>>([]);
+  const [accomResultsOpen, setAccomResultsOpen] = useState(false);
+  const [settingAccom, setSettingAccom] = useState(false);
+  const accomDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync with server data on refresh
+  useEffect(() => {
+    setAccom(stopAccommodation?.initial ?? null);
+  }, [stopAccommodation?.initial?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Backfill address via reverse geocode
+  useEffect(() => {
+    if (!accom || accom.address) return;
+    const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch(
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${accom.longitude},${accom.latitude}.json?types=poi,address&limit=1&access_token=${token}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json() as { features?: Array<{ place_name: string }> };
+        const address = data.features?.[0]?.place_name;
+        if (address) {
+          setAccom((prev) => prev ? { ...prev, address } : prev);
+          fetch(`/api/pois/${accom.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ description: address }),
+          });
+        }
+      } catch { /* best-effort */ }
+    })();
+  }, [accom?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const accomFavourites = useMemo(() => {
+    if (!stopAccommodation) return [];
+    return stopAccommodation.favourites.filter(
+      (f) => f.category === "ACCOMMODATION" && f.latitude != null && f.longitude != null,
+    );
+  }, [stopAccommodation?.favourites]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleAccomSearch(query: string) {
+    setAccomQuery(query);
+    if (accomDebounce.current) clearTimeout(accomDebounce.current);
+    if (query.trim().length < 2) {
+      setAccomResults([]);
+      setAccomResultsOpen(false);
+      return;
+    }
+    accomDebounce.current = setTimeout(async () => {
+      try {
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        if (!token) return;
+        const lat = stopAccommodation?.cityLat;
+        const lon = stopAccommodation?.cityLon;
+        const proximity = lat != null && lon != null ? `&proximity=${lon},${lat}` : "";
+        const url =
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query.trim())}.json` +
+          `?types=poi,address,place&limit=5${proximity}&access_token=${token}`;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json() as { features?: Array<{ id: string; place_name: string; text: string; center: [number, number] }> };
+        const features = data.features ?? [];
+        setAccomResults(features);
+        setAccomResultsOpen(features.length > 0);
+      } catch { /* ignore */ }
+    }, 300);
+  }
+
+  async function setAccomFromCoords(name: string, lat: number, lon: number, address?: string) {
+    if (!stopAccommodation) return;
+    setSettingAccom(true);
+    try {
+      // Delete ALL existing ACCOMMODATION POIs for this city
+      const existingAccoms = stopAccommodation.pois.filter((p) => p.category === "ACCOMMODATION");
+      await Promise.all(
+        existingAccoms.map((p) => fetch(`/api/pois/${p.id}`, { method: "DELETE" })),
+      );
+      // Create new ACCOMMODATION POI
+      const res = await fetch(`/api/cities/${cityId}/pois`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          category: "ACCOMMODATION",
+          latitude: lat,
+          longitude: lon,
+          ...(address && { description: address }),
+        }),
+      });
+      if (res.ok) {
+        const poi = await res.json();
+        setAccom({ id: poi.id, name, latitude: lat, longitude: lon, address });
+
+        // Auto-assign to evening slot of all days except last
+        const dpIds = stopAccommodation.dayPlanIds;
+        if (dpIds.length > 1) {
+          for (const dpId of dpIds.slice(0, -1)) {
+            await fetch(`/api/cities/${cityId}/day-plans`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ dayPlanId: dpId, poiId: poi.id, timeSlot: "EVENING" }),
+            });
+          }
+        } else if (dpIds.length === 1) {
+          await fetch(`/api/cities/${cityId}/day-plans`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dayPlanId: dpIds[0], poiId: poi.id, timeSlot: "EVENING" }),
+          });
+        }
+
+        toast(`Accommodation set: ${name}`);
+        router.refresh();
+      }
+    } catch {
+      toast("Failed to set accommodation", { variant: "error" });
+    } finally {
+      setSettingAccom(false);
+      setAccomOpen(false);
+      setAccomQuery("");
+      setAccomResults([]);
+      setAccomResultsOpen(false);
+    }
+  }
+
+  async function clearAccom() {
+    if (!accom) return;
+    setSettingAccom(true);
+    try {
+      await fetch(`/api/pois/${accom.id}`, { method: "DELETE" });
+      setAccom(null);
+      toast("Accommodation removed");
+      router.refresh();
+    } catch {
+      toast("Failed to remove accommodation", { variant: "error" });
+    } finally {
+      setSettingAccom(false);
+    }
+  }
 
   const msPerDay = 86_400_000;
   const nights = Math.round(
@@ -231,8 +390,117 @@ export function CityHeader({
         )}
       </div>
 
-      {/* Accommodation addresses */}
-      {accommodations && accommodations.length > 0 && (
+      {/* Accommodation — interactive picker for stops, static list for destinations */}
+      {isStop && stopAccommodation ? (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="shrink-0">🏠</span>
+            {accom ? (
+              <>
+                <p className="text-xs min-w-0 truncate">
+                  <span className="font-medium">{accom.name}</span>
+                  {accom.address && accom.address !== accom.name && (
+                    <span className="text-[hsl(var(--muted-foreground))] ml-1.5">{accom.address}</span>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setAccomOpen((v) => !v)}
+                  className="text-[11px] text-[hsl(var(--primary))] hover:underline shrink-0"
+                >
+                  Change
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAccom}
+                  disabled={settingAccom}
+                  className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0 disabled:opacity-50"
+                >
+                  ✕
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAccomOpen((v) => !v)}
+                className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+              >
+                {accomOpen ? "Cancel" : "Select accommodation"}
+              </button>
+            )}
+          </div>
+
+          {/* Picker dropdown */}
+          {accomOpen && (
+            <div className="ml-6 space-y-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-2.5">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Search by name or address</p>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={accomQuery}
+                    onChange={(e) => handleAccomSearch(e.target.value)}
+                    onFocus={() => accomResults.length > 0 && setAccomResultsOpen(true)}
+                    onBlur={() => setTimeout(() => setAccomResultsOpen(false), 200)}
+                    placeholder="e.g. Hotel Amara, Airbnb Bonn..."
+                    autoComplete="off"
+                    className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-xs text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))]"
+                  />
+                  {accomResultsOpen && accomResults.length > 0 && (
+                    <ul className="absolute z-50 mt-1 w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden max-h-40 overflow-y-auto">
+                      {accomResults.map((f) => (
+                        <li key={f.id}>
+                          <button
+                            type="button"
+                            className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-[hsl(var(--muted))] transition-colors"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              const [lon, lat] = f.center;
+                              setAccomFromCoords(f.text, lat, lon, f.place_name);
+                            }}
+                          >
+                            <span className="font-medium">{f.text}</span>
+                            <br />
+                            <span className="text-[10px] text-[hsl(var(--muted-foreground))] line-clamp-1">{f.place_name}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+
+              {accomFavourites.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
+                  <div className="max-h-32 overflow-y-auto space-y-0.5">
+                    {accomFavourites.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        disabled={settingAccom}
+                        onClick={() => setAccomFromCoords(f.name, f.latitude, f.longitude, f.address ?? undefined)}
+                        className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+                      >
+                        <span className="text-xs shrink-0">🏠</span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate">{f.name}</p>
+                          {f.city && (
+                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{f.city}</p>
+                          )}
+                        </div>
+                        {f.list?.name && (
+                          <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">{f.list.name}</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      ) : accommodations && accommodations.length > 0 ? (
         <div className="flex items-start gap-2 text-sm">
           <span className="shrink-0 mt-0.5">🏠</span>
           <div className="flex flex-col gap-0.5 min-w-0">
@@ -246,7 +514,7 @@ export function CityHeader({
             ))}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Row 3: POI stats + planning progress */}
       {!isStop && (hasCategories || totalPois > 0) && (

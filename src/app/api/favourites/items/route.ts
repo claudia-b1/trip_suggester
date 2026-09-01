@@ -43,7 +43,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid body" }, { status: 400 });
   }
 
-  const { name, category, subcategory, country, city, address, latitude, longitude, description, notes, photoUrl, website, sourcePlaceId, listId, extraFields } = body;
+  const { name, category, subcategory, country, city, address, latitude, longitude, description, notes, photoUrl, website, phoneNumber, openingHours, priceLevel, fee, sourcePlaceId, listId, extraFields } = body;
 
   // Validate required fields
   if (typeof name !== "string" || !name.trim()) {
@@ -85,6 +85,10 @@ export async function POST(req: Request) {
       notes: notes || null,
       photoUrl: photoUrl || null,
       website: website || null,
+      phoneNumber: phoneNumber || null,
+      openingHours: openingHours || null,
+      priceLevel: typeof priceLevel === "number" ? priceLevel : null,
+      fee: fee || null,
       sourcePlaceId: sourcePlaceId || null,
       extraFields: extraFields && typeof extraFields === "object" ? extraFields : undefined,
       listId,

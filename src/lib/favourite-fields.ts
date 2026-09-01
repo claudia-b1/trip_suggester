@@ -34,6 +34,14 @@ export const ACCOMMODATION_SUBCATEGORIES: FavouriteSubcategoryDef[] = [
   { id: "cabin", label: "Cabin / Chalet", emoji: "🏡" },
 ];
 
+/* ── Subcategories for FUEL (not in the recommendation engine) ────────────── */
+
+export const FUEL_SUBCATEGORIES: FavouriteSubcategoryDef[] = [
+  { id: "gas_station", label: "Gas Station", emoji: "⛽" },
+  { id: "ev_charging", label: "EV Charging", emoji: "🔌" },
+  { id: "lpg", label: "LPG / Autogas", emoji: "🟢" },
+];
+
 /* ── Field definition types ────────────────────────────────────────────────── */
 
 export type ExtraFieldDef =

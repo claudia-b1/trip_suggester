@@ -1,20 +1,23 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { SUBCATEGORIES, type SubcategoryDef } from "@/lib/recommendations/subcategories";
-import { ACCOMMODATION_SUBCATEGORIES } from "@/lib/favourite-fields";
+import { ACCOMMODATION_SUBCATEGORIES, FUEL_SUBCATEGORIES } from "@/lib/favourite-fields";
 import type { RecommendableCategory } from "@/lib/recommendations";
-import { resizeImageFile } from "@/lib/resize-image";
+import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
 
 /** Get subcategory options for a given category */
 function getSubcategoryOptions(cat: string): { id: string; label: string; emoji: string }[] {
   if (cat === "ACCOMMODATION") {
     return ACCOMMODATION_SUBCATEGORIES;
+  }
+  if (cat === "FUEL") {
+    return FUEL_SUBCATEGORIES;
   }
   if (cat in SUBCATEGORIES) {
     return (SUBCATEGORIES[cat as RecommendableCategory] as SubcategoryDef[]).map((s) => ({
@@ -23,7 +26,6 @@ function getSubcategoryOptions(cat: string): { id: string; label: string; emoji:
       emoji: s.emoji,
     }));
   }
-  // FUEL and any unknown categories have no predefined subcategories
   return [];
 }
 
@@ -33,15 +35,22 @@ export type EditPoiData = {
   category: string;
   subcategory: string | null;
   description: string | null;
+  latitude: number | null;
+  longitude: number | null;
   website: string | null;
   phoneNumber: string | null;
   openingHours: string | null;
   photoUrl: string | null;
   priceLevel: number | null;
   fee: string | null;
-  tips: string | null;
-  bestTimeToVisit: string | null;
-  estimatedDurationMinutes: number | null;
+  address: string | null;
+  notes: string | null;
+  // Context from city
+  cityName: string | null;
+  country: string | null;
+  // User-specific
+  visited: boolean;
+  personalRating: number | null;
   hasOriginalData?: boolean;
 };
 
@@ -69,10 +78,51 @@ export function EditPoiModal({
   const [photoUrl, setPhotoUrl] = useState(poi.photoUrl);
   const [priceLevel, setPriceLevel] = useState<number | null>(poi.priceLevel);
   const [fee, setFee] = useState(poi.fee ?? "");
-  const [tips, setTips] = useState(poi.tips ?? "");
-  const [bestTimeToVisit, setBestTimeToVisit] = useState(poi.bestTimeToVisit ?? "");
-  const [estimatedDuration, setEstimatedDuration] = useState<number | null>(poi.estimatedDurationMinutes);
+  const [address, setAddress] = useState(poi.address ?? "");
+  const [notes, setNotes] = useState(poi.notes ?? "");
+  const [visited, setVisited] = useState(poi.visited);
+  const [personalRating, setPersonalRating] = useState<number | null>(poi.personalRating);
+  const [country, setCountry] = useState(poi.country ?? "");
+  const [cityName, setCityName] = useState(poi.cityName ?? "");
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [reverseGeocoding, setReverseGeocoding] = useState(false);
+
+  // Reverse geocode to get address, country, city from coordinates
+  const reverseGeoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reverseGeoAbort = useRef<AbortController | null>(null);
+
+  const triggerReverseGeocode = useCallback((lat: number, lng: number) => {
+    if (reverseGeoTimer.current) clearTimeout(reverseGeoTimer.current);
+    if (reverseGeoAbort.current) reverseGeoAbort.current.abort();
+
+    reverseGeoTimer.current = setTimeout(async () => {
+      const controller = new AbortController();
+      reverseGeoAbort.current = controller;
+      setReverseGeocoding(true);
+      try {
+        const params = new URLSearchParams({ action: "reverse", lat: String(lat), lng: String(lng) });
+        const res = await fetch(`/api/geocode?${params}`, { signal: controller.signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (!controller.signal.aborted) {
+            if (data.address) setAddress(data.address);
+            if (data.country) setCountry((prev) => prev || data.country);
+            if (data.city) setCityName(data.city);
+          }
+        }
+      } catch { /* aborted or network error */ }
+      finally { if (!controller.signal.aborted) setReverseGeocoding(false); }
+    }, 300);
+  }, []);
+
+  // Auto-fill address/country/city from coordinates on mount if any are missing
+  useEffect(() => {
+    const needsGeocode = !address || !country || !cityName;
+    if (needsGeocode && poi.latitude != null && poi.longitude != null) {
+      triggerReverseGeocode(poi.latitude, poi.longitude);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handlePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -86,6 +136,16 @@ export function EditPoiModal({
     }
   }
 
+  async function handlePaste(e: React.ClipboardEvent) {
+    const dataUri = await getImageFromClipboard(e, 600);
+    if (dataUri) {
+      e.preventDefault();
+      setPhotoUrl(dataUri);
+      setPhotoPreview(dataUri);
+      toast("Image pasted");
+    }
+  }
+
   async function handleSave() {
     if (!name.trim()) {
       toast("Name is required", { variant: "error" });
@@ -93,8 +153,8 @@ export function EditPoiModal({
     }
     setSaving(true);
     try {
+      // Save POI fields
       const body: Record<string, unknown> = {};
-      // Only send changed fields
       if (name !== poi.name) body.name = name;
       if (category !== poi.category) body.category = category;
       if ((subcategory || null) !== poi.subcategory) body.subcategory = subcategory || null;
@@ -105,24 +165,50 @@ export function EditPoiModal({
       if (photoUrl !== poi.photoUrl) body.photoUrl = photoUrl;
       if (priceLevel !== poi.priceLevel) body.priceLevel = priceLevel;
       if ((fee || null) !== poi.fee) body.fee = fee || null;
-      if ((tips || null) !== poi.tips) body.tips = tips || null;
-      if ((bestTimeToVisit || null) !== poi.bestTimeToVisit) body.bestTimeToVisit = bestTimeToVisit || null;
-      if (estimatedDuration !== poi.estimatedDurationMinutes) body.estimatedDurationMinutes = estimatedDuration;
+      if ((address || null) !== poi.address) body.address = address || null;
+      if ((notes || null) !== poi.notes) body.notes = notes || null;
 
-      if (Object.keys(body).length === 0) {
+      // Save rating/visited separately via rating API
+      const ratingChanged = visited !== poi.visited || personalRating !== poi.personalRating;
+
+      const promises: Promise<Response>[] = [];
+
+      if (Object.keys(body).length > 0) {
+        promises.push(
+          fetch(`/api/pois/${poi.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          })
+        );
+      }
+
+      if (ratingChanged) {
+        const ratingBody: Record<string, unknown> = {};
+        if (visited !== poi.visited) ratingBody.visited = visited;
+        if (personalRating !== poi.personalRating) ratingBody.rating = personalRating;
+        promises.push(
+          fetch(`/api/pois/${poi.id}/rating`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(ratingBody),
+          })
+        );
+      }
+
+      if (promises.length === 0) {
         onClose();
         return;
       }
 
-      const res = await fetch(`/api/pois/${poi.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save");
+      const results = await Promise.all(promises);
+      for (const res of results) {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Failed to save");
+        }
       }
+
       toast("POI updated");
       router.refresh();
       onClose();
@@ -160,6 +246,7 @@ export function EditPoiModal({
       <div
         className="relative mx-4 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
+        onPaste={handlePaste}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
@@ -186,6 +273,7 @@ export function EditPoiModal({
                 <Button variant="outline" size="sm" className="text-xs" onClick={() => fileRef.current?.click()}>
                   Upload photo
                 </Button>
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste from clipboard</span>
                 {photoUrl && (
                   <Button variant="ghost" size="sm" className="text-xs text-[hsl(var(--muted-foreground))]" onClick={() => { setPhotoUrl(null); setPhotoPreview(null); }}>
                     Remove photo
@@ -249,6 +337,38 @@ export function EditPoiModal({
             </div>
           </div>
 
+          {/* Country + City row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+                Country
+                {reverseGeocoding && !country && <span className="ml-1 text-[10px] font-normal normal-case">...</span>}
+              </label>
+              <Input value={country} disabled className="text-sm opacity-60" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+                City
+                {reverseGeocoding && !cityName && <span className="ml-1 text-[10px] font-normal normal-case">...</span>}
+              </label>
+              <Input value={cityName} disabled className="text-sm opacity-60" />
+            </div>
+          </div>
+
+          {/* Address (reverse geocoded, editable) */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+              Address
+              {reverseGeocoding && <span className="ml-2 text-[10px] font-normal normal-case">resolving...</span>}
+            </label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Auto-filled from coordinates" className="text-sm" />
+            {poi.latitude != null && poi.longitude != null && (
+              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                📍 {poi.latitude.toFixed(5)}, {poi.longitude.toFixed(5)}
+              </p>
+            )}
+          </div>
+
           {/* Description */}
           <div className="space-y-1">
             <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Description</label>
@@ -278,8 +398,8 @@ export function EditPoiModal({
             <Input value={openingHours} onChange={(e) => setOpeningHours(e.target.value)} placeholder="Mon-Fri 9:00-18:00" className="text-sm" />
           </div>
 
-          {/* Price level + Fee + Duration row */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Price level + Fee row */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Price</label>
               <select
@@ -299,35 +419,63 @@ export function EditPoiModal({
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Fee</label>
               <Input value={fee} onChange={(e) => setFee(e.target.value)} placeholder="e.g. 5 EUR" className="text-sm" />
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Duration (min)</label>
-              <Input
-                type="number"
-                value={estimatedDuration ?? ""}
-                onChange={(e) => setEstimatedDuration(e.target.value ? Number(e.target.value) : null)}
-                className="text-sm"
-              />
-            </div>
           </div>
 
-          {/* Best time + Tips */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Notes */}
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Notes</label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={2}
+              placeholder="Personal notes about this place..."
+              className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
+            />
+          </div>
+
+          {/* Visited + Personal rating row */}
+          <div className="grid grid-cols-2 gap-3 items-end">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Best time</label>
-              <select
-                value={bestTimeToVisit}
-                onChange={(e) => setBestTimeToVisit(e.target.value)}
-                className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-sm"
+              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Visited</label>
+              <button
+                type="button"
+                onClick={() => setVisited(!visited)}
+                className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                  visited
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
+                }`}
               >
-                <option value="">—</option>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="evening">Evening</option>
-              </select>
+                {visited ? "✅ Visited" : "Not visited"}
+              </button>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Tips</label>
-              <Input value={tips} onChange={(e) => setTips(e.target.value)} className="text-sm" />
+              <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Personal rating</label>
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setPersonalRating(personalRating === star ? null : star)}
+                    className={`text-lg transition-colors ${
+                      star <= (personalRating ?? 0)
+                        ? "text-amber-400"
+                        : "text-gray-300 hover:text-amber-200"
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+                {personalRating != null && (
+                  <button
+                    type="button"
+                    onClick={() => setPersonalRating(null)}
+                    className="ml-1 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

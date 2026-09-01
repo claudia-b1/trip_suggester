@@ -26,7 +26,7 @@ export async function PATCH(
   const data: Record<string, unknown> = {};
 
   // String fields
-  for (const field of ["name", "description", "website", "phoneNumber", "openingHours", "fee", "tips", "bestTimeToVisit", "subcategory"] as const) {
+  for (const field of ["name", "description", "website", "phoneNumber", "openingHours", "fee", "tips", "bestTimeToVisit", "subcategory", "address", "notes"] as const) {
     if (typeof body[field] === "string" || body[field] === null) {
       data[field] = body[field];
     }
@@ -60,7 +60,7 @@ export async function PATCH(
   const SNAPSHOT_FIELDS = [
     "name", "category", "subcategory", "description", "website", "phoneNumber",
     "openingHours", "photoUrl", "priceLevel", "fee", "tips", "bestTimeToVisit",
-    "estimatedDurationMinutes",
+    "estimatedDurationMinutes", "address", "notes",
   ] as const;
 
   const existing = await prisma.poi.findUniqueOrThrow({
