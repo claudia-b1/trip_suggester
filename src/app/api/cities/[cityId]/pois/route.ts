@@ -34,11 +34,15 @@ export async function POST(
   if (!await verifyCityOwnership(Number(cityId), userId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const { name, category, subcategory, description, latitude, longitude, photoUrl, website, placeId } = await req.json();
+  const body = await req.json();
+  const { name, category, subcategory, description, latitude, longitude, photoUrl, website, placeId, favouriteItemId, phoneNumber, openingHours, priceLevel, fee, address, notes } = body;
 
   if (!isCategory(category)) {
     return NextResponse.json({ error: "Invalid category" }, { status: 400 });
   }
+
+  const cityIdNum = Number(cityId);
+  const favItemId = typeof favouriteItemId === "number" ? favouriteItemId : null;
 
   const poi = await prisma.poi.create({
     data: {
@@ -51,9 +55,25 @@ export async function POST(
       photoUrl: typeof photoUrl === "string" && photoUrl ? photoUrl : null,
       website: typeof website === "string" && website ? website : null,
       placeId: typeof placeId === "string" && placeId ? placeId : null,
-      cityId: Number(cityId),
+      phoneNumber: typeof phoneNumber === "string" ? phoneNumber : null,
+      openingHours: typeof openingHours === "string" ? openingHours : null,
+      priceLevel: typeof priceLevel === "number" ? priceLevel : null,
+      fee: typeof fee === "string" ? fee : null,
+      address: typeof address === "string" ? address : null,
+      notes: typeof notes === "string" ? notes : null,
+      favouriteItemId: favItemId,
+      cityId: cityIdNum,
     },
   });
+
+  // If this POI is linked to a favourite, clear any previous dismissal
+  // so the sync recognises it's been re-added intentionally.
+  if (favItemId) {
+    await prisma.dismissedFavouriteCity.deleteMany({
+      where: { favouriteItemId: favItemId, cityId: cityIdNum },
+    });
+  }
+
   return NextResponse.json(poi, { status: 201 });
 }
 

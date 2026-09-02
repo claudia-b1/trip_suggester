@@ -44,6 +44,7 @@ export type StopPoiDTO = {
   address: string | null;
   notes: string | null;
   favouriteItemId: number | null;
+  extraFields?: Record<string, unknown> | null;
   hasOriginalData?: boolean;
 };
 
@@ -1248,6 +1249,7 @@ export function StopPlanningSection({
                               fee: p.fee, address: p.address, notes: p.notes,
                               cityName: cityName ?? null, country: country ?? null,
                               visited: false, personalRating: null,
+                              extraFields: p.extraFields,
                               hasOriginalData: p.hasOriginalData,
                             })}
                           />

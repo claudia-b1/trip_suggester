@@ -58,6 +58,13 @@ function sortCities(list: City[]): City[] {
     }));
 }
 
+/** Add days to a YYYY-MM-DD string, returning another YYYY-MM-DD string (timezone-safe). */
+function addDaysToDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d + days));
+  return date.toISOString().slice(0, 10);
+}
+
 function validateDates(start: string, end: string): string | null {
   if (!start || !end) return null;
   if (new Date(end) < new Date(start)) {
@@ -108,7 +115,7 @@ export function CitiesSection({
     const cityCountry = searchParams.get("cityCountry") ?? "";
     const cityLat = searchParams.get("cityLat");
     const cityLng = searchParams.get("cityLng");
-    const parentCityIdParam = searchParams.get("parentCityId");
+    const parentCityIdParam = searchParams.get("parentCityId") ?? searchParams.get("addSubTo");
 
     if (cityName) {
       setName(cityName);
@@ -170,11 +177,11 @@ export function CitiesSection({
     for (const c of localCities) {
       num++;
       if (c.latitude != null && c.longitude != null) {
-        result.push({ id: c.id, name: displayName(c), latitude: c.latitude!, longitude: c.longitude!, order: num, parentCityId: null });
+        result.push({ id: c.id, name: displayName(c), latitude: c.latitude!, longitude: c.longitude!, order: num, parentCityId: null, type: c.type });
       }
       for (const s of c.subcities ?? []) {
         if (s.latitude != null && s.longitude != null) {
-          result.push({ id: s.id, name: displayName(s), latitude: s.latitude!, longitude: s.longitude!, order: num, parentCityId: c.id });
+          result.push({ id: s.id, name: displayName(s), latitude: s.latitude!, longitude: s.longitude!, order: num, parentCityId: c.id, type: s.type });
         }
       }
     }
@@ -272,6 +279,8 @@ export function CitiesSection({
   const [addParentCityId, setAddParentCityId] = useState<number | null>(null);
   // "Move under" dropdown state
   const [moveMenuOpenId, setMoveMenuOpenId] = useState<number | null>(null);
+  // Sub-destination parent picker
+  const [subDestPickerOpen, setSubDestPickerOpen] = useState(false);
   // Generation options for new city
   const [genAbout, setGenAbout] = useState(true);
   const [genRecommendations, setGenRecommendations] = useState(true);
@@ -332,17 +341,7 @@ export function CitiesSection({
         name,
         ...(nickname.trim() && { nickname: nickname.trim() }),
         startDate,
-        endDate: isStop
-          ? (() => {
-              const d = new Date(startDate);
-              d.setDate(d.getDate() + 1);
-              const computed = d.toISOString().slice(0, 10);
-              // Don't exceed trip end date
-              const parentCity = addParentCityId ? localCities.find((c) => c.id === addParentCityId) : null;
-              const maxDate = parentCity ? parentCity.endDate.slice(0, 10) : tripEndDate.slice(0, 10);
-              return computed > maxDate ? maxDate : computed;
-            })()
-          : endDate,
+        endDate: endDate || startDate,
         ...(isStop && { type: "stop" }),
         ...(addParentCityId != null && { parentCityId: addParentCityId }),
         ...(cityMeta && {
@@ -661,14 +660,6 @@ export function CitiesSection({
           </div>
         )}
 
-        {/* Add sub-destination link */}
-        <button
-          type="button"
-          className="ml-8 mt-1 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors"
-          onClick={() => openAddForm(city.id)}
-        >
-          + Add sub-destination
-        </button>
       </div>
     );
   }
@@ -703,9 +694,39 @@ export function CitiesSection({
 
         <div className="border-t border-[hsl(var(--border))] pt-4">
           {!addOpen ? (
-            <Button variant="outline" onClick={() => openAddForm()}>
-              + Add destination
-            </Button>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" onClick={() => { setSubDestPickerOpen(false); openAddForm(); }}>
+                + Add destination
+              </Button>
+              {/* Sub-destination: pick parent first */}
+              {localCities.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setSubDestPickerOpen((v) => !v)}
+                    className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors"
+                  >
+                    + Add sub-destination
+                  </button>
+                  {subDestPickerOpen && (
+                    <div className="absolute left-0 top-full mt-1 z-20 min-w-[200px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-lg">
+                      <p className="px-2 py-1 text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Under which destination?</p>
+                      {localCities.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-[hsl(var(--muted))] transition-colors text-left"
+                          onClick={() => { setSubDestPickerOpen(false); openAddForm(c.id); }}
+                        >
+                          <span>{c.type === "stop" ? "🚗" : "📍"}</span>
+                          <span className="truncate">{displayName(c)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           ) : (
             <form
               ref={addFormRef}
@@ -787,16 +808,24 @@ export function CitiesSection({
               <input
                 type="checkbox"
                 checked={isStop}
-                onChange={(e) => setIsStop(e.target.checked)}
+                onChange={(e) => {
+                  setIsStop(e.target.checked);
+                  if (e.target.checked && startDate) {
+                    // Default stop to 2 days / 1 night
+                    const computed = addDaysToDate(startDate, 1);
+                    const maxDate = tripEndDate.slice(0, 10);
+                    setEndDate(computed > maxDate ? maxDate : computed);
+                  }
+                }}
                 className="rounded"
               />
               <span className="text-[hsl(var(--muted-foreground))]">Travel stop (passing through)</span>
             </label>
           )}
 
-          <div className={isStop ? "" : "grid gap-4 sm:grid-cols-2"}>
+          <div className={isStop ? "grid gap-4 sm:grid-cols-2" : "grid gap-4 sm:grid-cols-2"}>
             <div className="space-y-2">
-              <Label htmlFor="city-start">{isStop ? "Date" : "Start"}</Label>
+              <Label htmlFor="city-start">{isStop ? "Arrival" : "Start"}</Label>
               <Input
                 id="city-start"
                 type="date"
@@ -805,7 +834,14 @@ export function CitiesSection({
                 max={tripEndDate.slice(0, 10)}
                 onChange={(e) => {
                   setStartDate(e.target.value);
-                  if (!isStop) {
+                  if (isStop) {
+                    // Default stop end = start + 1 (2 days, 1 night)
+                    const computed = addDaysToDate(e.target.value, 1);
+                    const maxDate = addParentCityId
+                      ? (localCities.find((c) => c.id === addParentCityId)?.endDate.slice(0, 10) ?? tripEndDate.slice(0, 10))
+                      : tripEndDate.slice(0, 10);
+                    setEndDate(computed > maxDate ? maxDate : computed);
+                  } else {
                     setDateError(validateDates(e.target.value, endDate));
                     if (endDate && endDate < e.target.value) {
                       setEndDate(e.target.value);
@@ -815,7 +851,27 @@ export function CitiesSection({
                 required
               />
             </div>
-            {!isStop && (
+            {isStop ? (
+              <div className="space-y-2">
+                <Label htmlFor="city-end-stop">Departure</Label>
+                <Input
+                  id="city-end-stop"
+                  type="date"
+                  value={endDate || (() => {
+                    if (!startDate) return "";
+                    const computed = addDaysToDate(startDate, 1);
+                    const maxDate = tripEndDate.slice(0, 10);
+                    return computed > maxDate ? maxDate : computed;
+                  })()}
+                  min={startDate || tripStartDate.slice(0, 10)}
+                  max={tripEndDate.slice(0, 10)}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                  }}
+                  required
+                />
+              </div>
+            ) : (
               <div className="space-y-2">
                 <Label htmlFor="city-end">End</Label>
                 <Input

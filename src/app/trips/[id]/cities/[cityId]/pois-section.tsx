@@ -49,6 +49,7 @@ export type PoiDTO = {
   address: string | null;
   notes: string | null;
   hasOriginalData?: boolean;
+  extraFields?: Record<string, unknown> | null;
 };
 
 type View = "list" | "map";
@@ -2098,6 +2099,7 @@ export function PoisSection({
                       visited: visitedIds.has(p.id),
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
+                      extraFields: p.extraFields,
                     })}
                   />
                 ))}
@@ -2134,6 +2136,7 @@ export function PoisSection({
                       visited: visitedIds.has(p.id),
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
+                      extraFields: p.extraFields,
                     })}
                   />
                 ))}

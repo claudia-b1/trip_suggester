@@ -59,15 +59,19 @@ export async function PUT(
     if (data.visited !== undefined) syncData.visited = data.visited;
 
     if (Object.keys(syncData).length > 0) {
-      // Look up the POI to find its placeId and name/city for matching
       const poi = await prisma.poi.findUnique({
-        where: { id: Number(poiId) },
-        select: { placeId: true, name: true, city: { select: { name: true } } },
+        where: { id: poiIdNum },
+        select: { favouriteItemId: true, placeId: true, name: true, city: { select: { name: true } } },
       });
 
       if (poi) {
-        // Match by sourcePlaceId first, fallback to name+city (case-insensitive)
-        if (poi.placeId) {
+        // Prefer direct favouriteItemId link, then placeId, then name+city
+        if (poi.favouriteItemId) {
+          await prisma.favouriteItem.update({
+            where: { id: poi.favouriteItemId },
+            data: syncData,
+          });
+        } else if (poi.placeId) {
           await prisma.favouriteItem.updateMany({
             where: { sourcePlaceId: poi.placeId },
             data: syncData,

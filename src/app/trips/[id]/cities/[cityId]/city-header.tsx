@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { EditCityButton } from "./edit-city-button";
+import { AddSubDestinationModal } from "@/components/ui/add-subdestination-modal";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 function countryCodeToFlag(code: string): string {
@@ -69,6 +70,8 @@ export type CityHeaderProps = {
   cities: { id: number; name: string; nickname?: string | null }[];
   activeCityId?: number;
   parentCity?: { id: number; name: string } | null;
+  /** Whether this city is itself a sub-destination (has a parent) */
+  isSubcity?: boolean;
   poiCounts: Record<Category, number>;
   plannedCount: number;
   totalPois: number;
@@ -109,6 +112,7 @@ export function CityHeader({
   cities,
   activeCityId,
   parentCity,
+  isSubcity,
   poiCounts,
   plannedCount,
   totalPois,
@@ -120,6 +124,8 @@ export function CityHeader({
   const router = useRouter();
   const { toast } = useToast();
   const [autoPlanLoading, setAutoPlanLoading] = useState(false);
+  const [addSubOpen, setAddSubOpen] = useState(false);
+  const [enrichLoading, setEnrichLoading] = useState(false);
 
   // ── Stop accommodation picker state ──
   const [accom, setAccom] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
@@ -293,6 +299,21 @@ export function CityHeader({
     }
   }
 
+  async function handleReEnrich() {
+    setEnrichLoading(true);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/re-enrich`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      toast(`Wikipedia photos: ${data.updated} updated out of ${data.checked} POIs`);
+      if (data.updated > 0) router.refresh();
+    } catch {
+      toast("Photo refresh failed", { variant: "error" });
+    } finally {
+      setEnrichLoading(false);
+    }
+  }
+
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
@@ -335,6 +356,19 @@ export function CityHeader({
                   tripStartDate={editProps.tripStartDate}
                   tripEndDate={editProps.tripEndDate}
                 />
+              )}
+              {/* Add sub-destination — only for top-level cities (not for subcities themselves) */}
+              {!isSubcity && (
+                <button
+                  type="button"
+                  onClick={() => setAddSubOpen(true)}
+                  className="rounded-full p-1 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] transition-colors"
+                  title="Add sub-destination"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                  </svg>
+                </button>
               )}
             </div>
             {nickname && (
@@ -582,7 +616,27 @@ export function CityHeader({
           >
             🧭 Discover
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReEnrich}
+            disabled={enrichLoading || totalPois === 0}
+            className="rounded-full text-xs"
+          >
+            {enrichLoading ? "Refreshing…" : "📸 Wiki photos"}
+          </Button>
         </div>
+      )}
+      {/* Add sub-destination modal */}
+      {addSubOpen && (
+        <AddSubDestinationModal
+          tripId={tripId}
+          parentCityId={cityId}
+          parentCityName={nickname ?? name}
+          parentStartDate={startDate}
+          parentEndDate={endDate}
+          onClose={() => setAddSubOpen(false)}
+        />
       )}
     </div>
   );

@@ -75,10 +75,18 @@ export async function PATCH(
       const syncRating = data.personalRating !== undefined;
       const syncVisited = data.visited !== undefined;
 
-      // Find matching POIs by sourcePlaceId or name+city
+      // Find matching POIs: prefer direct favouriteItemId link, then placeId, then name+city
       let matchingPoiIds: number[] = [];
 
-      if (updated.sourcePlaceId) {
+      // Direct link via favouriteItemId
+      const linkedPois = await prisma.poi.findMany({
+        where: { favouriteItemId: Number(itemId) },
+        select: { id: true },
+      });
+      matchingPoiIds = linkedPois.map((p) => p.id);
+
+      // Fallback: match by sourcePlaceId
+      if (matchingPoiIds.length === 0 && updated.sourcePlaceId) {
         const pois = await prisma.poi.findMany({
           where: { placeId: updated.sourcePlaceId },
           select: { id: true },
@@ -135,6 +143,13 @@ export async function PATCH(
       longitude: typeof data.longitude === "number" ? data.longitude as number : undefined,
       photoUrl: data.photoUrl !== undefined ? (data.photoUrl as string | null) : undefined,
       website: data.website !== undefined ? (data.website as string | null) : undefined,
+      phoneNumber: data.phoneNumber !== undefined ? (data.phoneNumber as string | null) : undefined,
+      openingHours: data.openingHours !== undefined ? (data.openingHours as string | null) : undefined,
+      priceLevel: data.priceLevel !== undefined ? (data.priceLevel as number | null) : undefined,
+      fee: data.fee !== undefined ? (data.fee as string | null) : undefined,
+      address: data.address !== undefined ? (data.address as string | null) : undefined,
+      notes: data.notes !== undefined ? (data.notes as string | null) : undefined,
+      extraFields: data.extraFields !== undefined ? data.extraFields : undefined,
     });
   } catch {
     // Sync is best-effort
@@ -149,6 +164,19 @@ export async function DELETE(
   { params }: { params: Promise<{ itemId: string }> },
 ) {
   const { itemId } = await params;
-  await prisma.favouriteItem.delete({ where: { id: Number(itemId) } });
+  const id = Number(itemId);
+
+  // Unlink any POIs that reference this favourite (keep the POIs, just clear the link)
+  await prisma.poi.updateMany({
+    where: { favouriteItemId: id },
+    data: { favouriteItemId: null },
+  });
+
+  // Clean up dismissal records
+  await prisma.dismissedFavouriteCity.deleteMany({
+    where: { favouriteItemId: id },
+  });
+
+  await prisma.favouriteItem.delete({ where: { id } });
   return new NextResponse(null, { status: 204 });
 }

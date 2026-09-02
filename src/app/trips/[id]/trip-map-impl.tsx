@@ -13,6 +13,8 @@ export type TripCity = {
   order: number;
   /** If this is a subcity, the parent city id */
   parentCityId?: number | null;
+  /** "destination" or "stop" */
+  type?: string;
 };
 
 export type TripMapProps = {
@@ -155,74 +157,132 @@ export function TripMapImpl({ cities }: TripMapProps) {
           );
         })()}
 
-        {cities.map((city) => {
-          const isSub = !!city.parentCityId;
-          const parent = isSub ? cities.find((c) => c.id === city.parentCityId) : null;
-          const colorIndex = isSub && parent ? parent.order - 1 : city.order - 1;
-          const color = MARKER_COLORS[colorIndex % MARKER_COLORS.length];
-          const isHovered = hoveredId === city.id;
-          return (
-            <Marker
-              key={city.id}
-              latitude={city.latitude}
-              longitude={city.longitude}
-              anchor="center"
-            >
-              {isSub ? (
-                <button
-                  type="button"
-                  onMouseEnter={() => setHoveredId(city.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  aria-label={city.name}
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: "50%",
-                    backgroundColor: "white",
-                    border: `2.5px solid ${color}`,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
-                    cursor: "pointer",
-                    transform: isHovered ? "scale(1.2)" : "scale(1)",
-                    transition: "transform 0.15s ease",
-                    outline: "none",
-                  }}
-                >
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: color }} />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onMouseEnter={() => setHoveredId(city.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  aria-label={city.name}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    backgroundColor: color,
-                    border: "2px solid white",
-                    color: "white",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
-                    cursor: "pointer",
-                    transform: isHovered ? "scale(1.15)" : "scale(1)",
-                    transition: "transform 0.15s ease",
-                    outline: "none",
-                  }}
-                >
-                  {city.order}
-                </button>
-              )}
-            </Marker>
-          );
-        })}
+        {/* Build a destIndex map: for each top-level destination, count only non-stop cities before it */}
+        {(() => {
+          const topLevel = cities.filter((c) => !c.parentCityId);
+          const destIndexMap = new Map<number, number>();
+          let destCount = 0;
+          for (const c of topLevel.sort((a, b) => a.order - b.order)) {
+            if (c.type !== "stop") {
+              destIndexMap.set(c.id, destCount);
+              destCount++;
+            }
+          }
+
+          return cities.map((city) => {
+            const isSub = !!city.parentCityId;
+            const isStop = city.type === "stop";
+            const parent = isSub ? cities.find((c) => c.id === city.parentCityId) : null;
+
+            // Color: destinations use destIndex, stops use gray, subcities inherit parent color
+            let color: string;
+            if (isStop) {
+              color = "#6b7280"; // gray-500
+            } else if (isSub && parent) {
+              const parentDestIndex = destIndexMap.get(parent.id) ?? 0;
+              color = MARKER_COLORS[parentDestIndex % MARKER_COLORS.length];
+            } else {
+              const destIndex = destIndexMap.get(city.id) ?? 0;
+              color = MARKER_COLORS[destIndex % MARKER_COLORS.length];
+            }
+
+            const isHovered = hoveredId === city.id;
+            // Display number: destinations show destIndex+1, stops show overall order
+            const displayNumber = isStop ? city.order : (destIndexMap.get(city.id) ?? 0) + 1;
+
+            return (
+              <Marker
+                key={city.id}
+                latitude={city.latitude}
+                longitude={city.longitude}
+                anchor="center"
+              >
+                {isSub ? (
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHoveredId(city.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    aria-label={city.name}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: "50%",
+                      backgroundColor: "white",
+                      border: `2.5px solid ${color}`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.2)",
+                      cursor: "pointer",
+                      transform: isHovered ? "scale(1.2)" : "scale(1)",
+                      transition: "transform 0.15s ease",
+                      outline: "none",
+                    }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: color }} />
+                  </button>
+                ) : isStop ? (
+                  /* Travel stop: car icon + order number */
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHoveredId(city.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    aria-label={city.name}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 2,
+                      backgroundColor: "white",
+                      border: "1.5px dashed #9ca3af",
+                      borderRadius: 12,
+                      padding: "2px 6px 2px 4px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "#6b7280",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+                      cursor: "pointer",
+                      transform: isHovered ? "scale(1.15)" : "scale(1)",
+                      transition: "transform 0.15s ease",
+                      outline: "none",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ fontSize: 13, lineHeight: 1 }}>🚗</span>
+                    <span>{displayNumber}</span>
+                  </button>
+                ) : (
+                  /* Regular destination: colored circle with number */
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHoveredId(city.id)}
+                    onMouseLeave={() => setHoveredId(null)}
+                    aria-label={city.name}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      backgroundColor: color,
+                      border: "2px solid white",
+                      color: "white",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+                      cursor: "pointer",
+                      transform: isHovered ? "scale(1.15)" : "scale(1)",
+                      transition: "transform 0.15s ease",
+                      outline: "none",
+                    }}
+                  >
+                    {displayNumber}
+                  </button>
+                )}
+              </Marker>
+            );
+          });
+        })()}
 
         {hoveredId != null && (() => {
           const city = cities.find((c) => c.id === hoveredId);

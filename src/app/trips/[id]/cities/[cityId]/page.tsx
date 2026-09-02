@@ -157,9 +157,10 @@ export default async function CityDetailPage({
   await ensureDayPlans(city.id, city.startDate, city.endDate);
 
   // Auto-sync: ensure all matching favourites are added as POIs
+  let syncedCount = 0;
   if (city.latitude != null && city.longitude != null) {
     try {
-      await syncFavouritesToCity(
+      syncedCount = await syncFavouritesToCity(
         city.id,
         city.latitude,
         city.longitude,
@@ -170,6 +171,15 @@ export default async function CityDetailPage({
     } catch {
       // Best-effort — don't block page load
     }
+  }
+
+  // If new POIs were created by the sync, re-query to include them
+  if (syncedCount > 0) {
+    const freshPois = await prisma.poi.findMany({
+      where: { cityId: city.id },
+      orderBy: { createdAt: "asc" },
+    });
+    city.pois = freshPois;
   }
 
   let dayPlansRaw = await prisma.dayPlan.findMany({
@@ -217,7 +227,7 @@ export default async function CityDetailPage({
   // Fetch favourite items nearby, filter by country when available then by distance
   // Use at least 10 km so a tight discover radius (e.g. 3 km for a travel stop)
   // doesn't prevent nearby favourites from appearing
-  const DEFAULT_FAV_RADIUS_KM = 100;
+  const DEFAULT_FAV_RADIUS_KM = 50;
   const favRadiusKm = Math.max(city.discoverRadiusKm ?? DEFAULT_FAV_RADIUS_KM, DEFAULT_FAV_RADIUS_KM);
   const allCountryFavs = await prisma.favouriteItem.findMany({
     where: {
@@ -330,6 +340,7 @@ export default async function CityDetailPage({
     address: p.address ?? null,
     notes: p.notes ?? null,
     hasOriginalData: !!p.originalData,
+    extraFields: p.extraFields as Record<string, unknown> | null,
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -477,6 +488,7 @@ export default async function CityDetailPage({
         cities={siblingCities.map((c) => ({ id: c.id, name: c.nickname ?? c.name }))}
         activeCityId={stepperActiveId}
         parentCity={city.parentCity ? { id: city.parentCity.id, name: city.parentCity.nickname ?? city.parentCity.name } : null}
+        isSubcity={!!city.parentCityId}
         poiCounts={poiCounts}
         plannedCount={plannedCount}
         totalPois={pois.length}

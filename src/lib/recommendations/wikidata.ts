@@ -14,6 +14,9 @@ const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
 const ENTITY_SEARCH   = "https://www.wikidata.org/w/api.php";
 const USER_AGENT      = "TripPlanner/1.0 (educational project)";
 
+/** Small delay to avoid Wikidata API rate limits during batch enrichment. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Lightweight Wikidata result for pre-scan scoring — only entity identity and
  * UNESCO status. Fetched for all candidates before scoring and cached as
@@ -41,8 +44,13 @@ export async function fetchWikidataMini(
   cityName?: string,
 ): Promise<WikidataMini | null> {
   try {
-    const searchQuery = cityName ? `${name} ${cityName}` : name;
-    const qId = await findQId(searchQuery) ?? await findQId(name);
+    const nameLC = name.toLowerCase();
+    const cityLC = cityName?.toLowerCase() ?? "";
+    const needsCityQualifier = cityName && !nameLC.includes(cityLC);
+    const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
+    const qId = needsCityQualifier
+      ? (await findQId(searchQuery) ?? await findQId(name))
+      : await findQId(name);
     if (!qId) return null;
 
     type MiniSparqlResponse = { results: { bindings: Array<{ heritageSite?: { value: string } }> } };
@@ -82,22 +90,54 @@ type EntitySearchResult = {
   }>;
 };
 
-async function findQId(name: string): Promise<string | null> {
+async function findQIdInLang(name: string, language: string): Promise<string | null> {
   const url = new URL(ENTITY_SEARCH);
   url.searchParams.set("action", "wbsearchentities");
   url.searchParams.set("search", name);
-  url.searchParams.set("language", "en");
+  url.searchParams.set("language", language);
   url.searchParams.set("type", "item");
   url.searchParams.set("limit", "5");
   url.searchParams.set("format", "json");
 
-  const res = await fetch(url.toString(), {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
-  });
-  if (!res.ok) return null;
+  // Retry with exponential backoff on rate-limit (429)
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url.toString(), {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+    });
 
-  const data = (await res.json()) as EntitySearchResult;
-  return data.search?.[0]?.id ?? null;
+    if (res.status === 429) {
+      // Rate limited — wait and retry
+      await sleep(2000 * (attempt + 1));
+      continue;
+    }
+    if (!res.ok) return null;
+
+    // Handle rate-limit text responses (Wikidata sometimes returns plaintext)
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("json")) return null;
+
+    const data = (await res.json()) as EntitySearchResult;
+    return data.search?.[0]?.id ?? null;
+  }
+  return null; // All retries exhausted
+}
+
+/**
+ * Search for a Wikidata QID across multiple languages.
+ * Many POIs (especially in Croatia, Italy, etc.) have local-language names
+ * that won't match in English. We try en first, then common European languages.
+ */
+async function findQId(name: string): Promise<string | null> {
+  // Try English first (most common)
+  const en = await findQIdInLang(name, "en");
+  if (en) return en;
+  // Try other common languages for European travel destinations
+  for (const lang of ["de", "hr", "it", "fr", "es", "nl", "pt"]) {
+    await sleep(250); // Rate-limit protection for Wikidata API
+    const qid = await findQIdInLang(name, lang);
+    if (qid) return qid;
+  }
+  return null;
 }
 
 // ─── SPARQL detail query ──────────────────────────────────────────────────────
@@ -153,19 +193,33 @@ export async function enrichWithWikidata(
   cityName?: string,
 ): Promise<WikidataEnrichment | null> {
   try {
-    // Append city name to improve entity search accuracy
-    const searchQuery = cityName ? `${name} ${cityName}` : name;
-    const qId = await findQId(searchQuery) ?? await findQId(name);
+    // Append city name to improve entity search accuracy, but skip if
+    // the name already contains the city name (e.g. "Arena Pula" + "Pula").
+    const nameLC = name.toLowerCase();
+    const cityLC = cityName?.toLowerCase() ?? "";
+    const needsCityQualifier = cityName && !nameLC.includes(cityLC);
+    const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
+    const qId = needsCityQualifier
+      ? (await findQId(searchQuery) ?? await findQId(name))
+      : await findQId(name);
     if (!qId) return null;
 
     const sparql = SPARQL_QUERY(qId);
-    const res = await fetch(
-      `${SPARQL_ENDPOINT}?query=${encodeURIComponent(sparql)}&format=json`,
-      { headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" } },
-    );
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as SparqlResponse;
+    let data: SparqlResponse | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(
+        `${SPARQL_ENDPOINT}?query=${encodeURIComponent(sparql)}&format=json`,
+        { headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" } },
+      );
+      if (res.status === 429) {
+        await sleep(2000 * (attempt + 1));
+        continue;
+      }
+      if (!res.ok) return null;
+      data = (await res.json()) as SparqlResponse;
+      break;
+    }
+    if (!data) return null;
     const rows = data.results.bindings;
     if (rows.length === 0) return null;
 

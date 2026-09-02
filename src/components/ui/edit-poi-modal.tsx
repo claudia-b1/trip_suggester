@@ -52,6 +52,7 @@ export type EditPoiData = {
   visited: boolean;
   personalRating: number | null;
   hasOriginalData?: boolean;
+  extraFields?: Record<string, unknown> | null;
 };
 
 export function EditPoiModal({
@@ -84,6 +85,9 @@ export function EditPoiModal({
   const [personalRating, setPersonalRating] = useState<number | null>(poi.personalRating);
   const [country, setCountry] = useState(poi.country ?? "");
   const [cityName, setCityName] = useState(poi.cityName ?? "");
+  const [extraFields, setExtraFields] = useState<Record<string, unknown>>(
+    () => (poi.extraFields && typeof poi.extraFields === "object" ? { ...poi.extraFields } : {}),
+  );
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
 
@@ -115,10 +119,10 @@ export function EditPoiModal({
     }, 300);
   }, []);
 
-  // Auto-fill address/country/city from coordinates on mount if any are missing
+  // Auto-fill address/country/city from coordinates on mount — only when address is missing.
+  // Once the address is set (saved on the POI), we don't re-geocode to avoid overwriting.
   useEffect(() => {
-    const needsGeocode = !address || !country || !cityName;
-    if (needsGeocode && poi.latitude != null && poi.longitude != null) {
+    if (!address && poi.latitude != null && poi.longitude != null) {
       triggerReverseGeocode(poi.latitude, poi.longitude);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,6 +171,11 @@ export function EditPoiModal({
       if ((fee || null) !== poi.fee) body.fee = fee || null;
       if ((address || null) !== poi.address) body.address = address || null;
       if ((notes || null) !== poi.notes) body.notes = notes || null;
+      // Extra fields — compare JSON to detect changes
+      const origExtra = poi.extraFields && typeof poi.extraFields === "object" ? poi.extraFields : {};
+      if (JSON.stringify(extraFields) !== JSON.stringify(origExtra)) {
+        body.extraFields = Object.keys(extraFields).length > 0 ? extraFields : null;
+      }
 
       // Save rating/visited separately via rating API
       const ratingChanged = visited !== poi.visited || personalRating !== poi.personalRating;
@@ -432,6 +441,60 @@ export function EditPoiModal({
               className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
             />
           </div>
+
+          {/* Extra fields — dynamic key-value pairs */}
+          {Object.keys(extraFields).length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Extra info</label>
+              </div>
+              <div className="space-y-1.5 rounded-md border border-[hsl(var(--border))] p-2.5 bg-[hsl(var(--muted))]/20">
+                {Object.entries(extraFields).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <span className="text-xs text-[hsl(var(--muted-foreground))] min-w-[120px] shrink-0 truncate" title={key}>
+                      {key}
+                    </span>
+                    {typeof value === "boolean" ? (
+                      <button
+                        type="button"
+                        onClick={() => setExtraFields((prev) => ({ ...prev, [key]: !value }))}
+                        className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${
+                          value
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {value ? "Yes" : "No"}
+                      </button>
+                    ) : typeof value === "number" ? (
+                      <Input
+                        type="number"
+                        value={value}
+                        onChange={(e) => setExtraFields((prev) => ({ ...prev, [key]: e.target.value ? Number(e.target.value) : 0 }))}
+                        className="text-xs h-7 flex-1"
+                      />
+                    ) : (
+                      <Input
+                        value={String(value ?? "")}
+                        onChange={(e) => setExtraFields((prev) => ({ ...prev, [key]: e.target.value }))}
+                        className="text-xs h-7 flex-1"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setExtraFields((prev) => {
+                        const next = { ...prev };
+                        delete next[key];
+                        return next;
+                      })}
+                      className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--destructive))] text-xs shrink-0"
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Visited + Personal rating row */}
           <div className="grid grid-cols-2 gap-3 items-end">
