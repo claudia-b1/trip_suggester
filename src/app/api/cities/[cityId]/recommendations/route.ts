@@ -653,7 +653,19 @@ export async function POST(
         )
         .map((s) => s.place.placeId),
     );
-    const qualifiedRegular = scoredRegular.filter((s) => !regularQualityDropped.has(s.place.placeId));
+    const qualifiedRegularPreSubcat = scoredRegular.filter((s) => !regularQualityDropped.has(s.place.placeId));
+
+    // Subcategory filter: if the caller requested specific subcategories for this
+    // category, reject POIs whose resolved subcategory isn't in the list.
+    // This prevents e.g. a bakery (matched via broad "catering" tag) from appearing
+    // under FOOD when only ["restaurant","cafe"] were requested.
+    const requestedSubs = subcatsMap[cat];
+    const qualifiedRegular = (requestedSubs && requestedSubs.length > 0)
+      ? qualifiedRegularPreSubcat.filter((s) => {
+          const sub = getPoiSubcat(s.place.categories, cat);
+          return sub === null || requestedSubs.includes(sub);
+        })
+      : qualifiedRegularPreSubcat;
 
     // Detailed quality gate logging
     const noGoogleMatch = scoredRegular.filter(({ meta }) => meta == null);
