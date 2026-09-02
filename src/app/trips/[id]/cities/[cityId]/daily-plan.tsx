@@ -1747,7 +1747,7 @@ export function DailyPlan({
                             className="flex items-center justify-between gap-1 rounded-lg bg-[hsl(var(--background))] px-2.5 py-2 text-sm cursor-grab active:cursor-grabbing shadow-sm border border-[hsl(var(--border))] hover:shadow-md transition-all"
                           >
                             <div className="flex min-w-0 items-center gap-2">
-                              <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-40 group-hover:opacity-100 transition-opacity" title="Drag to reorder">
+                              <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-40 sm:group-hover:opacity-100 transition-opacity" title="Drag to reorder">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
                               </span>
                               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15 text-[9px] font-bold text-[hsl(var(--primary))]">

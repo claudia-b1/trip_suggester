@@ -52,6 +52,13 @@ export async function PATCH(
     }
   }
 
+  // Extra fields (JSON)
+  if (body.extraFields !== undefined) {
+    data.extraFields = body.extraFields && typeof body.extraFields === "object"
+      ? body.extraFields
+      : null;
+  }
+
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
@@ -98,6 +105,28 @@ export async function DELETE(
   const poiIdNum = Number(poiId);
   if (!await verifyPoiOwnership(poiIdNum, userId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // If this POI was auto-created from a favourite, record the dismissal
+  // so the sync won't re-create it on subsequent page loads.
+  const poi = await prisma.poi.findUnique({
+    where: { id: poiIdNum },
+    select: { favouriteItemId: true, cityId: true },
+  });
+  if (poi?.favouriteItemId) {
+    await prisma.dismissedFavouriteCity.upsert({
+      where: {
+        favouriteItemId_cityId: {
+          favouriteItemId: poi.favouriteItemId,
+          cityId: poi.cityId,
+        },
+      },
+      create: {
+        favouriteItemId: poi.favouriteItemId,
+        cityId: poi.cityId,
+      },
+      update: {},
+    });
   }
 
   await prisma.poi.delete({ where: { id: poiIdNum } });

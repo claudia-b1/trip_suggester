@@ -25,7 +25,7 @@ export function TripNoteEditor({
 }) {
   const [noteId, setNoteId] = useState<number | null>(initialNote?.id ?? null);
   const [content, setContent] = useState(initialNote?.content ?? "");
-  const [expanded, setExpanded] = useState(!compact);
+  const [expanded, setExpanded] = useState(!compact && !!initialNote?.content?.trim());
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedRef = useRef(initialNote?.content ?? "");

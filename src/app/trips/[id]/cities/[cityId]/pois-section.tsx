@@ -49,6 +49,7 @@ export type PoiDTO = {
   address: string | null;
   notes: string | null;
   hasOriginalData?: boolean;
+  extraFields?: Record<string, unknown> | null;
 };
 
 type View = "list" | "map";
@@ -486,7 +487,7 @@ function PoiCard({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); photoInputRef.current?.click(); }}
-                className="absolute top-1.5 right-1.5 z-10 rounded-full bg-black/50 p-1 text-white/80 hover:text-white hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+                className="absolute top-1.5 right-1.5 z-10 rounded-full bg-black/50 p-1.5 sm:p-1 text-white/80 hover:text-white hover:bg-black/70 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                 title="Change photo"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -589,10 +590,10 @@ function PoiCard({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
-            className="rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
+            className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
             title="Edit place"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </button>
@@ -875,7 +876,7 @@ function CompactPoiCard({
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
-          className="flex-shrink-0 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+          className="flex-shrink-0 rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
           title="Edit place"
         >
           <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -2098,6 +2099,7 @@ export function PoisSection({
                       visited: visitedIds.has(p.id),
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
+                      extraFields: p.extraFields,
                     })}
                   />
                 ))}
@@ -2134,6 +2136,7 @@ export function PoisSection({
                       visited: visitedIds.has(p.id),
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
+                      extraFields: p.extraFields,
                     })}
                   />
                 ))}

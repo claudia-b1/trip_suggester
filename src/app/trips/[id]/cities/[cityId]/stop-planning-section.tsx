@@ -44,6 +44,7 @@ export type StopPoiDTO = {
   address: string | null;
   notes: string | null;
   favouriteItemId: number | null;
+  extraFields?: Record<string, unknown> | null;
   hasOriginalData?: boolean;
 };
 
@@ -183,7 +184,7 @@ function StopPoiCard({
             className={`absolute top-1.5 right-1.5 z-10 rounded-full p-1.5 transition-all ${
               isFavourited
                 ? "bg-pink-500 text-white shadow-sm"
-                : "bg-black/40 text-white/80 hover:bg-pink-500 hover:text-white opacity-0 group-hover:opacity-100"
+                : "bg-black/40 text-white/80 hover:bg-pink-500 hover:text-white opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
             }`}
           >
             <HeartIcon filled={isFavourited} className="h-3 w-3" />
@@ -198,7 +199,7 @@ function StopPoiCard({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
-            className="rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
+            className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
             title="Edit place"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -239,7 +240,7 @@ function StopPoiCard({
               e.dataTransfer.effectAllowed = "copy";
             }}
             title="Drag to timeline"
-            className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] flex-shrink-0"
+            className="cursor-grab active:cursor-grabbing opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] flex-shrink-0"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/>
@@ -747,9 +748,9 @@ export function StopPlanningSection({
               </svg>
               🧭 Discover nearby
             </CardTitle>
-            <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]" onClick={(e) => e.stopPropagation()}>
+            <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]" tabIndex={0} role="button" onClick={(e) => e.stopPropagation()}>
               ⓘ
-              <span className="pointer-events-none absolute right-0 top-6 z-20 w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="pointer-events-none absolute right-0 top-6 z-20 w-56 max-w-[80vw] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 Find restaurants, groceries and gas stations near this travel stop.
               </span>
             </span>
@@ -1248,6 +1249,7 @@ export function StopPlanningSection({
                               fee: p.fee, address: p.address, notes: p.notes,
                               cityName: cityName ?? null, country: country ?? null,
                               visited: false, personalRating: null,
+                              extraFields: p.extraFields,
                               hasOriginalData: p.hasOriginalData,
                             })}
                           />

@@ -50,8 +50,9 @@ model City {
   longitude     Float?
   timezone         String?
   discoverRadiusKm Float?
-  type             String    @default("destination") // "destination" | "stop"
-  tripId           Int
+  type                String    @default("destination") // "destination" | "stop"
+  accommodationPoiId  Int?      // Selected accommodation POI (null = none selected)
+  tripId              Int
   trip          Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   parentCityId  Int?
   parentCity    City?           @relation("CitySubcity", fields: [parentCityId], references: [id], onDelete: Cascade)
@@ -96,6 +97,7 @@ model Poi {
   address                  String?       // reverse-geocoded from lat/lng
   notes                    String?       // user notes
   originalData             String?       // JSON snapshot of discovered values, saved on first user edit
+  extraFields              Json?         // arbitrary extra data (synced from FavouriteItem.extraFields)
   favouriteItemId          Int?          // link to source FavouriteItem for auto-sync
   cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
@@ -256,6 +258,18 @@ model FavouriteItem {
   @@index([listId])
   @@index([city])
   @@index([country])
+}
+
+// Tracks favourite+city pairs the user intentionally removed (deleted the auto-created POI).
+// Prevents the sync from re-creating the POI on subsequent page loads.
+model DismissedFavouriteCity {
+  id              Int      @id @default(autoincrement())
+  favouriteItemId Int
+  cityId          Int
+  createdAt       DateTime @default(now())
+
+  @@unique([favouriteItemId, cityId])
+  @@index([cityId])
 }
 
 model PoiRating {

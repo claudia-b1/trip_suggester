@@ -84,7 +84,7 @@ export function TripTimeline({
       {open && (
         <div className="space-y-2 pt-1">
           {/* Date tick header */}
-          <div className="relative h-5 ml-[110px] sm:ml-[130px]">
+          <div className="relative h-5 ml-[72px] sm:ml-[130px]">
             {ticks.map((tick, i) => (
               <span
                 key={i}
@@ -115,13 +115,13 @@ export function TripTimeline({
                 {/* Parent row */}
                 <div className="flex items-center gap-2">
                   {/* City label */}
-                  <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1.5 min-w-0">
+                  <div className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 sm:gap-1.5 min-w-0">
                     {city.type === "stop" ? (
                       <span className="h-2.5 w-2.5 shrink-0 text-[10px] leading-none">{"🚗"}</span>
                     ) : (
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                     )}
-                    <span className={`text-xs truncate ${city.type === "stop" ? "text-[hsl(var(--muted-foreground))]" : "font-medium"}`}>{city.name}</span>
+                    <span className={`text-[10px] sm:text-xs truncate ${city.type === "stop" ? "text-[hsl(var(--muted-foreground))]" : "font-medium"}`}>{city.name}</span>
                   </div>
                   {/* Bar track */}
                   <div className="relative h-7 flex-1 rounded-md bg-[hsl(var(--muted))]/50">
@@ -164,7 +164,7 @@ export function TripTimeline({
                       return (
                         <div key={sub.id} className="flex items-center gap-2">
                           {/* Subcity label — indented with connecting branch */}
-                          <div className="w-[100px] sm:w-[120px] shrink-0 flex items-center gap-1 min-w-0 pl-4">
+                          <div className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 min-w-0 pl-3 sm:pl-4">
                             <span className="text-[10px] select-none" style={{ color, opacity: 0.5 }}>
                               {isLast ? "└" : "├"}
                             </span>

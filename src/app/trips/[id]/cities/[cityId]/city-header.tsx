@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { EditCityButton } from "./edit-city-button";
+import { AddSubDestinationModal } from "@/components/ui/add-subdestination-modal";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 
 function countryCodeToFlag(code: string): string {
@@ -69,6 +70,8 @@ export type CityHeaderProps = {
   cities: { id: number; name: string; nickname?: string | null }[];
   activeCityId?: number;
   parentCity?: { id: number; name: string } | null;
+  /** Whether this city is itself a sub-destination (has a parent) */
+  isSubcity?: boolean;
   poiCounts: Record<Category, number>;
   plannedCount: number;
   totalPois: number;
@@ -88,6 +91,8 @@ export type CityHeaderProps = {
     cityLat: number | null;
     cityLon: number | null;
     pois: { id: number; category: string }[];
+    /** Existing ACCOMMODATION POIs in this city (for "pick from existing" list) */
+    accomPois: { id: number; name: string; address?: string }[];
     dayPlanIds: number[];
   };
 };
@@ -109,6 +114,7 @@ export function CityHeader({
   cities,
   activeCityId,
   parentCity,
+  isSubcity,
   poiCounts,
   plannedCount,
   totalPois,
@@ -120,6 +126,8 @@ export function CityHeader({
   const router = useRouter();
   const { toast } = useToast();
   const [autoPlanLoading, setAutoPlanLoading] = useState(false);
+  const [addSubOpen, setAddSubOpen] = useState(false);
+  const [enrichLoading, setEnrichLoading] = useState(false);
 
   // ── Stop accommodation picker state ──
   const [accom, setAccom] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
@@ -201,12 +209,7 @@ export function CityHeader({
     if (!stopAccommodation) return;
     setSettingAccom(true);
     try {
-      // Delete ALL existing ACCOMMODATION POIs for this city
-      const existingAccoms = stopAccommodation.pois.filter((p) => p.category === "ACCOMMODATION");
-      await Promise.all(
-        existingAccoms.map((p) => fetch(`/api/pois/${p.id}`, { method: "DELETE" })),
-      );
-      // Create new ACCOMMODATION POI
+      // Create new ACCOMMODATION POI (keep existing ones — user can manage from POI list)
       const res = await fetch(`/api/cities/${cityId}/pois`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -221,6 +224,13 @@ export function CityHeader({
       if (res.ok) {
         const poi = await res.json();
         setAccom({ id: poi.id, name, latitude: lat, longitude: lon, address });
+
+        // Mark this POI as the selected accommodation on the city
+        await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accommodationPoiId: poi.id }),
+        });
 
         // Auto-assign to evening slot of all days except last
         const dpIds = stopAccommodation.dayPlanIds;
@@ -254,20 +264,47 @@ export function CityHeader({
     }
   }
 
-  async function clearAccom() {
+  async function unselectAccom() {
     if (!accom) return;
     setSettingAccom(true);
     try {
-      await fetch(`/api/pois/${accom.id}`, { method: "DELETE" });
+      // Clear the selection on the city — the POI itself stays in the list
+      await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: null }),
+      });
       setAccom(null);
-      toast("Accommodation removed");
+      toast("Accommodation unselected");
       router.refresh();
     } catch {
-      toast("Failed to remove accommodation", { variant: "error" });
+      toast("Failed to unselect accommodation", { variant: "error" });
     } finally {
       setSettingAccom(false);
     }
   }
+
+  /** Select an existing ACCOMMODATION POI as the active accommodation */
+  async function selectExistingAccom(poiId: number, poiName: string, poiAddress?: string) {
+    setSettingAccom(true);
+    try {
+      await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: poiId }),
+      });
+      setAccom({ id: poiId, name: poiName, latitude: 0, longitude: 0, address: poiAddress });
+      toast(`Accommodation set: ${poiName}`);
+      router.refresh();
+    } catch {
+      toast("Failed to set accommodation", { variant: "error" });
+    } finally {
+      setSettingAccom(false);
+      setAccomOpen(false);
+    }
+  }
+
+  const existingAccomPois = stopAccommodation?.accomPois?.filter((p) => p.id !== accom?.id) ?? [];
 
   const msPerDay = 86_400_000;
   const nights = Math.round(
@@ -275,7 +312,7 @@ export function CityHeader({
   );
   const days = nights + 1;
 
-  const planPct = totalPois > 0 ? Math.round((plannedCount / totalPois) * 100) : 0;
+  // planPct and hasCategories removed — POI stats row no longer shown in header
 
   async function handleAutoPlan() {
     setAutoPlanLoading(true);
@@ -293,11 +330,25 @@ export function CityHeader({
     }
   }
 
+  async function handleReEnrich() {
+    setEnrichLoading(true);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/re-enrich`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} already had wiki photos)` : "";
+      toast(`Wikipedia photos: ${data.updated} updated out of ${data.checked} POIs${skippedMsg}`);
+      if (data.updated > 0) router.refresh();
+    } catch {
+      toast("Photo refresh failed", { variant: "error" });
+    } finally {
+      setEnrichLoading(false);
+    }
+  }
+
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
-
-  const hasCategories = Object.values(poiCounts).some((v) => v > 0);
 
   return (
     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 space-y-4">
@@ -335,6 +386,19 @@ export function CityHeader({
                   tripStartDate={editProps.tripStartDate}
                   tripEndDate={editProps.tripEndDate}
                 />
+              )}
+              {/* Add sub-destination — only for top-level cities (not for subcities themselves) */}
+              {!isSubcity && (
+                <button
+                  type="button"
+                  onClick={() => setAddSubOpen(true)}
+                  className="rounded-full p-1 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] transition-colors"
+                  title="Add sub-destination"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                  </svg>
+                </button>
               )}
             </div>
             {nickname && (
@@ -412,11 +476,11 @@ export function CityHeader({
                 </button>
                 <button
                   type="button"
-                  onClick={clearAccom}
+                  onClick={unselectAccom}
                   disabled={settingAccom}
                   className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0 disabled:opacity-50"
                 >
-                  ✕
+                  Unselect
                 </button>
               </>
             ) : (
@@ -470,6 +534,32 @@ export function CityHeader({
                 </div>
               </div>
 
+              {/* Existing ACCOMMODATION POIs in this city */}
+              {existingAccomPois.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Existing accommodations</p>
+                  <div className="max-h-32 overflow-y-auto space-y-0.5">
+                    {existingAccomPois.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={settingAccom}
+                        onClick={() => selectExistingAccom(p.id, p.name, p.address)}
+                        className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+                      >
+                        <span className="text-xs shrink-0">🏠</span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate">{p.name}</p>
+                          {p.address && (
+                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{p.address}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {accomFavourites.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
@@ -516,45 +606,7 @@ export function CityHeader({
         </div>
       ) : null}
 
-      {/* Row 3: POI stats + planning progress */}
-      {!isStop && (hasCategories || totalPois > 0) && (
-        <div className="flex items-center gap-4 flex-wrap">
-          {hasCategories && (
-            <div className="flex items-center gap-2">
-              {(Object.entries(poiCounts) as [Category, number][])
-                .filter(([, count]) => count > 0)
-                .map(([cat, count]) => (
-                  <span
-                    key={cat}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_STYLES[cat].badge}`}
-                  >
-                    {CATEGORY_ICONS[cat]} {count}
-                  </span>
-                ))}
-            </div>
-          )}
-          {totalPois > 0 && (
-            <>
-              {hasCategories && (
-                <span className="text-[hsl(var(--muted-foreground))]">·</span>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                  📋 {plannedCount}/{totalPois} planned
-                </span>
-                <div className="h-1.5 w-24 rounded-full bg-[hsl(var(--muted))]">
-                  <div
-                    className="h-full rounded-full bg-[hsl(var(--primary))] transition-all"
-                    style={{ width: `${planPct}%` }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Row 4: Quick action chips */}
+      {/* Row 3: Quick action chips */}
       {!isStop && (
         <div className="flex items-center gap-2 flex-wrap">
           <Button
@@ -582,7 +634,27 @@ export function CityHeader({
           >
             🧭 Discover
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReEnrich}
+            disabled={enrichLoading || totalPois === 0}
+            className="rounded-full text-xs"
+          >
+            {enrichLoading ? "Refreshing…" : "📸 Wiki photos"}
+          </Button>
         </div>
+      )}
+      {/* Add sub-destination modal */}
+      {addSubOpen && (
+        <AddSubDestinationModal
+          tripId={tripId}
+          parentCityId={cityId}
+          parentCityName={nickname ?? name}
+          parentStartDate={startDate}
+          parentEndDate={endDate}
+          onClose={() => setAddSubOpen(false)}
+        />
       )}
     </div>
   );

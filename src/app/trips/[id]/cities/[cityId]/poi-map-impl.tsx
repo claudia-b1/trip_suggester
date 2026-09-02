@@ -31,12 +31,14 @@ type LocatedPoi = {
   rating?: number | null;
   photoUrl?: string | null;
   userRatingCount?: number | null;
+  address?: string | null;
+  openingHours?: string | null;
 };
 
 export type DayPlanOption = { id: number; label: string };
 
 export type PoiMapProps = {
-  pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null }[];
+  pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null; address?: string | null; openingHours?: string | null }[];
   cityId?: number;
   cityLat?: number;
   cityLon?: number;
@@ -114,6 +116,54 @@ function makeRadiusCircle(lat: number, lon: number, radiusKm: number): GeoJSON.F
     pts.push([lon + dLon, lat + dLat]);
   }
   return { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [pts] } };
+}
+
+/**
+ * Calculate the zoom level that fits all points while keeping a fixed center.
+ * Uses the Mercator projection formula: at zoom z, the map shows ~360/2^z degrees of longitude.
+ * We find the max angular distance from the center to any point and derive the zoom from that.
+ */
+function zoomToFitFromCenter(
+  centerLat: number,
+  centerLon: number,
+  points: { lat: number; lng: number }[],
+  padding = 80,
+  containerWidth = 800,
+  containerHeight = 600,
+  maxZoom = 15,
+): number {
+  if (points.length === 0) return 14;
+
+  // Find the maximum distance in degrees from center to any point,
+  // accounting for latitude compression on longitude
+  const cosLat = Math.cos((centerLat * Math.PI) / 180);
+  let maxDLat = 0;
+  let maxDLon = 0;
+  for (const p of points) {
+    maxDLat = Math.max(maxDLat, Math.abs(p.lat - centerLat));
+    maxDLon = Math.max(maxDLon, Math.abs(p.lng - centerLon) * cosLat);
+  }
+
+  // The map needs to show 2× the max distance (center to edge) in each direction
+  // Subtract padding from available viewport size
+  const usableW = Math.max(containerWidth - padding * 2, 100);
+  const usableH = Math.max(containerHeight - padding * 2, 100);
+
+  // Degrees per pixel at zoom z: 360 / (256 * 2^z) for longitude
+  // For latitude it's similar (Mercator approximation at moderate latitudes)
+  // Solve: (2 * maxDLon) / degreesPerPixel <= usableW
+  //        degreesPerPixel = 360 / (256 * 2^z)
+  //        2^z = (usableW * 1) / (2 * maxDLon * 256 / 360)
+  let zoomLon = 20;
+  let zoomLat = 20;
+  if (maxDLon > 0) {
+    zoomLon = Math.log2((usableW * 360) / (2 * maxDLon / cosLat * 256));
+  }
+  if (maxDLat > 0) {
+    zoomLat = Math.log2((usableH * 360) / (2 * maxDLat * 256));
+  }
+
+  return Math.max(1, Math.min(maxZoom, Math.min(zoomLon, zoomLat)));
 }
 
 function ClusterPie({ pois }: { pois: LocatedPoi[] }) {
@@ -334,6 +384,17 @@ function PopupContent({
           )}
         </p>
       )}
+      {/* Address + opening hours for accommodation POIs */}
+      {poi.category === "ACCOMMODATION" && (poi.address || poi.openingHours) && (
+        <div className="space-y-0.5">
+          {poi.address && (
+            <p className="text-xs text-gray-500">📍 {poi.address}</p>
+          )}
+          {poi.openingHours && (
+            <p className="text-xs text-gray-500">🕐 {poi.openingHours}</p>
+          )}
+        </div>
+      )}
       {(poi.rating != null || poi.userRatingCount != null) && (
         <p className="flex items-center gap-1 text-xs text-gray-500">
           {poi.rating != null && (
@@ -546,6 +607,14 @@ function FavouritePopupContent({
           longitude: item.longitude,
           photoUrl: item.photoUrl || undefined,
           website: item.website || undefined,
+          placeId: item.sourcePlaceId || undefined,
+          phoneNumber: item.phoneNumber || undefined,
+          openingHours: item.openingHours || undefined,
+          priceLevel: item.priceLevel ?? undefined,
+          fee: item.fee || undefined,
+          address: item.address || undefined,
+          notes: item.notes || undefined,
+          favouriteItemId: item.id,
         }),
       });
       if (res.ok) {
@@ -697,13 +766,23 @@ export function PoiMapImpl(props: PoiMapProps) {
   const located: LocatedPoi[] = useMemo(
     () => pois.flatMap((p) =>
       p.latitude != null && p.longitude != null
-        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, subcategory: p.subcategory, rating: p.rating, photoUrl: p.photoUrl, userRatingCount: p.userRatingCount }]
+        ? [{ ...p, latitude: p.latitude, longitude: p.longitude, subcategory: p.subcategory, rating: p.rating, photoUrl: p.photoUrl, userRatingCount: p.userRatingCount, address: p.address, openingHours: p.openingHours }]
         : [],
     ),
     [pois],
   );
 
-  // Favourite items that aren't already represented as POIs (by sourcePlaceId or name)
+  // Favourite items that aren't already represented as POIs
+  // (by favouriteItemId link, sourcePlaceId match, or name match)
+  const linkedFavIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const p of pois) {
+      const favId = (p as { favouriteItemId?: number | null }).favouriteItemId;
+      if (favId != null) ids.add(favId);
+    }
+    return ids;
+  }, [pois]);
+
   const poiPlaceIds = useMemo(() => {
     const ids = new Set<string>();
     for (const p of pois) if (p.placeId) ids.add(p.placeId);
@@ -719,10 +798,11 @@ export function PoiMapImpl(props: PoiMapProps) {
   const visibleFavourites = useMemo(
     () => favouriteItems.filter((f) =>
       f.latitude != null && f.longitude != null &&
+      !linkedFavIds.has(f.id) &&
       !(f.sourcePlaceId && poiPlaceIds.has(f.sourcePlaceId)) &&
       !poiNames.has(f.name.toLowerCase())
     ),
-    [favouriteItems, poiPlaceIds, poiNames],
+    [favouriteItems, linkedFavIds, poiPlaceIds, poiNames],
   );
 
   // Track which POIs are also favourited (for heart indicator on markers)
@@ -791,44 +871,83 @@ export function PoiMapImpl(props: PoiMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFavItem, mapReady]);
 
-  const fitBounds = useCallback(() => {
+  /** Fly to city center with zoom that fits all given points. */
+  const flyToCenterFitting = useCallback((points: { lat: number; lng: number }[], duration = 800) => {
     const map = mapRef.current;
+    if (!map) return;
+    const cLat = cityLat;
+    const cLon = cityLon;
+
+    // If no city center, fall back to standard fitBounds
+    if (cLat == null || cLon == null) {
+      if (points.length === 0) return;
+      if (points.length === 1) {
+        map.flyTo({ center: [points[0].lng, points[0].lat], zoom: 14, duration });
+        return;
+      }
+      const lngs = points.map((p) => p.lng);
+      const lats = points.map((p) => p.lat);
+      map.fitBounds(
+        [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+        { padding: 60, duration, maxZoom: 15 },
+      );
+      return;
+    }
+
+    // Center-locked: keep city at center, zoom to fit farthest point
+    if (points.length === 0) {
+      map.flyTo({ center: [cLon, cLat], zoom: 14, duration });
+      return;
+    }
+
+    const container = map.getContainer();
+    const z = zoomToFitFromCenter(
+      cLat, cLon, points, 60,
+      container.clientWidth || 800,
+      container.clientHeight || 600,
+      15,
+    );
+    map.flyTo({ center: [cLon, cLat], zoom: z, duration });
+  }, [cityLat, cityLon]);
+
+  const fitBounds = useCallback(() => {
     const allPoints = [
       ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
       ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
     ];
-    if (!map || allPoints.length === 0) return;
-    if (allPoints.length === 1) {
-      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
-      return;
-    }
-    const lngs = allPoints.map((p) => p.lng);
-    const lats = allPoints.map((p) => p.lat);
-    map.fitBounds(
-      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-      { padding: 60, duration: 800, maxZoom: 15 },
-    );
-  }, [located, visibleFavourites]);
+    flyToCenterFitting(allPoints);
+  }, [located, visibleFavourites, flyToCenterFitting]);
 
   const fitBoundsNoAccommodation = useCallback(() => {
-    const map = mapRef.current;
     const nonAccom = located.filter((p) => p.category !== "ACCOMMODATION");
     const allPoints = [
       ...nonAccom.map((p) => ({ lat: p.latitude, lng: p.longitude })),
       ...visibleFavourites.filter((f) => f.category !== "ACCOMMODATION").map((f) => ({ lat: f.latitude, lng: f.longitude })),
     ];
-    if (!map || allPoints.length === 0) return;
-    if (allPoints.length === 1) {
-      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
-      return;
+    flyToCenterFitting(allPoints);
+  }, [located, visibleFavourites, flyToCenterFitting]);
+
+  // When city coordinates change (after editing location), re-center the map.
+  // We skip the very first run (handled by onLoad) using a mount ref.
+  const hasMounted = useRef(false);
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return; // Skip first run — onLoad handles initial centering
     }
-    const lngs = allPoints.map((p) => p.lng);
-    const lats = allPoints.map((p) => p.lat);
-    map.fitBounds(
-      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
-      { padding: 60, duration: 800, maxZoom: 15 },
-    );
-  }, [located, visibleFavourites]);
+    if (cityLat == null || cityLon == null) return;
+    // Map may not have mapRef yet if it was unmounted and remounted
+    const map = mapRef.current;
+    if (!map) return;
+    // Fly to the new city center, fitting all visible points
+    const allPoints = [
+      ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+      ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
+    ];
+    flyToCenterFitting(allPoints);
+  // Only re-run when the actual coordinates change
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cityLat, cityLon]);
 
   useEffect(() => {
     if (!focusPoiId) return;
@@ -859,8 +978,9 @@ export function PoiMapImpl(props: PoiMapProps) {
     return <p className="text-sm text-[hsl(var(--muted-foreground))]">No POIs with coordinates yet.</p>;
   }
 
-  const centerLat = hasLocated ? located[0].latitude : hasFavourites ? visibleFavourites[0].latitude : cityLat!;
-  const centerLon = hasLocated ? located[0].longitude : hasFavourites ? visibleFavourites[0].longitude : cityLon!;
+  // Prefer city center for initial view — the fitBounds onLoad will adjust zoom to fit points
+  const centerLat = hasCityCenter ? cityLat! : hasLocated ? located[0].latitude : visibleFavourites[0].latitude;
+  const centerLon = hasCityCenter ? cityLon! : hasLocated ? located[0].longitude : visibleFavourites[0].longitude;
 
   // GeoJSON circle for city radius (only when city centre + radius are known)
   const circleData: GeoJSON.Feature<GeoJSON.Polygon> | null =

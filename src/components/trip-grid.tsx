@@ -220,7 +220,7 @@ export function TripGrid({
                     e.stopPropagation();
                     setCopyTrip(trip);
                   }}
-                  className="absolute right-10 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/60"
+                  className="absolute right-10 top-2 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-black/40 text-white opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 hover:bg-black/60"
                   title="Copy to another user"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -236,7 +236,7 @@ export function TripGrid({
                   e.stopPropagation();
                   toggleArchive(trip.id, trip.archived);
                 }}
-                className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/60"
+                className="absolute right-2 top-2 flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-black/40 text-white opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 hover:bg-black/60"
                 title={trip.archived ? "Unarchive trip" : "Archive trip"}
               >
                 {trip.archived ? (
