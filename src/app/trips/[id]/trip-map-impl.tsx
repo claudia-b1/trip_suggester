@@ -202,6 +202,7 @@ export function TripMapImpl({ cities }: TripMapProps) {
                     type="button"
                     onMouseEnter={() => setHoveredId(city.id)}
                     onMouseLeave={() => setHoveredId(null)}
+                    onClick={() => setHoveredId((prev) => prev === city.id ? null : city.id)}
                     aria-label={city.name}
                     style={{
                       width: 20,
@@ -227,6 +228,7 @@ export function TripMapImpl({ cities }: TripMapProps) {
                     type="button"
                     onMouseEnter={() => setHoveredId(city.id)}
                     onMouseLeave={() => setHoveredId(null)}
+                    onClick={() => setHoveredId((prev) => prev === city.id ? null : city.id)}
                     aria-label={city.name}
                     style={{
                       display: "flex",
@@ -256,6 +258,7 @@ export function TripMapImpl({ cities }: TripMapProps) {
                     type="button"
                     onMouseEnter={() => setHoveredId(city.id)}
                     onMouseLeave={() => setHoveredId(null)}
+                    onClick={() => setHoveredId((prev) => prev === city.id ? null : city.id)}
                     aria-label={city.name}
                     style={{
                       width: 32,
@@ -295,7 +298,8 @@ export function TripMapImpl({ cities }: TripMapProps) {
               latitude={city.latitude}
               longitude={city.longitude}
               closeButton={false}
-              closeOnClick={false}
+              closeOnClick
+              onClose={() => setHoveredId(null)}
               anchor="bottom"
               offset={city.parentCityId ? 14 : 20}
             >

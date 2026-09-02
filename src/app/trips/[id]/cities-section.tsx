@@ -481,22 +481,22 @@ export function CitiesSection({
           <span className="absolute -left-5 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] text-xs select-none">└</span>
 
           {/* Reorder column for subcities */}
-          <div className="flex flex-col gap-0.5 shrink-0 w-3 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex flex-col gap-0.5 shrink-0 w-5 sm:w-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
             <button
               type="button"
               onClick={() => moveCity(city.id, "up", city.parentCityId)}
               aria-label="Move up"
-              className={`flex h-3 w-3 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${sameDatePrev ? "" : "invisible"}`}
+              className={`flex h-5 w-5 sm:h-3 sm:w-3 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${sameDatePrev ? "" : "invisible"}`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-2.5 sm:w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
             <button
               type="button"
               onClick={() => moveCity(city.id, "down", city.parentCityId)}
               aria-label="Move down"
-              className={`flex h-3 w-3 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${sameDateNext ? "" : "invisible"}`}
+              className={`flex h-5 w-5 sm:h-3 sm:w-3 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${sameDateNext ? "" : "invisible"}`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-2.5 sm:w-2.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
           </div>
 
@@ -512,7 +512,7 @@ export function CitiesSection({
           {/* Detach button */}
           <button
             type="button"
-            className="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] group-hover:opacity-100"
+            className="shrink-0 rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] sm:group-hover:opacity-100"
             onClick={() => detachSubcity(city.id)}
             title="Promote to top-level destination"
           >
@@ -522,7 +522,7 @@ export function CitiesSection({
           {/* Delete button */}
           <button
             type="button"
-            className="shrink-0 rounded p-1 text-[hsl(var(--muted-foreground))] opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-30"
+            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-red-50 hover:text-red-600 sm:group-hover:opacity-100 disabled:opacity-30"
             onClick={() => onDelete(city)}
             disabled={deletingId === city.id}
             aria-label={`Delete ${displayName(city)}`}
@@ -530,7 +530,7 @@ export function CitiesSection({
             {deletingId === city.id ? (
               <span className="text-[10px]">…</span>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6l-1 14H6L5 6" />
                 <path d="M10 11v6" />
@@ -555,22 +555,22 @@ export function CitiesSection({
       <div key={city.id}>
         <div className="group relative flex items-center gap-2.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 transition-all duration-150 hover:shadow-sm hover:border-[hsl(var(--ring))]">
           {/* Reorder column */}
-          <div className="flex flex-col gap-0.5 shrink-0 w-4 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex flex-col gap-0.5 shrink-0 w-6 sm:w-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
             <button
               type="button"
               onClick={() => moveCity(city.id, "up", null)}
               aria-label="Move up"
-              className={`flex h-4 w-4 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${canMoveUp ? "" : "invisible"}`}
+              className={`flex h-6 w-6 sm:h-4 sm:w-4 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${canMoveUp ? "" : "invisible"}`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
             </button>
             <button
               type="button"
               onClick={() => moveCity(city.id, "down", null)}
               aria-label="Move down"
-              className={`flex h-4 w-4 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${canMoveDown ? "" : "invisible"}`}
+              className={`flex h-6 w-6 sm:h-4 sm:w-4 items-center justify-center rounded text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors ${canMoveDown ? "" : "invisible"}`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             </button>
           </div>
 
@@ -608,7 +608,7 @@ export function CitiesSection({
             <div className="relative shrink-0">
               <button
                 type="button"
-                className="rounded px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] group-hover:opacity-100"
+                className="rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] sm:group-hover:opacity-100"
                 onClick={() => setMoveMenuOpenId(moveMenuOpenId === city.id ? null : city.id)}
                 title="Move under another destination"
               >
@@ -634,7 +634,7 @@ export function CitiesSection({
           {/* Delete button */}
           <button
             type="button"
-            className="shrink-0 rounded p-1 text-[hsl(var(--muted-foreground))] opacity-0 transition-all hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 disabled:opacity-30"
+            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-red-50 hover:text-red-600 sm:group-hover:opacity-100 disabled:opacity-30"
             onClick={() => onDelete(city)}
             disabled={deletingId === city.id}
             aria-label={`Delete ${displayName(city)}`}
@@ -642,7 +642,7 @@ export function CitiesSection({
             {deletingId === city.id ? (
               <span className="text-[10px]">…</span>
             ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-3.5 sm:w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6l-1 14H6L5 6" />
                 <path d="M10 11v6" />
@@ -685,7 +685,7 @@ export function CitiesSection({
 
             {/* Map */}
             {mapCities.length > 0 && (
-              <div className="flex-1 h-[400px] sm:h-auto" style={{ minHeight: 400 }}>
+              <div className="flex-1 h-[280px] sm:h-auto" style={{ minHeight: 280 }}>
                 <TripMap cities={mapCities} />
               </div>
             )}

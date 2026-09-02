@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { CATEGORY_STYLES, type Category } from "@/lib/categories";
 
 export type HoverPoiData = {
@@ -33,6 +33,27 @@ export function PoiHoverCard({
     timeoutRef.current = setTimeout(() => setVisible(false), 200);
   }
 
+  // Toggle on tap for mobile (touch devices don't have hover)
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    // Only toggle for touch-primary devices; desktop clicks should pass through
+    if (window.matchMedia("(hover: none)").matches) {
+      e.stopPropagation();
+      setVisible((v) => !v);
+    }
+  }, []);
+
+  // Close when tapping outside on mobile
+  useEffect(() => {
+    if (!visible) return;
+    function handleOutside(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setVisible(false);
+      }
+    }
+    document.addEventListener("pointerdown", handleOutside);
+    return () => document.removeEventListener("pointerdown", handleOutside);
+  }, [visible]);
+
   useEffect(() => () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }, []);
@@ -45,10 +66,11 @@ export function PoiHoverCard({
       className="relative inline-flex min-w-0"
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onClick={handleClick}
     >
       {children}
       {visible && (
-        <div className="absolute left-0 bottom-full z-40 mb-2 w-56 animate-fade-up rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden pointer-events-none">
+        <div className="absolute left-0 bottom-full z-40 mb-2 w-56 max-w-[85vw] animate-fade-up rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] shadow-lg overflow-hidden pointer-events-none">
           {poi.photoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
             <img

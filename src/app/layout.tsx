@@ -42,7 +42,7 @@ export default function RootLayout({
             <UserProvider>
             <FavouritesProvider>
               <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg">
-                <div className="mx-auto flex w-full items-center justify-between gap-3 px-6 py-3">
+                <div className="mx-auto flex w-full items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
                   <Link href="/" className="flex items-center gap-2 text-base font-bold sm:text-lg group">
                     <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-sm transition-transform group-hover:scale-110">
                       ✈️
@@ -52,9 +52,9 @@ export default function RootLayout({
                   <HeaderActions />
                 </div>
               </header>
-              <main className="w-full flex-1 px-6 py-6"><PageTransition>{children}</PageTransition></main>
+              <main className="w-full flex-1 px-3 py-4 sm:px-6 sm:py-6"><PageTransition>{children}</PageTransition></main>
               <footer className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card))]">
-                <div className="flex w-full items-center justify-between px-6 py-4 text-xs text-[hsl(var(--muted-foreground))]">
+                <div className="flex w-full items-center justify-between px-3 py-3 sm:px-6 sm:py-4 text-xs text-[hsl(var(--muted-foreground))]">
                   <span>Trip Planner v0.1</span>
                   <span>Powered by Geoapify · Wikidata · Google Places</span>
                 </div>

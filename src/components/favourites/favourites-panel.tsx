@@ -430,7 +430,7 @@ export function FavouritesPanel() {
         <div className="flex items-center gap-1 py-1.5">
           {/* Drag handle */}
           {!selectMode && (
-            <span className="cursor-grab text-[10px] text-[hsl(var(--muted-foreground))] opacity-0 group-hover:opacity-100 hover:opacity-100 active:cursor-grabbing select-none" title="Drag to reorder">
+            <span className="cursor-grab text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:opacity-100 active:cursor-grabbing select-none" title="Drag to reorder">
               ⋮⋮
             </span>
           )}

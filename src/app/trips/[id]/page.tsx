@@ -80,11 +80,11 @@ export default async function TripDetailPage({
         ) : (
           <div className="h-3 bg-gradient-to-r from-blue-500 via-violet-500 to-indigo-500" />
         )}
-        <div className="p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
+        <div className="p-4 sm:p-6 space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-gradient">{trip.name}</h1>
+                <h1 className="text-xl sm:text-2xl font-bold text-gradient">{trip.name}</h1>
                 {trip.archived && (
                   <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
                     📦 Archived

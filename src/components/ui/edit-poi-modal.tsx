@@ -306,7 +306,7 @@ export function EditPoiModal({
           </div>
 
           {/* Category + Subcategory row */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Category</label>
               <select
@@ -347,7 +347,7 @@ export function EditPoiModal({
           </div>
 
           {/* Country + City row */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
                 Country
@@ -390,7 +390,7 @@ export function EditPoiModal({
           </div>
 
           {/* Website + Phone row */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Website</label>
               <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://..." className="text-sm" />
@@ -408,7 +408,7 @@ export function EditPoiModal({
           </div>
 
           {/* Price level + Fee row */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Price</label>
               <select

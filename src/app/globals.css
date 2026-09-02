@@ -113,6 +113,7 @@ body {
   color: hsl(var(--foreground));
   border-radius: var(--radius);
   box-shadow: 0 10px 25px -5px rgba(0,0,0,0.15);
+  max-width: min(90vw, 400px);
 }
 .mapboxgl-popup-tip {
   border-top-color: hsl(var(--background));

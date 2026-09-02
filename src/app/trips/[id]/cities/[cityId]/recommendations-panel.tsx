@@ -248,9 +248,9 @@ export function RecommendationsPanel({
             </svg>
             🧭 Discover
           </CardTitle>
-          <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]" onClick={(e) => e.stopPropagation()}>
+          <span className="group relative cursor-help text-[hsl(var(--muted-foreground))]" tabIndex={0} role="button" onClick={(e) => e.stopPropagation()}>
             ⓘ
-            <span className="pointer-events-none absolute right-0 top-6 z-20 w-64 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="pointer-events-none absolute right-0 top-6 z-20 w-64 max-w-[80vw] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-xs leading-relaxed shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
               Pulls from <strong>Geoapify Places</strong> (discovery) with enrichment via <strong>Wikidata</strong> &amp; <strong>Google Places</strong>. A rule-based engine ranks results by proximity, notability and category match.
             </span>
           </span>
