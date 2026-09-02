@@ -508,7 +508,10 @@ export default async function CityDetailPage({
         accommodations={isStop ? undefined : accommodations}
         stopAccommodation={isStop ? {
           initial: (() => {
-            const a = accomPois[0];
+            // Show only the explicitly selected accommodation (via accommodationPoiId)
+            const selectedId = city.accommodationPoiId;
+            if (!selectedId) return null;
+            const a = accomPois.find((p) => p.id === selectedId);
             if (a && a.latitude != null && a.longitude != null) {
               // Use favourite's address field (not POI description which may contain notes)
               let address: string | undefined;
@@ -530,6 +533,11 @@ export default async function CityDetailPage({
           cityLat: city.latitude,
           cityLon: city.longitude,
           pois: pois.map((p) => ({ id: p.id, category: p.category })),
+          accomPois: accomPois.map((p) => ({
+            id: p.id,
+            name: p.name,
+            address: p.description && p.description.includes(",") ? p.description : undefined,
+          })),
           dayPlanIds: dayPlans.map((dp) => dp.id),
         } : undefined}
       />
@@ -557,7 +565,9 @@ export default async function CityDetailPage({
             favouriteItems={favouriteItems}
             initialAccommodation={
               (() => {
-                const accom = city.pois.find((p) => p.category === "ACCOMMODATION");
+                const selectedId = city.accommodationPoiId;
+                if (!selectedId) return null;
+                const accom = city.pois.find((p) => p.id === selectedId);
                 if (accom && accom.latitude != null && accom.longitude != null) {
                   // Use favourite address (not POI description which may contain notes)
                   let addr: string | undefined;

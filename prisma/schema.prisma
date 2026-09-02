@@ -50,8 +50,9 @@ model City {
   longitude     Float?
   timezone         String?
   discoverRadiusKm Float?
-  type             String    @default("destination") // "destination" | "stop"
-  tripId           Int
+  type                String    @default("destination") // "destination" | "stop"
+  accommodationPoiId  Int?      // Selected accommodation POI (null = none selected)
+  tripId              Int
   trip          Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   parentCityId  Int?
   parentCity    City?           @relation("CitySubcity", fields: [parentCityId], references: [id], onDelete: Cascade)

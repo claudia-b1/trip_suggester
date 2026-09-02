@@ -91,6 +91,8 @@ export type CityHeaderProps = {
     cityLat: number | null;
     cityLon: number | null;
     pois: { id: number; category: string }[];
+    /** Existing ACCOMMODATION POIs in this city (for "pick from existing" list) */
+    accomPois: { id: number; name: string; address?: string }[];
     dayPlanIds: number[];
   };
 };
@@ -207,12 +209,7 @@ export function CityHeader({
     if (!stopAccommodation) return;
     setSettingAccom(true);
     try {
-      // Delete ALL existing ACCOMMODATION POIs for this city
-      const existingAccoms = stopAccommodation.pois.filter((p) => p.category === "ACCOMMODATION");
-      await Promise.all(
-        existingAccoms.map((p) => fetch(`/api/pois/${p.id}`, { method: "DELETE" })),
-      );
-      // Create new ACCOMMODATION POI
+      // Create new ACCOMMODATION POI (keep existing ones — user can manage from POI list)
       const res = await fetch(`/api/cities/${cityId}/pois`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -227,6 +224,13 @@ export function CityHeader({
       if (res.ok) {
         const poi = await res.json();
         setAccom({ id: poi.id, name, latitude: lat, longitude: lon, address });
+
+        // Mark this POI as the selected accommodation on the city
+        await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accommodationPoiId: poi.id }),
+        });
 
         // Auto-assign to evening slot of all days except last
         const dpIds = stopAccommodation.dayPlanIds;
@@ -260,20 +264,47 @@ export function CityHeader({
     }
   }
 
-  async function clearAccom() {
+  async function unselectAccom() {
     if (!accom) return;
     setSettingAccom(true);
     try {
-      await fetch(`/api/pois/${accom.id}`, { method: "DELETE" });
+      // Clear the selection on the city — the POI itself stays in the list
+      await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: null }),
+      });
       setAccom(null);
-      toast("Accommodation removed");
+      toast("Accommodation unselected");
       router.refresh();
     } catch {
-      toast("Failed to remove accommodation", { variant: "error" });
+      toast("Failed to unselect accommodation", { variant: "error" });
     } finally {
       setSettingAccom(false);
     }
   }
+
+  /** Select an existing ACCOMMODATION POI as the active accommodation */
+  async function selectExistingAccom(poiId: number, poiName: string, poiAddress?: string) {
+    setSettingAccom(true);
+    try {
+      await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: poiId }),
+      });
+      setAccom({ id: poiId, name: poiName, latitude: 0, longitude: 0, address: poiAddress });
+      toast(`Accommodation set: ${poiName}`);
+      router.refresh();
+    } catch {
+      toast("Failed to set accommodation", { variant: "error" });
+    } finally {
+      setSettingAccom(false);
+      setAccomOpen(false);
+    }
+  }
+
+  const existingAccomPois = stopAccommodation?.accomPois?.filter((p) => p.id !== accom?.id) ?? [];
 
   const msPerDay = 86_400_000;
   const nights = Math.round(
@@ -446,11 +477,11 @@ export function CityHeader({
                 </button>
                 <button
                   type="button"
-                  onClick={clearAccom}
+                  onClick={unselectAccom}
                   disabled={settingAccom}
                   className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] shrink-0 disabled:opacity-50"
                 >
-                  ✕
+                  Unselect
                 </button>
               </>
             ) : (
@@ -503,6 +534,32 @@ export function CityHeader({
                   )}
                 </div>
               </div>
+
+              {/* Existing ACCOMMODATION POIs in this city */}
+              {existingAccomPois.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Existing accommodations</p>
+                  <div className="max-h-32 overflow-y-auto space-y-0.5">
+                    {existingAccomPois.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={settingAccom}
+                        onClick={() => selectExistingAccom(p.id, p.name, p.address)}
+                        className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+                      >
+                        <span className="text-xs shrink-0">🏠</span>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-medium truncate">{p.name}</p>
+                          {p.address && (
+                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{p.address}</p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {accomFavourites.length > 0 && (
                 <div className="space-y-1">
