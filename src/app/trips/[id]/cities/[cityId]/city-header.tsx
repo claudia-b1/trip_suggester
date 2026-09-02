@@ -312,7 +312,7 @@ export function CityHeader({
   );
   const days = nights + 1;
 
-  const planPct = totalPois > 0 ? Math.round((plannedCount / totalPois) * 100) : 0;
+  // planPct and hasCategories removed — POI stats row no longer shown in header
 
   async function handleAutoPlan() {
     setAutoPlanLoading(true);
@@ -336,7 +336,8 @@ export function CityHeader({
       const res = await fetch(`/api/cities/${cityId}/re-enrich`, { method: "POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      toast(`Wikipedia photos: ${data.updated} updated out of ${data.checked} POIs`);
+      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} already had wiki photos)` : "";
+      toast(`Wikipedia photos: ${data.updated} updated out of ${data.checked} POIs${skippedMsg}`);
       if (data.updated > 0) router.refresh();
     } catch {
       toast("Photo refresh failed", { variant: "error" });
@@ -348,8 +349,6 @@ export function CityHeader({
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
   }
-
-  const hasCategories = Object.values(poiCounts).some((v) => v > 0);
 
   return (
     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 space-y-4">
@@ -607,45 +606,7 @@ export function CityHeader({
         </div>
       ) : null}
 
-      {/* Row 3: POI stats + planning progress */}
-      {!isStop && (hasCategories || totalPois > 0) && (
-        <div className="flex items-center gap-4 flex-wrap">
-          {hasCategories && (
-            <div className="flex items-center gap-2">
-              {(Object.entries(poiCounts) as [Category, number][])
-                .filter(([, count]) => count > 0)
-                .map(([cat, count]) => (
-                  <span
-                    key={cat}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${CATEGORY_STYLES[cat].badge}`}
-                  >
-                    {CATEGORY_ICONS[cat]} {count}
-                  </span>
-                ))}
-            </div>
-          )}
-          {totalPois > 0 && (
-            <>
-              {hasCategories && (
-                <span className="text-[hsl(var(--muted-foreground))]">·</span>
-              )}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[hsl(var(--muted-foreground))]">
-                  📋 {plannedCount}/{totalPois} planned
-                </span>
-                <div className="h-1.5 w-24 rounded-full bg-[hsl(var(--muted))]">
-                  <div
-                    className="h-full rounded-full bg-[hsl(var(--primary))] transition-all"
-                    style={{ width: `${planPct}%` }}
-                  />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Row 4: Quick action chips */}
+      {/* Row 3: Quick action chips */}
       {!isStop && (
         <div className="flex items-center gap-2 flex-wrap">
           <Button
