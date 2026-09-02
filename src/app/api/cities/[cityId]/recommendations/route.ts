@@ -492,16 +492,32 @@ export async function POST(
    *    This covers generic Geoapify tags that don't specify a sub-type.
    */
   function getPoiSubcat(poiCats: string[], mainCat: RecommendableCategory): string | null {
+    // Score each subcategory by match quality:
+    //   exact match (c === t)        → best:  c.length * 3
+    //   POI is child of tag (c > t)  → good:  t.length * 2
+    //   tag is child of POI (t > c)  → weak:  c.length
+    // Highest score wins — this ensures "catering.cafe" matches "cafe" not "restaurant".
+    let bestId: string | null = null;
+    let bestScore = -1;
     for (const def of SUBCATEGORIES[mainCat]) {
       const tags = (SUBCAT_CATEGORIES[def.id] ?? "")
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
-      if (poiCats.some((c) => tags.some((t) =>
-        c === t || c.startsWith(t + ".") || t.startsWith(c + ".")
-      ))) return def.id;
+      for (const c of poiCats) {
+        for (const t of tags) {
+          let score = -1;
+          if (c === t) score = c.length * 3;
+          else if (c.startsWith(t + ".")) score = t.length * 2;
+          else if (t.startsWith(c + ".")) score = c.length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestId = def.id;
+          }
+        }
+      }
     }
-    return null;
+    return bestId;
   }
 
   type ScoredCandidate = { place: DiscoveredPlace; score: number; breakdown: ScoreBreakdown; meta: GoogleMeta | null | undefined; distKm: number };
