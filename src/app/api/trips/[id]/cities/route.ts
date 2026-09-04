@@ -95,8 +95,9 @@ export async function POST(
         latitude,
         longitude,
         country,
-        null, // no discover radius set yet — uses default 10km
+        null, // no discover radius set yet — falls back to 80 km
         userId,
+        type === "stop" ? "stop" : "destination",
       );
     } catch {
       // Best-effort — don't fail city creation

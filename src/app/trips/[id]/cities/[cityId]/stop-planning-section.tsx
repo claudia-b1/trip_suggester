@@ -15,7 +15,6 @@ import { useFavourites } from "@/components/favourites/favourites-provider";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { EditPoiModal, type EditPoiData } from "@/components/ui/edit-poi-modal";
-import { getPhotoSource, PHOTO_SOURCE_LABELS } from "@/lib/photo-source";
 import type { DayPlanDTO } from "./daily-plan";
 import { TimelineSidebar } from "./timeline-sidebar";
 
@@ -116,6 +115,8 @@ function StopPoiCard({
   isFavourited,
   onOpenLightbox,
   onEdit,
+  onSetAccommodation,
+  isCurrentAccommodation,
 }: {
   poi: StopPoiDTO;
   onViewOnMap: (poiId: number) => void;
@@ -123,6 +124,8 @@ function StopPoiCard({
   isFavourited: boolean;
   onOpenLightbox: (src: string, alt: string) => void;
   onEdit: (poi: StopPoiDTO) => void;
+  onSetAccommodation?: (poi: StopPoiDTO) => void;
+  isCurrentAccommodation?: boolean;
 }) {
   const [imgError, setImgError] = useState(false);
   const hasCoords = poi.latitude != null && poi.longitude != null;
@@ -160,15 +163,6 @@ function StopPoiCard({
                 className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                 onError={() => setImgError(true)}
               />
-              {/* Photo source badge */}
-              {(() => {
-                const source = getPhotoSource(poi.photoUrl);
-                return source ? (
-                  <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white/90 font-medium pointer-events-none">
-                    {PHOTO_SOURCE_LABELS[source]}
-                  </span>
-                ) : null;
-              })()}
             </>
           ) : (
             <div className="flex h-full w-full items-center justify-center">
@@ -277,6 +271,20 @@ function StopPoiCard({
               Website ↗
             </a>
           )}
+          {poi.category === "ACCOMMODATION" && onSetAccommodation && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSetAccommodation(poi); }}
+              className={`ml-auto text-[11px] font-medium shrink-0 ${
+                isCurrentAccommodation
+                  ? "text-emerald-600 cursor-default"
+                  : "text-[hsl(var(--primary))] hover:underline"
+              }`}
+              disabled={isCurrentAccommodation}
+            >
+              {isCurrentAccommodation ? "✓ Selected" : "🏠 Set as accommodation"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -327,13 +335,35 @@ export function StopPlanningSection({
   const noteDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteLastSavedRef = useRef(initialNote?.content ?? "");
 
+  // ── Accommodation selection (mirrors CityHeader's accommodation state) ──
+  const [currentAccomId, setCurrentAccomId] = useState<number | null>(initialAccommodation?.id ?? null);
+  useEffect(() => { setCurrentAccomId(initialAccommodation?.id ?? null); }, [initialAccommodation?.id]);
+
+  const handleSetAccommodation = useCallback(async (poi: StopPoiDTO) => {
+    if (!poi.latitude || !poi.longitude) return;
+    try {
+      const res = await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: poi.id }),
+      });
+      if (!res.ok) throw new Error("PATCH failed");
+      setCurrentAccomId(poi.id);
+      toast(`Accommodation set: ${poi.name}`);
+      router.refresh();
+    } catch {
+      toast("Failed to set accommodation", { variant: "error" });
+    }
+  }, [tripId, cityId, toast, router]);
+
   // ── Timeline / day plans state ──
   const [liveDayPlans, setLiveDayPlans] = useState(dayPlans);
   useEffect(() => { setLiveDayPlans(dayPlans); }, [dayPlans]);
 
-  // The effective center for discover + map radius (accommodation picker is in CityHeader)
-  const centerLat = initialAccommodation?.latitude ?? cityLat;
-  const centerLon = initialAccommodation?.longitude ?? cityLon;
+  // City coordinates are always the map/radius center.
+  // The accommodation is a POI on the map, not the center — it can be far from the city.
+  const centerLat = cityLat;
+  const centerLon = cityLon;
 
   // ── Discover state ──
   const [discoverOpen, setDiscoverOpen] = useState(false);
@@ -623,8 +653,6 @@ export function StopPlanningSection({
           nearbyTrips: false,
           overwrite,
           radiusKm,
-          // Pass accommodation center if set
-          ...(initialAccommodation ? { centerLat: initialAccommodation.latitude, centerLon: initialAccommodation.longitude } : {}),
         }),
       });
 
@@ -648,9 +676,6 @@ export function StopPlanningSection({
           body: JSON.stringify({
             radiusKm,
             overwrite,
-            ...(initialAccommodation
-              ? { centerLat: initialAccommodation.latitude, centerLon: initialAccommodation.longitude }
-              : {}),
           }),
         });
         if (res.ok) {
@@ -673,12 +698,10 @@ export function StopPlanningSection({
         }`,
       );
     }
-    // Persist the discover radius (and accommodation center if used) to the database (best-effort)
+    // Persist the discover radius to the database (best-effort).
+    // Don't overwrite city lat/lon — they represent the city's geographic location,
+    // not the discover center. The accommodation's coordinates are on its own POI.
     const persistData: Record<string, unknown> = { discoverRadiusKm: radiusKm };
-    if (initialAccommodation) {
-      persistData.latitude = initialAccommodation.latitude;
-      persistData.longitude = initialAccommodation.longitude;
-    }
     fetch(`/api/trips/${tripId}/cities/${cityId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -828,10 +851,7 @@ export function StopPlanningSection({
                 <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
               </div>
               <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
-                {initialAccommodation
-                  ? `Centered on ${initialAccommodation.name}`
-                  : "Centered on city center"}
-                {" · "}{radiusKm} km radius
+                Centered on city center · {radiusKm} km radius
               </p>
             </div>
 
@@ -1213,6 +1233,12 @@ export function StopPlanningSection({
                     favouriteItems={favouriteItems}
                     onFavourite={(poi) => handleFavourite(poi as StopPoiDTO)}
                     isPoiFavourited={(poi) => isPoiFavourited(poi as StopPoiDTO)}
+                    onSetAccommodation={async (poiId, poiName) => {
+                      const poi = pois.find((p) => p.id === poiId);
+                      if (poi) await handleSetAccommodation(poi);
+                    }}
+                    currentAccommodationId={currentAccomId}
+                    isStop
                   />
                 </div>
               ) : pois.length === 0 ? (
@@ -1252,6 +1278,8 @@ export function StopPlanningSection({
                               extraFields: p.extraFields,
                               hasOriginalData: p.hasOriginalData,
                             })}
+                            onSetAccommodation={handleSetAccommodation}
+                            isCurrentAccommodation={poi.id === currentAccomId}
                           />
                         ))}
                       </div>

@@ -1,23 +1,18 @@
 /**
  * POST /api/cities/:cityId/re-enrich
  *
- * Re-runs Wikidata image lookup for all POIs in a city and updates their
- * photoUrl when a Wikipedia/Commons image is found.
+ * Re-runs Google Places photo lookup for all POIs in a city and updates their
+ * photoUrl when a Google photo is found.
  *
  * Optimised for speed:
- *  - Phase 1: resolve all POI names → Wikidata QIDs in parallel (5 concurrent)
- *  - Phase 2: single batched SPARQL query for all QIDs at once → images
- *  - Phase 3: bulk-update DB rows
- *
- * Streams progress via Server-Sent Events so the UI can show live updates.
+ *  - Phase 1: Text Search all POIs to get photo resource names (5 concurrent)
+ *  - Phase 2: Resolve photo URIs for POIs that got results (5 concurrent)
+ *  - Phase 3: Bulk-update DB rows
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const ENTITY_SEARCH = "https://www.wikidata.org/w/api.php";
-const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
-const USER_AGENT = "TripPlanner/1.0 (educational project)";
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const PLACES_API = "https://places.googleapis.com/v1";
 
 /** Concurrency limiter */
 function pMap<T, R>(items: T[], fn: (item: T, i: number) => Promise<R>, concurrency: number): Promise<R[]> {
@@ -49,107 +44,67 @@ function pMap<T, R>(items: T[], fn: (item: T, i: number) => Promise<R>, concurre
   });
 }
 
-type SearchResult = { search: Array<{ id: string }> };
+type PlaceResult = {
+  places?: Array<{
+    id?: string;
+    photos?: Array<{ name: string }>;
+  }>;
+};
 
-/** Single-language entity search with retry on 429. Minimal delay. */
-async function searchEntity(query: string, lang: string): Promise<string | null> {
-  const url = new URL(ENTITY_SEARCH);
-  url.searchParams.set("action", "wbsearchentities");
-  url.searchParams.set("search", query);
-  url.searchParams.set("language", lang);
-  url.searchParams.set("type", "item");
-  url.searchParams.set("limit", "3");
-  url.searchParams.set("format", "json");
-
-  for (let i = 0; i < 2; i++) {
-    try {
-      const res = await fetch(url.toString(), { headers: { "User-Agent": USER_AGENT } });
-      if (res.status === 429) { await sleep(1500 * (i + 1)); continue; }
-      if (!res.ok) return null;
-      const ct = res.headers.get("content-type") ?? "";
-      if (!ct.includes("json")) { await sleep(1000); continue; }
-      const data = (await res.json()) as SearchResult;
-      return data.search?.[0]?.id ?? null;
-    } catch { return null; }
-  }
-  return null;
-}
-
-/** Resolve a POI name to a Wikidata QID. Tries with city name, then without, then hr/it. */
-async function resolveQId(poiName: string, cityName: string): Promise<string | null> {
-  const nameLC = poiName.toLowerCase();
-  const cityLC = cityName.toLowerCase();
-  const needsCity = !nameLC.includes(cityLC);
-
-  // Try with city qualifier first
-  if (needsCity) {
-    const qId = await searchEntity(`${poiName} ${cityName}`, "en");
-    if (qId) return qId;
-    await sleep(150);
-  }
-
-  // Plain English search
-  const qId = await searchEntity(poiName, "en");
-  if (qId) return qId;
-
-  // Fallback: Croatian, then Italian (no delay between — entity search handles bursts)
-  await sleep(150);
-  const hr = await searchEntity(poiName, "hr");
-  if (hr) return hr;
-
-  await sleep(150);
-  const it = await searchEntity(poiName, "it");
-  return it;
-}
-
-type SparqlBinding = { item: { value: string }; image?: { value: string } };
-type SparqlResult = { results: { bindings: SparqlBinding[] } };
-
-/**
- * Batch SPARQL: fetch P18 images for up to 80 QIDs in a single query.
- * Returns a Map<qId, imageUrl>.
- */
-async function fetchImagesBatch(qIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (qIds.length === 0) return map;
-
-  // Split into chunks of 80 to stay within SPARQL query limits
-  const chunks: string[][] = [];
-  for (let i = 0; i < qIds.length; i += 80) {
-    chunks.push(qIds.slice(i, i + 80));
-  }
-
-  for (const chunk of chunks) {
-    const values = chunk.map((q) => `wd:${q}`).join(" ");
-    const sparql = `SELECT ?item ?image WHERE { VALUES ?item { ${values} } ?item wdt:P18 ?image } LIMIT ${chunk.length}`;
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(
-          `${SPARQL_ENDPOINT}?query=${encodeURIComponent(sparql)}&format=json`,
-          { headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" } },
-        );
-        if (res.status === 429) {
-          await sleep(2000 * (attempt + 1));
-          continue;
-        }
-        if (!res.ok) break;
-        const data = (await res.json()) as SparqlResult;
-        for (const b of data.results.bindings) {
-          if (b.image?.value) {
-            const qId = b.item.value.replace("http://www.wikidata.org/entity/", "");
-            map.set(qId, `${b.image.value}?width=800`);
-          }
-        }
-        break;
-      } catch { break; }
+/** Search Google Places for a POI and return the photo resource name + placeId. */
+async function findGooglePhoto(
+  poiName: string,
+  cityName: string,
+  lat: number | null,
+  lon: number | null,
+  apiKey: string,
+): Promise<{ photoName: string; googlePlaceId?: string } | null> {
+  try {
+    const body: Record<string, unknown> = {
+      textQuery: `${poiName}, ${cityName}`,
+      maxResultCount: 1,
+    };
+    if (lat != null && lon != null) {
+      body.locationBias = {
+        circle: { center: { latitude: lat, longitude: lon }, radius: 500 },
+      };
     }
 
-    // Small delay between chunks to be respectful
-    if (chunks.length > 1) await sleep(500);
-  }
+    const res = await fetch(`${PLACES_API}/places:searchText`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.id,places.photos",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
 
-  return map;
+    const data = (await res.json()) as PlaceResult;
+    const place = data.places?.[0];
+    const photoName = place?.photos?.[0]?.name;
+    if (!photoName) return null;
+
+    return { photoName, googlePlaceId: place?.id };
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve a photo resource name to a direct image URL. */
+async function resolvePhotoUrl(photoName: string, apiKey: string): Promise<string | null> {
+  try {
+    const url =
+      `${PLACES_API}/${photoName}/media` +
+      `?maxHeightPx=800&maxWidthPx=1200&key=${apiKey}&skipHttpRedirect=true`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = (await res.json()) as { photoUri?: string };
+    return data.photoUri ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(
@@ -160,6 +115,9 @@ export async function POST(
   const cityId = Number(raw);
   if (!cityId) return NextResponse.json({ error: "invalid cityId" }, { status: 400 });
 
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+  if (!apiKey) return NextResponse.json({ error: "GOOGLE_PLACES_API_KEY not set" }, { status: 500 });
+
   const city = await prisma.city.findUnique({
     where: { id: cityId },
     select: { name: true },
@@ -168,64 +126,59 @@ export async function POST(
 
   const pois = await prisma.poi.findMany({
     where: { cityId },
-    select: { id: true, name: true, photoUrl: true, wikidataId: true },
+    select: { id: true, name: true, photoUrl: true, placeId: true, latitude: true, longitude: true },
   });
 
-  // Filter: skip POIs that already have a Wikipedia photo
-  const toProcess = pois.filter((p) => !p.photoUrl?.includes("commons.wikimedia"));
+  // Filter: skip POIs that already have a Google photo
+  const toProcess = pois.filter(
+    (p) => !p.photoUrl?.includes("googleusercontent.com") && !p.photoUrl?.includes("googleapis.com"),
+  );
   const alreadyDone = pois.length - toProcess.length;
 
-  // ── Phase 1: resolve all QIDs in parallel (5 concurrent) ──
-  const qIdResults = await pMap(
+  // ── Phase 1: find Google photos (5 concurrent) ──
+  const searchResults = await pMap(
     toProcess,
     async (poi) => {
-      // If we already know the wikidataId, skip search
-      if (poi.wikidataId) return { poi, qId: poi.wikidataId };
-      const qId = await resolveQId(poi.name, city.name);
-      return { poi, qId };
+      const result = await findGooglePhoto(poi.name, city.name, poi.latitude, poi.longitude, apiKey);
+      return { poi, result };
     },
     5,
   );
 
-  // Collect unique QIDs that need image lookup
-  const qIdsToFetch = [...new Set(
-    qIdResults.map((r) => r.qId).filter((q): q is string => q !== null),
-  )];
-
-  // ── Phase 2: batch SPARQL for all images at once ──
-  const imageMap = await fetchImagesBatch(qIdsToFetch);
+  // ── Phase 2: resolve photo URIs (5 concurrent) ──
+  const withPhotos = searchResults.filter((r) => r.result != null);
+  const resolvedPhotos = await pMap(
+    withPhotos,
+    async ({ poi, result }) => {
+      const photoUrl = await resolvePhotoUrl(result!.photoName, apiKey);
+      return { poi, photoUrl, googlePlaceId: result!.googlePlaceId };
+    },
+    5,
+  );
 
   // ── Phase 3: update DB ──
   let updated = 0;
   const results: Array<{ name: string; status: string; imageUrl?: string }> = [];
 
-  for (const { poi, qId } of qIdResults) {
-    if (!qId) {
-      results.push({ name: poi.name, status: "not-found" });
-      continue;
-    }
-
-    const imageUrl = imageMap.get(qId);
-    if (imageUrl) {
-      await prisma.poi.update({
-        where: { id: poi.id },
-        data: { photoUrl: imageUrl, wikidataId: qId },
-      });
+  for (const { poi, photoUrl, googlePlaceId } of resolvedPhotos) {
+    if (photoUrl) {
+      const data: Record<string, unknown> = { photoUrl };
+      // Also store the Google placeId if the POI doesn't have one yet
+      if (!poi.placeId && googlePlaceId) data.placeId = googlePlaceId;
+      await prisma.poi.update({ where: { id: poi.id }, data });
       updated++;
-      results.push({ name: poi.name, status: "updated", imageUrl });
+      results.push({ name: poi.name, status: "updated", imageUrl: photoUrl });
     } else {
-      // Save wikidataId even without image
-      if (!poi.wikidataId) {
-        await prisma.poi.update({
-          where: { id: poi.id },
-          data: { wikidataId: qId },
-        });
-      }
-      results.push({ name: poi.name, status: "no-image" });
+      results.push({ name: poi.name, status: "no-photo" });
     }
   }
 
-  // Add already-done POIs to count
-  const checked = pois.length;
-  return NextResponse.json({ checked, updated, skipped: alreadyDone, results });
+  // POIs that didn't match any Google result
+  for (const { poi, result } of searchResults) {
+    if (!result) {
+      results.push({ name: poi.name, status: "not-found" });
+    }
+  }
+
+  return NextResponse.json({ checked: pois.length, updated, skipped: alreadyDone, results });
 }

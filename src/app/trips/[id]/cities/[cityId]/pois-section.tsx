@@ -19,7 +19,6 @@ import { ImageLightbox } from "@/components/ui/image-lightbox";
 import { useFavourites } from "@/components/favourites/favourites-provider";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 import { EditPoiModal, type EditPoiData } from "@/components/ui/edit-poi-modal";
-import { getPhotoSource, PHOTO_SOURCE_LABELS } from "@/lib/photo-source";
 
 export type PoiDTO = {
   id: number;
@@ -474,15 +473,6 @@ function PoiCard({
                 className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                 onError={() => setImgError(true)}
               />
-              {/* Photo source badge */}
-              {(() => {
-                const source = getPhotoSource(poi.photoUrl);
-                return source ? (
-                  <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] text-white/90 font-medium pointer-events-none">
-                    {PHOTO_SOURCE_LABELS[source]}
-                  </span>
-                ) : null;
-              })()}
               {/* Change photo button — top-right corner */}
               <button
                 type="button"
@@ -509,7 +499,7 @@ function PoiCard({
 
           {/* UNESCO badge */}
           {poi.isUnescoSite && (
-            <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-blue-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">🏛 UNESCO</span>
+            <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-indigo-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">🏛 UNESCO</span>
           )}
 
           {/* Bottom overlay: visited/assigned · user stars · ✕ · delete */}
@@ -523,7 +513,7 @@ function PoiCard({
               onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
               title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
               className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[8px] transition-colors ${
-                isVisited ? "bg-blue-500 text-white" : "bg-white/30 text-white/70 hover:bg-blue-400 hover:text-white"
+                isVisited ? "bg-indigo-500 text-white" : "bg-white/30 text-white/70 hover:bg-indigo-400 hover:text-white"
               }`}
             >
               {isVisited ? "👁" : "○"}
@@ -762,7 +752,7 @@ function CompactPoiCard({
           onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
           title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
           className={`flex h-4 w-4 items-center justify-center rounded-full shadow-sm text-[9px] transition-colors ${
-            isVisited ? "bg-blue-500 text-white" : "bg-white/80 text-gray-400 border border-gray-200 hover:border-blue-300 hover:text-blue-500"
+            isVisited ? "bg-indigo-500 text-white" : "bg-white/80 text-gray-400 border border-gray-200 hover:border-indigo-300 hover:text-indigo-500"
           }`}
         >
           {isVisited ? "👁" : "○"}
@@ -841,7 +831,7 @@ function CompactPoiCard({
             <span className="flex-shrink-0 text-xs text-emerald-600">{PRICE_LABELS[poi.priceLevel]}</span>
           )}
           {poi.isUnescoSite && (
-            <span className="flex-shrink-0 text-[10px] font-bold text-blue-600">UNESCO</span>
+            <span className="flex-shrink-0 text-[10px] font-bold text-indigo-600">UNESCO</span>
           )}
         </div>
 

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const MARKER_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
+const MARKER_COLORS = ["#4f46e5", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
 type TimelineSubcity = {
   id: number;

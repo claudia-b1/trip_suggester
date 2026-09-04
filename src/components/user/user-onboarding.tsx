@@ -7,7 +7,7 @@ import { useUser } from "./user-provider";
 import { setDefaultUser } from "@/lib/active-user-client";
 
 const COLOR_PRESETS = [
-  "#3B82F6", // blue
+  "#4F46E5", // blue
   "#8B5CF6", // purple
   "#EC4899", // pink
   "#EF4444", // red

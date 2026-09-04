@@ -1084,17 +1084,17 @@ export function AddToFavouritesModal() {
                   <button
                     type="button"
                     onClick={applySuggestion}
-                    className="flex w-full items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs transition-colors hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:hover:bg-blue-950/60"
+                    className="flex w-full items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-left text-xs transition-colors hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:hover:bg-indigo-950/60"
                   >
-                    <span className="text-blue-500">💡</span>
+                    <span className="text-indigo-500">💡</span>
                     <span className="flex-1">
                       <span className="text-[hsl(var(--muted-foreground))]">Did you mean </span>
-                      <span className="font-medium text-blue-700 dark:text-blue-300">
+                      <span className="font-medium text-indigo-700 dark:text-indigo-300">
                         {coordsSuggestion.lat.toFixed(6)}, {coordsSuggestion.lng.toFixed(6)}
                       </span>
                       <span className="text-[hsl(var(--muted-foreground))]">?</span>
                     </span>
-                    <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:bg-blue-900 dark:text-blue-300">
+                    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300">
                       Apply
                     </span>
                   </button>

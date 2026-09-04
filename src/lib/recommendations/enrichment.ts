@@ -124,8 +124,8 @@ export async function enrichPlace(
   // Price level: Google takes priority
   const priceLevel = g?.priceLevel ?? place.priceLevel;
 
-  // Photo: Wikipedia/Wikidata > Google > discovery
-  const photoUrl = w?.imageUrl ?? g?.photoUrl ?? place.photoUrl;
+  // Photo: Google Places > discovery fallback
+  const photoUrl = g?.photoUrl ?? place.photoUrl;
 
   // Hours / contact: discovery already has these, Google can override
   const openingHours = g?.openingHours ?? place.openingHours;

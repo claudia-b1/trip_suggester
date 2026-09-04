@@ -231,7 +231,7 @@ export function TimelineSidebar({
                       key={slot}
                       className={`space-y-1 rounded-md px-1 py-0.5 transition-all ${
                         isOver
-                          ? "bg-blue-100/60 ring-1 ring-blue-300 dark:bg-blue-900/30 dark:ring-blue-600"
+                          ? "bg-indigo-100/60 ring-1 ring-indigo-300 dark:bg-indigo-900/30 dark:ring-indigo-600"
                           : ""
                       }`}
                       onDragOver={(e) => handleSlotDragOver(e, slotKey)}
@@ -263,7 +263,7 @@ export function TimelineSidebar({
                           ))}
                         </ul>
                       ) : isOver ? (
-                        <div className="rounded border border-dashed border-blue-300 px-1.5 py-1 text-center text-[10px] text-blue-500">
+                        <div className="rounded border border-dashed border-indigo-300 px-1.5 py-1 text-center text-[10px] text-indigo-500">
                           Drop here
                         </div>
                       ) : null}

@@ -130,7 +130,15 @@ export function EditCityButton({
     return (
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          // Re-sync state with latest props so the form never shows stale values
+          setName(city.name);
+          setNickname(city.nickname ?? "");
+          setStartDate(toInputDate(city.startDate));
+          setEndDate(toInputDate(city.endDate));
+          setCityMeta(null);
+          setOpen(true);
+        }}
         className="rounded-md p-1 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
         title="Edit destination"
       >

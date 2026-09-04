@@ -7,7 +7,7 @@ export default function TripLoading() {
       <Skeleton className="h-4 w-40" />
 
       {/* Gradient header strip */}
-      <div className="h-3 w-full rounded-full bg-gradient-to-r from-blue-400/30 via-violet-400/30 to-indigo-400/30" />
+      <div className="h-3 w-full rounded-full bg-gradient-to-r from-indigo-400/30 via-violet-400/30 to-indigo-400/30" />
 
       {/* Trip title & meta */}
       <div className="space-y-2">

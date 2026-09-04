@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="theme-color" content="#3B82F6" />
+        <meta name="theme-color" content="#4F46E5" />
         <link rel="manifest" href="/manifest.json" />
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem("theme");if(t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme:dark)").matches))document.documentElement.classList.add("dark")}catch(e){}})()` }} />
       </head>
@@ -44,9 +44,13 @@ export default function RootLayout({
               <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg">
                 <div className="mx-auto flex w-full items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
                   <Link href="/" className="flex items-center gap-2 text-base font-bold sm:text-lg group">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-sm transition-transform group-hover:scale-110">
-                      ✈️
-                    </span>
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="h-8 w-8 shrink-0 rounded-lg shadow-sm transition-transform group-hover:scale-110">
+                      <rect width="32" height="32" rx="8" fill="#4F46E5"/>
+                      <path d="M8 22 Q14 16 16 20 Q18 24 24 14" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity="0.4" strokeDasharray="2 2.5"/>
+                      <circle cx="8" cy="22" r="2" fill="white" opacity="0.5"/>
+                      <path d="M24 14 a5 5 0 1 0-10 0 c0 4 5 7 5 7 s5-3 5-7z" fill="white"/>
+                      <circle cx="19" cy="13.5" r="2" fill="#4F46E5"/>
+                    </svg>
                     <span className="text-gradient">Trip Planner</span>
                   </Link>
                   <HeaderActions />

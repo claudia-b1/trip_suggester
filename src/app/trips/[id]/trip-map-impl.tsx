@@ -22,7 +22,7 @@ export type TripMapProps = {
 };
 
 const MARKER_COLORS = [
-  "#3b82f6", // blue
+  "#4f46e5", // blue
   "#10b981", // emerald
   "#f59e0b", // amber
   "#ef4444", // rose

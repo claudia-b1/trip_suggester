@@ -78,7 +78,7 @@ export default async function TripDetailPage({
             <img src={trip.coverImage} alt={trip.name} className="h-full w-full object-cover" />
           </div>
         ) : (
-          <div className="h-3 bg-gradient-to-r from-blue-500 via-violet-500 to-indigo-500" />
+          <div className="h-3 bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500" />
         )}
         <div className="p-4 sm:p-6 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">

@@ -28,7 +28,7 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
 ];
 
 const TRIP_GRADIENTS = [
-  "from-blue-500/20 to-violet-500/20",
+  "from-indigo-500/20 to-violet-500/20",
   "from-emerald-500/20 to-teal-500/20",
   "from-orange-500/20 to-rose-500/20",
   "from-indigo-500/20 to-cyan-500/20",

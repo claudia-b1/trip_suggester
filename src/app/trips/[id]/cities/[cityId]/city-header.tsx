@@ -90,9 +90,7 @@ export type CityHeaderProps = {
     favourites: FavouriteItemDTO[];
     cityLat: number | null;
     cityLon: number | null;
-    pois: { id: number; category: string }[];
-    /** Existing ACCOMMODATION POIs in this city (for "pick from existing" list) */
-    accomPois: { id: number; name: string; address?: string }[];
+    pois: { id: number; name: string; category: string; latitude: number | null; longitude: number | null }[];
     dayPlanIds: number[];
   };
 };
@@ -209,50 +207,60 @@ export function CityHeader({
     if (!stopAccommodation) return;
     setSettingAccom(true);
     try {
-      // Create new ACCOMMODATION POI (keep existing ones — user can manage from POI list)
-      const res = await fetch(`/api/cities/${cityId}/pois`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          category: "ACCOMMODATION",
-          latitude: lat,
-          longitude: lon,
-          ...(address && { description: address }),
-        }),
-      });
-      if (res.ok) {
-        const poi = await res.json();
-        setAccom({ id: poi.id, name, latitude: lat, longitude: lon, address });
+      // Check if an ACCOMMODATION POI with the same name or same coordinates already exists
+      const existing = stopAccommodation.pois.find((p) =>
+        p.category === "ACCOMMODATION" && (
+          p.name.toLowerCase().trim() === name.toLowerCase().trim() ||
+          (p.latitude != null && p.longitude != null &&
+           Math.abs(p.latitude - lat) < 0.0005 && Math.abs(p.longitude - lon) < 0.0005)
+        ),
+      );
 
-        // Mark this POI as the selected accommodation on the city
-        await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
-          method: "PATCH",
+      let poiId: number;
+      if (existing) {
+        // Re-use existing POI instead of creating a duplicate
+        poiId = existing.id;
+      } else {
+        // Create new ACCOMMODATION POI
+        const res = await fetch(`/api/cities/${cityId}/pois`, {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ accommodationPoiId: poi.id }),
+          body: JSON.stringify({
+            name,
+            category: "ACCOMMODATION",
+            latitude: lat,
+            longitude: lon,
+            ...(address && { description: address }),
+          }),
         });
-
-        // Auto-assign to evening slot of all days except last
-        const dpIds = stopAccommodation.dayPlanIds;
-        if (dpIds.length > 1) {
-          for (const dpId of dpIds.slice(0, -1)) {
-            await fetch(`/api/cities/${cityId}/day-plans`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ dayPlanId: dpId, poiId: poi.id, timeSlot: "EVENING" }),
-            });
-          }
-        } else if (dpIds.length === 1) {
-          await fetch(`/api/cities/${cityId}/day-plans`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dayPlanId: dpIds[0], poiId: poi.id, timeSlot: "EVENING" }),
-          });
-        }
-
-        toast(`Accommodation set: ${name}`);
-        router.refresh();
+        if (!res.ok) throw new Error("Failed to create POI");
+        const poi = await res.json();
+        poiId = poi.id;
       }
+
+      setAccom({ id: poiId, name, latitude: lat, longitude: lon, address });
+
+      // Mark this POI as the selected accommodation on the city
+      const patchRes = await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: poiId }),
+      });
+      if (!patchRes.ok) throw new Error("Failed to save accommodation selection");
+
+      // Auto-assign to evening slot of all days except last
+      const dpIds = stopAccommodation.dayPlanIds;
+      const assignDpIds = dpIds.length > 1 ? dpIds.slice(0, -1) : dpIds;
+      for (const dpId of assignDpIds) {
+        await fetch(`/api/cities/${cityId}/day-plans`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dayPlanId: dpId, poiId, timeSlot: "EVENING" }),
+        });
+      }
+
+      toast(`Accommodation set: ${name}`);
+      router.refresh();
     } catch {
       toast("Failed to set accommodation", { variant: "error" });
     } finally {
@@ -284,28 +292,6 @@ export function CityHeader({
     }
   }
 
-  /** Select an existing ACCOMMODATION POI as the active accommodation */
-  async function selectExistingAccom(poiId: number, poiName: string, poiAddress?: string) {
-    setSettingAccom(true);
-    try {
-      await fetch(`/api/trips/${tripId}/cities/${cityId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accommodationPoiId: poiId }),
-      });
-      setAccom({ id: poiId, name: poiName, latitude: 0, longitude: 0, address: poiAddress });
-      toast(`Accommodation set: ${poiName}`);
-      router.refresh();
-    } catch {
-      toast("Failed to set accommodation", { variant: "error" });
-    } finally {
-      setSettingAccom(false);
-      setAccomOpen(false);
-    }
-  }
-
-  const existingAccomPois = stopAccommodation?.accomPois?.filter((p) => p.id !== accom?.id) ?? [];
-
   const msPerDay = 86_400_000;
   const nights = Math.round(
     (new Date(endDate).getTime() - new Date(startDate).getTime()) / msPerDay,
@@ -336,8 +322,8 @@ export function CityHeader({
       const res = await fetch(`/api/cities/${cityId}/re-enrich`, { method: "POST" });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} already had wiki photos)` : "";
-      toast(`Wikipedia photos: ${data.updated} updated out of ${data.checked} POIs${skippedMsg}`);
+      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} already had photos)` : "";
+      toast(`Google photos: ${data.updated} updated out of ${data.checked} POIs${skippedMsg}`);
       if (data.updated > 0) router.refresh();
     } catch {
       toast("Photo refresh failed", { variant: "error" });
@@ -387,19 +373,6 @@ export function CityHeader({
                   tripEndDate={editProps.tripEndDate}
                 />
               )}
-              {/* Add sub-destination — only for top-level cities (not for subcities themselves) */}
-              {!isSubcity && (
-                <button
-                  type="button"
-                  onClick={() => setAddSubOpen(true)}
-                  className="rounded-full p-1 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] transition-colors"
-                  title="Add sub-destination"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
-                  </svg>
-                </button>
-              )}
             </div>
             {nickname && (
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
@@ -408,6 +381,19 @@ export function CityHeader({
             )}
           </div>
         </div>
+        {/* Add sub-destination — only for top-level cities (not for subcities themselves) */}
+        {!isSubcity && (
+          <button
+            type="button"
+            onClick={() => setAddSubOpen(true)}
+            className="ml-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] border border-[hsl(var(--border))] transition-colors shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Add sub-destination
+          </button>
+        )}
         {totalCities > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {cities.map((c) => {
@@ -457,16 +443,21 @@ export function CityHeader({
       {/* Accommodation — interactive picker for stops, static list for destinations */}
       {isStop && stopAccommodation ? (
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="shrink-0">🏠</span>
+          <div className="flex items-start sm:items-center gap-2 text-sm">
+            <span className="shrink-0 mt-0.5 sm:mt-0">🏠</span>
             {accom ? (
               <>
-                <p className="text-xs min-w-0 truncate">
-                  <span className="font-medium">{accom.name}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-medium truncate">{accom.name}</span>
+                    {accom.address && accom.address !== accom.name && (
+                      <span className="hidden sm:inline text-xs text-[hsl(var(--primary))]/70 truncate">{accom.address}</span>
+                    )}
+                  </div>
                   {accom.address && accom.address !== accom.name && (
-                    <span className="text-[hsl(var(--muted-foreground))] ml-1.5">{accom.address}</span>
+                    <p className="sm:hidden text-xs text-[hsl(var(--primary))]/70 truncate">{accom.address}</p>
                   )}
-                </p>
+                </div>
                 <button
                   type="button"
                   onClick={() => setAccomOpen((v) => !v)}
@@ -534,32 +525,6 @@ export function CityHeader({
                 </div>
               </div>
 
-              {/* Existing ACCOMMODATION POIs in this city */}
-              {existingAccomPois.length > 0 && (
-                <div className="space-y-1">
-                  <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Existing accommodations</p>
-                  <div className="max-h-32 overflow-y-auto space-y-0.5">
-                    {existingAccomPois.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        disabled={settingAccom}
-                        onClick={() => selectExistingAccom(p.id, p.name, p.address)}
-                        className="w-full flex items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
-                      >
-                        <span className="text-xs shrink-0">🏠</span>
-                        <div className="min-w-0">
-                          <p className="text-[11px] font-medium truncate">{p.name}</p>
-                          {p.address && (
-                            <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{p.address}</p>
-                          )}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {accomFavourites.length > 0 && (
                 <div className="space-y-1">
                   <p className="text-[11px] font-semibold text-[hsl(var(--muted-foreground))]">Or pick from nearby favourites</p>
@@ -595,12 +560,17 @@ export function CityHeader({
           <span className="shrink-0 mt-0.5">🏠</span>
           <div className="flex flex-col gap-0.5 min-w-0">
             {accommodations.map((a, i) => (
-              <p key={i} className="text-xs truncate">
-                <span className="font-medium">{a.name}</span>
+              <div key={i} className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-medium truncate">{a.name}</span>
+                  {a.address && a.address !== a.name && (
+                    <span className="hidden sm:inline text-xs text-[hsl(var(--primary))]/70 truncate">{a.address}</span>
+                  )}
+                </div>
                 {a.address && a.address !== a.name && (
-                  <span className="text-[hsl(var(--muted-foreground))] ml-1.5">{a.address}</span>
+                  <p className="sm:hidden text-xs text-[hsl(var(--primary))]/70 truncate">{a.address}</p>
                 )}
-              </p>
+              </div>
             ))}
           </div>
         </div>
@@ -641,7 +611,7 @@ export function CityHeader({
             disabled={enrichLoading || totalPois === 0}
             className="rounded-full text-xs"
           >
-            {enrichLoading ? "Refreshing…" : "📸 Wiki photos"}
+            {enrichLoading ? "Refreshing…" : "📸 Google photos"}
           </Button>
         </div>
       )}
