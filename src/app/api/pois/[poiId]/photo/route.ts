@@ -51,12 +51,7 @@ export async function GET(
     }
   }
 
-  // 1b. Wikipedia/Wikimedia URLs — permanent, just redirect
-  if (poi.photoUrl?.includes("wikimedia.org") || poi.photoUrl?.includes("wikipedia.org")) {
-    return NextResponse.redirect(poi.photoUrl, { headers: { "Cache-Control": "public, max-age=604800, immutable" } });
-  }
-
-  // 1c. Try existing URL
+  // 1b. Try existing URL
   if (poi.photoUrl) {
     try {
       const check = await fetch(poi.photoUrl, { method: "HEAD", redirect: "follow" });

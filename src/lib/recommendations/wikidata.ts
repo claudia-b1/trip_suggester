@@ -8,6 +8,8 @@
  *     - Inception / founding year
  *     - Heritage designation (UNESCO World Heritage Site flag)
  *     - Cultural / historical tags
+ *
+ * Photos are sourced exclusively from Google Places, not Wikidata.
  */
 
 const SPARQL_ENDPOINT = "https://query.wikidata.org/sparql";
@@ -76,7 +78,6 @@ export type WikidataEnrichment = {
   inceptionYear?: number;
   isUnescoSite: boolean;
   culturalTags: string[];
-  imageUrl?: string;
 };
 
 // ─── Entity search ────────────────────────────────────────────────────────────
@@ -148,7 +149,6 @@ type SparqlRow = {
   heritageSite?: { value: string };  // entity URI
   instanceOf?: { value: string };
   partOf?: { value: string };
-  image?: { value: string };
 };
 
 type SparqlResponse = {
@@ -161,14 +161,13 @@ type SparqlResponse = {
  * Q18537310 = "UNESCO World Heritage List"
  */
 const SPARQL_QUERY = (qId: string) => `
-SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf ?image WHERE {
+SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf WHERE {
   BIND(wd:${qId} AS ?item)
   OPTIONAL { ?item schema:description ?desc FILTER(LANG(?desc) = "en") }
   OPTIONAL { ?item wdt:P571 ?inception }
   OPTIONAL { ?item wdt:P1435 ?heritageSite }
   OPTIONAL { ?item wdt:P31 ?instanceOf }
   OPTIONAL { ?item wdt:P361 ?partOf }
-  OPTIONAL { ?item wdt:P18 ?image }
 }
 LIMIT 10
 `.trim();
@@ -260,15 +259,7 @@ export async function enrichWithWikidata(
       })
       .filter((t): t is string => !!t);
 
-    // Extract Wikipedia image URL (P18 → Commons file URL)
-    const imageRow = rows.find((r) => r.image?.value);
-    const imageUrl = imageRow?.image?.value ?? undefined;
-    // Convert Commons file URL to a usable thumbnail URL
-    // Wikidata returns: http://commons.wikimedia.org/wiki/Special:FilePath/Filename.jpg
-    // We can append ?width=800 to get a reasonable size
-    const wikiPhotoUrl = imageUrl ? `${imageUrl}?width=800` : undefined;
-
-    return { wikidataId: qId, description, inceptionYear, isUnescoSite: unescoSite, culturalTags, imageUrl: wikiPhotoUrl };
+    return { wikidataId: qId, description, inceptionYear, isUnescoSite: unescoSite, culturalTags };
   } catch {
     return null;
   }

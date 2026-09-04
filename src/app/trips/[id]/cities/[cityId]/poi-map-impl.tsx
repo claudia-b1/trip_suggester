@@ -65,6 +65,12 @@ export type PoiMapProps = {
   poiNumbers?: Record<number, number>;
   /** When true, only the drag handle is shown in the popup — the day-plan assign UI is hidden. */
   dragOnly?: boolean;
+  /** Callback to set an ACCOMMODATION POI as the selected accommodation */
+  onSetAccommodation?: (poiId: number, poiName: string) => void;
+  /** Currently selected accommodation POI ID */
+  currentAccommodationId?: number | null;
+  /** When true, uses a road-focused map style (navigation-day) suitable for travel stops */
+  isStop?: boolean;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -79,7 +85,8 @@ function getMarkerEmoji(category: Category, subcategory?: string | null): string
 }
 
 const MAP_STYLES = {
-  streets: "mapbox://styles/mapbox/light-v11",
+  streets: "mapbox://styles/mapbox/streets-v12",
+  roads: "mapbox://styles/mapbox/navigation-day-v1",
   satellite: "mapbox://styles/mapbox/satellite-streets-v12",
 } as const;
 type MapStyleKey = keyof typeof MAP_STYLES;
@@ -123,48 +130,6 @@ function makeRadiusCircle(lat: number, lon: number, radiusKm: number): GeoJSON.F
  * Uses the Mercator projection formula: at zoom z, the map shows ~360/2^z degrees of longitude.
  * We find the max angular distance from the center to any point and derive the zoom from that.
  */
-function zoomToFitFromCenter(
-  centerLat: number,
-  centerLon: number,
-  points: { lat: number; lng: number }[],
-  padding = 80,
-  containerWidth = 800,
-  containerHeight = 600,
-  maxZoom = 15,
-): number {
-  if (points.length === 0) return 14;
-
-  // Find the maximum distance in degrees from center to any point,
-  // accounting for latitude compression on longitude
-  const cosLat = Math.cos((centerLat * Math.PI) / 180);
-  let maxDLat = 0;
-  let maxDLon = 0;
-  for (const p of points) {
-    maxDLat = Math.max(maxDLat, Math.abs(p.lat - centerLat));
-    maxDLon = Math.max(maxDLon, Math.abs(p.lng - centerLon) * cosLat);
-  }
-
-  // The map needs to show 2× the max distance (center to edge) in each direction
-  // Subtract padding from available viewport size
-  const usableW = Math.max(containerWidth - padding * 2, 100);
-  const usableH = Math.max(containerHeight - padding * 2, 100);
-
-  // Degrees per pixel at zoom z: 360 / (256 * 2^z) for longitude
-  // For latitude it's similar (Mercator approximation at moderate latitudes)
-  // Solve: (2 * maxDLon) / degreesPerPixel <= usableW
-  //        degreesPerPixel = 360 / (256 * 2^z)
-  //        2^z = (usableW * 1) / (2 * maxDLon * 256 / 360)
-  let zoomLon = 20;
-  let zoomLat = 20;
-  if (maxDLon > 0) {
-    zoomLon = Math.log2((usableW * 360) / (2 * maxDLon / cosLat * 256));
-  }
-  if (maxDLat > 0) {
-    zoomLat = Math.log2((usableH * 360) / (2 * maxDLat * 256));
-  }
-
-  return Math.max(1, Math.min(maxZoom, Math.min(zoomLon, zoomLat)));
-}
 
 function ClusterPie({ pois }: { pois: LocatedPoi[] }) {
   const size = Math.min(28 + pois.length * 2, 48);
@@ -261,6 +226,8 @@ function PopupContent({
   onToggleNotInterested,
   onFavourite,
   isFavourited,
+  onSetAccommodation,
+  isCurrentAccommodation,
 }: {
   poi: LocatedPoi;
   cityId: number;
@@ -274,6 +241,8 @@ function PopupContent({
   onToggleNotInterested?: (poiId: number) => void;
   onFavourite?: (poi: LocatedPoi) => void;
   isFavourited?: boolean;
+  onSetAccommodation?: (poiId: number, poiName: string) => void;
+  isCurrentAccommodation?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -378,7 +347,7 @@ function PopupContent({
             ? poi.description
             : poi.description.slice(0, 100) + "…"}
           {poi.description.length > 100 && (
-            <button type="button" onClick={() => setExpanded((v) => !v)} className="ml-1 text-blue-600 hover:underline">
+            <button type="button" onClick={() => setExpanded((v) => !v)} className="ml-1 text-indigo-600 hover:underline">
               {expanded ? "less" : "more"}
             </button>
           )}
@@ -449,7 +418,7 @@ function PopupContent({
       )}
       {dayPlans.length > 0 && !dragOnly && (
         <details className="group" onClick={(e) => e.stopPropagation()}>
-          <summary className="cursor-pointer select-none text-xs font-medium text-blue-600 hover:underline list-none flex items-center gap-1">
+          <summary className="cursor-pointer select-none text-xs font-medium text-indigo-600 hover:underline list-none flex items-center gap-1">
             <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
             Add to Day Plan
           </summary>
@@ -518,7 +487,7 @@ function PopupContent({
                   type="button"
                   onClick={(e) => { e.stopPropagation(); assign(); }}
                   disabled={!selectedDay || assigning}
-                  className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-blue-700"
+                  className="w-full rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-indigo-700"
                 >
                   {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
                 </button>
@@ -527,11 +496,25 @@ function PopupContent({
           </div>
         </details>
       )}
+      {poi.category === "ACCOMMODATION" && onSetAccommodation && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); if (!isCurrentAccommodation) onSetAccommodation(poi.id, poi.name); }}
+          disabled={isCurrentAccommodation}
+          className={`w-full rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+            isCurrentAccommodation
+              ? "bg-emerald-50 text-emerald-600 border border-emerald-200 cursor-default"
+              : "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90"
+          }`}
+        >
+          {isCurrentAccommodation ? "✓ Selected accommodation" : "🏠 Set as accommodation"}
+        </button>
+      )}
       {onViewInList && (
         <button
           type="button"
           onClick={() => { onViewInList(poi.id); onClose(); }}
-          className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+          className="w-full rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
         >
           📋 View full details
         </button>
@@ -671,7 +654,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -690,7 +673,7 @@ export function PoiMapImpl(props: PoiMapProps) {
     if (hoverCloseTimer.current) { clearTimeout(hoverCloseTimer.current); hoverCloseTimer.current = null; }
   }
   const [hoverId, setHoverId] = useState<number | null>(null);
-  const [mapStyle, setMapStyle] = useState<MapStyleKey>("streets");
+  const [mapStyle, setMapStyle] = useState<MapStyleKey>(isStop ? "roads" : "streets");
   const [zoom, setZoom] = useState(12);
   const [dropPin, setDropPin] = useState<{ lat: number; lng: number } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -871,8 +854,16 @@ export function PoiMapImpl(props: PoiMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFavItem, mapReady]);
 
-  /** Fly to city center with zoom that fits all given points. */
-  const flyToCenterFitting = useCallback((points: { lat: number; lng: number }[], duration = 800) => {
+  /**
+   * Fly to city center with zoom that fits all given points, keeping the city
+   * at the exact center of the map.
+   *
+   * Uses a symmetric bounding box around the city: for each point, we mirror
+   * its offset so the bounding box is always centered on the city. Then we let
+   * Mapbox's own fitBounds handle the projection math (which avoids the manual
+   * zoom calculation that was previously too tight).
+   */
+  const flyToCityCentered = useCallback((points: { lat: number; lng: number }[], duration = 800) => {
     const map = mapRef.current;
     if (!map) return;
     const cLat = cityLat;
@@ -894,38 +885,78 @@ export function PoiMapImpl(props: PoiMapProps) {
       return;
     }
 
-    // Center-locked: keep city at center, zoom to fit farthest point
     if (points.length === 0) {
       map.flyTo({ center: [cLon, cLat], zoom: 14, duration });
       return;
     }
 
-    const container = map.getContainer();
-    const z = zoomToFitFromCenter(
-      cLat, cLon, points, 60,
-      container.clientWidth || 800,
-      container.clientHeight || 600,
-      15,
+    // Find the maximum offset from city center in each direction.
+    // By making the bounding box symmetric around the city, fitBounds
+    // naturally keeps the city at the center.
+    let maxDLat = 0;
+    let maxDLon = 0;
+    for (const p of points) {
+      maxDLat = Math.max(maxDLat, Math.abs(p.lat - cLat));
+      maxDLon = Math.max(maxDLon, Math.abs(p.lng - cLon));
+    }
+
+    // Add 20% buffer so edge points aren't right against the padding
+    maxDLat *= 1.2;
+    maxDLon *= 1.2;
+
+    // Ensure a minimum extent so we don't zoom in absurdly on a single nearby point
+    maxDLat = Math.max(maxDLat, 0.005); // ~500m
+    maxDLon = Math.max(maxDLon, 0.005);
+
+    map.fitBounds(
+      [
+        [cLon - maxDLon, cLat - maxDLat],
+        [cLon + maxDLon, cLat + maxDLat],
+      ],
+      { padding: 60, duration, maxZoom: 15 },
     );
-    map.flyTo({ center: [cLon, cLat], zoom: z, duration });
   }, [cityLat, cityLon]);
 
   const fitBounds = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
     const allPoints = [
       ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
       ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
     ];
-    flyToCenterFitting(allPoints);
-  }, [located, visibleFavourites, flyToCenterFitting]);
+    if (allPoints.length === 0) return;
+    if (allPoints.length === 1) {
+      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
+      return;
+    }
+    const lngs = allPoints.map((p) => p.lng);
+    const lats = allPoints.map((p) => p.lat);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 60, duration: 800, maxZoom: 15 },
+    );
+  }, [located, visibleFavourites]);
 
   const fitBoundsNoAccommodation = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
     const nonAccom = located.filter((p) => p.category !== "ACCOMMODATION");
     const allPoints = [
       ...nonAccom.map((p) => ({ lat: p.latitude, lng: p.longitude })),
       ...visibleFavourites.filter((f) => f.category !== "ACCOMMODATION").map((f) => ({ lat: f.latitude, lng: f.longitude })),
     ];
-    flyToCenterFitting(allPoints);
-  }, [located, visibleFavourites, flyToCenterFitting]);
+    if (allPoints.length === 0) return;
+    if (allPoints.length === 1) {
+      map.flyTo({ center: [allPoints[0].lng, allPoints[0].lat], zoom: 14, duration: 800 });
+      return;
+    }
+    const lngs = allPoints.map((p) => p.lng);
+    const lats = allPoints.map((p) => p.lat);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 60, duration: 800, maxZoom: 15 },
+    );
+  }, [located, visibleFavourites]);
 
   // When city coordinates change (after editing location), re-center the map.
   // We skip the very first run (handled by onLoad) using a mount ref.
@@ -944,7 +975,7 @@ export function PoiMapImpl(props: PoiMapProps) {
       ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
       ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
     ];
-    flyToCenterFitting(allPoints);
+    flyToCityCentered(allPoints);
   // Only re-run when the actual coordinates change
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cityLat, cityLon]);
@@ -1019,10 +1050,15 @@ export function PoiMapImpl(props: PoiMapProps) {
         )}
         <button
           type="button"
-          onClick={() => setMapStyle((s) => (s === "streets" ? "satellite" : "streets"))}
+          onClick={() =>
+            setMapStyle((s) => {
+              const order: MapStyleKey[] = ["streets", "satellite", "roads"];
+              return order[(order.indexOf(s) + 1) % order.length];
+            })
+          }
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
         >
-          {mapStyle === "streets" ? "🛰 Satellite" : "🗺 Streets"}
+          {mapStyle === "streets" ? "🛰 Satellite" : mapStyle === "satellite" ? "🛣️ Roads" : "🗺 Streets"}
         </button>
         <button
           type="button"
@@ -1047,7 +1083,15 @@ export function PoiMapImpl(props: PoiMapProps) {
         mapStyle={MAP_STYLES[mapStyle]}
         onLoad={() => {
           setMapReady(true);
-          if (hasLocated || hasFavourites) {
+          if ((hasLocated || hasFavourites) && hasCityCenter) {
+            // City-centered initial view: center on city, zoom to fit all points
+            const allPoints = [
+              ...located.map((p) => ({ lat: p.latitude, lng: p.longitude })),
+              ...visibleFavourites.map((f) => ({ lat: f.latitude, lng: f.longitude })),
+            ];
+            flyToCityCentered(allPoints, 0);
+          } else if (hasLocated || hasFavourites) {
+            // No city center — fall back to standard fitBounds
             fitBounds();
           } else if (hasCityCenter) {
             // Fit to a 20 km context (or nearbyRadiusKm if larger), so the
@@ -1079,7 +1123,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         }}
       >
         <NavigationControl position="top-right" />
-        <ScaleControl position="bottom-left" unit="metric" />
+        <ScaleControl position="top-right" unit="metric" />
         {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
 
         {/* City radius circle — grey dashed */}
@@ -1255,7 +1299,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               id="walking-route-line"
               type="line"
               paint={{
-                "line-color": "#3b82f6",
+                "line-color": "#4f46e5",
                 "line-width": 4,
                 "line-opacity": 0.8,
               }}
@@ -1297,7 +1341,7 @@ export function PoiMapImpl(props: PoiMapProps) {
                     onAddAtLocation(dropPin.lat, dropPin.lng);
                     setDropPin(null);
                   }}
-                  className="w-full rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  className="w-full rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700"
                 >
                   + Add POI at this location
                 </button>
@@ -1354,6 +1398,8 @@ export function PoiMapImpl(props: PoiMapProps) {
               onToggleNotInterested={onToggleNotInterested}
               onFavourite={onFavourite ? (p) => onFavourite({ ...p, placeId: pois.find((x) => x.id === p.id)?.placeId }) : undefined}
               isFavourited={isPoiFavourited ? isPoiFavourited(visiblePoi) : false}
+              onSetAccommodation={onSetAccommodation}
+              isCurrentAccommodation={visiblePoi.id === currentAccommodationId}
             />
           </div>
           {/* Arrow tip pointing down at the marker */}

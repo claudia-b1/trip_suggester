@@ -5,14 +5,18 @@
  * created/updated. When a city page is loaded, matching favourites
  * are auto-added as POIs.
  *
- * "Matching" means: same country AND within the favourite map radius (100 km).
+ * "Matching" means: same country AND within the effective radius.
+ *   • Travel stops always use DEFAULT_FAV_RADIUS_KM (80 km).
+ *   • Destinations / sub-destinations use the most recent discover radius
+ *     (discoverRadiusKm on the City model). No sync until discover is run.
+ *
  * If a user deletes a favourite-linked POI, a DismissedFavouriteCity row is
  * recorded so the sync won't re-create it.
  */
 
 import { prisma } from "@/lib/prisma";
 
-const DEFAULT_FAV_RADIUS_KM = 50;
+const DEFAULT_FAV_RADIUS_KM = 80;
 
 /** Haversine distance in km. */
 function haversineKm(
@@ -99,6 +103,8 @@ export async function syncFavouriteToTrips(
       id: true,
       latitude: true,
       longitude: true,
+      type: true,
+      discoverRadiusKm: true,
     },
   });
 
@@ -112,18 +118,30 @@ export async function syncFavouriteToTrips(
     })).map((d) => d.cityId),
   );
 
-  // Batch: get existing POIs linked to this favourite (across all cities)
+  // Batch: get existing POIs linked to this favourite OR matching by name (across all cities)
+  const cityIds = cities.map((c) => c.id);
   const existingPois = await prisma.poi.findMany({
     where: {
-      cityId: { in: cities.map((c) => c.id) },
+      cityId: { in: cityIds },
       OR: [
         { favouriteItemId: fav.id },
         ...(fav.sourcePlaceId ? [{ placeId: fav.sourcePlaceId }] : []),
+        { name: { equals: fav.name, mode: "insensitive" }, category: fav.category },
       ],
     },
-    select: { cityId: true },
+    select: { cityId: true, id: true, favouriteItemId: true },
   });
   const citiesWithExisting = new Set(existingPois.map((p) => p.cityId));
+
+  // Link unlinked existing POIs to this favourite (e.g., manually created accommodation)
+  const unlinkable = existingPois.filter((p) => p.favouriteItemId == null);
+  if (unlinkable.length > 0) {
+    await Promise.allSettled(
+      unlinkable.map((p) =>
+        prisma.poi.update({ where: { id: p.id }, data: { favouriteItemId: fav.id } }),
+      ),
+    );
+  }
 
   const toCreate: ReturnType<typeof favToPoiData>[] = [];
 
@@ -132,8 +150,14 @@ export async function syncFavouriteToTrips(
     if (dismissedCityIds.has(city.id)) continue;
     if (citiesWithExisting.has(city.id)) continue;
 
+    // Destinations require a discover radius; skip if none set yet
+    if (city.type !== "stop" && city.discoverRadiusKm == null) continue;
+
     const dist = haversineKm(city.latitude, city.longitude, fav.latitude, fav.longitude);
-    if (dist > DEFAULT_FAV_RADIUS_KM) continue;
+    const maxDist = city.type === "stop"
+      ? DEFAULT_FAV_RADIUS_KM
+      : city.discoverRadiusKm!;
+    if (dist > maxDist) continue;
 
     toCreate.push(favToPoiData(fav, city.id));
   }
@@ -166,15 +190,21 @@ export async function syncFavouriteToTrips(
 
 /**
  * On city page load (and after city creation), find favourites in the same
- * country that are within 100 km and create POIs for any that are missing.
+ * country that are within radius and create POIs for any that are missing.
+ *
+ * For travel stops (`cityType === "stop"`), always uses DEFAULT_FAV_RADIUS_KM (80 km).
+ * For destinations / sub-destinations, uses the most recent discover radius
+ * (`discoverRadiusKm`). Skips sync entirely if no discover has been run yet,
+ * and prunes any stale favourite POIs that were created under a previous radius.
  */
 export async function syncFavouritesToCity(
   cityId: number,
   cityLat: number,
   cityLon: number,
   country: string | null,
-  _radiusKm: number | null, // kept for API compat but we always use 100 km
+  discoverRadiusKm: number | null,
   userId: number,
+  cityType: string = "destination",
 ): Promise<number> {
   // Find favourites for this user — filter by country when available
   const hasCountry = country != null && country.trim() !== "";
@@ -206,7 +236,22 @@ export async function syncFavouritesToCity(
     },
   });
 
-  if (favourites.length === 0) return 0;
+  if (favourites.length === 0) {
+    // Prune stale favourite POIs that are now outside the radius
+    const pruneRadius = cityType === "stop" ? DEFAULT_FAV_RADIUS_KM : discoverRadiusKm;
+    await pruneFavouritePoisOutsideRadius(cityId, cityLat, cityLon, pruneRadius);
+    return 0;
+  }
+
+  // Destinations require a discover radius — no favourite sync until discover is run.
+  // Travel stops always use the wide 80 km radius.
+  if (cityType !== "stop" && discoverRadiusKm == null) {
+    await pruneFavouritePoisOutsideRadius(cityId, cityLat, cityLon, null);
+    return 0;
+  }
+
+  const effectiveRadiusKm =
+    cityType === "stop" ? DEFAULT_FAV_RADIUS_KM : discoverRadiusKm!;
 
   // Batch: get dismissed favourite IDs for this city
   const dismissedFavIds = new Set(
@@ -219,7 +264,7 @@ export async function syncFavouritesToCity(
   // Batch: get existing POIs in this city for dedup
   const existingPois = await prisma.poi.findMany({
     where: { cityId },
-    select: { favouriteItemId: true, placeId: true, name: true },
+    select: { id: true, favouriteItemId: true, placeId: true, name: true, category: true },
   });
   const existingFavIds = new Set(
     existingPois.filter((p) => p.favouriteItemId != null).map((p) => p.favouriteItemId!),
@@ -232,11 +277,12 @@ export async function syncFavouritesToCity(
   );
 
   const toCreate: ReturnType<typeof favToPoiData>[] = [];
+  const toLink: { poiId: number; favouriteItemId: number }[] = [];
 
   for (const fav of favourites) {
     // Distance check
     const dist = haversineKm(cityLat, cityLon, fav.latitude, fav.longitude);
-    if (dist > DEFAULT_FAV_RADIUS_KM) continue;
+    if (dist > effectiveRadiusKm) continue;
 
     // User dismissed this favourite from this city
     if (dismissedFavIds.has(fav.id)) continue;
@@ -244,17 +290,36 @@ export async function syncFavouritesToCity(
     // Already has a linked POI
     if (existingFavIds.has(fav.id)) continue;
 
-    // Dedup by placeId
-    if (fav.sourcePlaceId && existingPlaceIds.has(fav.sourcePlaceId)) continue;
+    // Dedup by placeId — but link the unlinked POI to this favourite
+    if (fav.sourcePlaceId && existingPlaceIds.has(fav.sourcePlaceId)) {
+      const match = existingPois.find((p) => p.placeId === fav.sourcePlaceId && !p.favouriteItemId);
+      if (match) toLink.push({ poiId: match.id, favouriteItemId: fav.id });
+      continue;
+    }
 
-    // Dedup by name (case-insensitive)
-    if (existingNames.has(fav.name.toLowerCase().trim())) continue;
+    // Dedup by name (case-insensitive) — but link the unlinked POI to this favourite
+    if (existingNames.has(fav.name.toLowerCase().trim())) {
+      const match = existingPois.find(
+        (p) => p.name.toLowerCase().trim() === fav.name.toLowerCase().trim() && !p.favouriteItemId && p.category === fav.category,
+      );
+      if (match) toLink.push({ poiId: match.id, favouriteItemId: fav.id });
+      continue;
+    }
 
     toCreate.push(favToPoiData(fav, cityId));
     // Add to seen sets to prevent duplicates within the same batch
     existingFavIds.add(fav.id);
     if (fav.sourcePlaceId) existingPlaceIds.add(fav.sourcePlaceId);
     existingNames.add(fav.name.toLowerCase().trim());
+  }
+
+  // Link unlinked existing POIs to their matching favourite (e.g., manually created accommodations)
+  if (toLink.length > 0) {
+    await Promise.allSettled(
+      toLink.map((l) =>
+        prisma.poi.update({ where: { id: l.poiId }, data: { favouriteItemId: l.favouriteItemId } }),
+      ),
+    );
   }
 
   if (toCreate.length > 0) {
@@ -289,7 +354,64 @@ export async function syncFavouritesToCity(
     }
   }
 
+  // Prune favourite-synced POIs that are now outside the effective radius
+  await pruneFavouritePoisOutsideRadius(cityId, cityLat, cityLon, effectiveRadiusKm);
+
   return toCreate.length;
+}
+
+/**
+ * Remove favourite-synced POIs that are outside the given radius.
+ * If radiusKm is null (destination with no discover run), removes ALL favourite-synced POIs.
+ * Skips POIs that are the city's selected accommodation or used in day plans.
+ */
+async function pruneFavouritePoisOutsideRadius(
+  cityId: number,
+  cityLat: number,
+  cityLon: number,
+  radiusKm: number | null,
+): Promise<number> {
+  const favPois = await prisma.poi.findMany({
+    where: { cityId, favouriteItemId: { not: null } },
+    select: {
+      id: true,
+      latitude: true,
+      longitude: true,
+      activities: { select: { id: true }, take: 1 },
+    },
+  });
+
+  if (favPois.length === 0) return 0;
+
+  // Don't remove the selected accommodation
+  const city = await prisma.city.findUnique({
+    where: { id: cityId },
+    select: { accommodationPoiId: true },
+  });
+
+  const toDelete: number[] = [];
+  for (const poi of favPois) {
+    // Keep POIs that are the selected accommodation
+    if (city?.accommodationPoiId === poi.id) continue;
+    // Keep POIs that are used in day plans
+    if (poi.activities.length > 0) continue;
+
+    if (radiusKm == null) {
+      // No discover radius → remove all favourite POIs
+      toDelete.push(poi.id);
+    } else if (poi.latitude != null && poi.longitude != null) {
+      const dist = haversineKm(cityLat, cityLon, poi.latitude, poi.longitude);
+      if (dist > radiusKm) {
+        toDelete.push(poi.id);
+      }
+    }
+  }
+
+  if (toDelete.length > 0) {
+    await prisma.poi.deleteMany({ where: { id: { in: toDelete } } });
+  }
+
+  return toDelete.length;
 }
 
 /**

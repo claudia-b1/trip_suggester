@@ -167,6 +167,7 @@ export default async function CityDetailPage({
         city.country?.trim() || null,
         city.discoverRadiusKm ?? null,
         userId,
+        city.type ?? "destination",
       );
     } catch {
       // Best-effort — don't block page load
@@ -197,8 +198,10 @@ export default async function CityDetailPage({
   });
 
   // Auto-assign accommodation to EVENING slot of day plans (all nights except last).
-  // Ensures accommodation shows in the timeline even if day plans were recreated.
-  const accomPoiForAssign = city.pois.find((p) => p.category === "ACCOMMODATION");
+  // Only when an accommodation is explicitly selected (accommodationPoiId is set).
+  const accomPoiForAssign = city.accommodationPoiId
+    ? city.pois.find((p) => p.id === city.accommodationPoiId)
+    : null;
   if (accomPoiForAssign && dayPlansRaw.length > 0) {
     const daysNeedingAccom = (dayPlansRaw.length > 1 ? dayPlansRaw.slice(0, -1) : dayPlansRaw)
       .filter((dp) => !dp.activities.some((a) => a.poi.category === "ACCOMMODATION"));
@@ -224,11 +227,17 @@ export default async function CityDetailPage({
     }
   }
 
-  // Fetch favourite items nearby, filter by country when available then by distance
-  // Use at least 10 km so a tight discover radius (e.g. 3 km for a travel stop)
-  // doesn't prevent nearby favourites from appearing
-  const DEFAULT_FAV_RADIUS_KM = 50;
-  const favRadiusKm = Math.max(city.discoverRadiusKm ?? DEFAULT_FAV_RADIUS_KM, DEFAULT_FAV_RADIUS_KM);
+  // Fetch favourite items nearby, filter by country then by distance.
+  // Travel stops use a wide 80 km radius so nearby favourites always appear.
+  // Destinations only show favourites after a discover has been run (discoverRadiusKm is set),
+  // using that radius as the cutoff.
+  const DEFAULT_FAV_RADIUS_KM = 80;
+  const hasDiscoverRadius = city.discoverRadiusKm != null;
+  const showFavourites = isStop || hasDiscoverRadius;
+  const favRadiusKm = isStop
+    ? DEFAULT_FAV_RADIUS_KM
+    : (city.discoverRadiusKm ?? 0);
+
   const allCountryFavs = await prisma.favouriteItem.findMany({
     where: {
       ...(city.country ? { country: { equals: city.country, mode: "insensitive" } } : {}),
@@ -238,21 +247,23 @@ export default async function CityDetailPage({
     orderBy: { createdAt: "asc" },
   });
 
-  // Haversine distance filter
-  const favouriteItemsRaw = (city.latitude != null && city.longitude != null)
-    ? allCountryFavs.filter((f) => {
-        const R = 6371;
-        const dLat = ((f.latitude - city.latitude!) * Math.PI) / 180;
-        const dLon = ((f.longitude - city.longitude!) * Math.PI) / 180;
-        const a =
-          Math.sin(dLat / 2) ** 2 +
-          Math.cos((city.latitude! * Math.PI) / 180) *
-            Math.cos((f.latitude * Math.PI) / 180) *
-            Math.sin(dLon / 2) ** 2;
-        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return dist <= favRadiusKm;
-      })
-    : allCountryFavs;
+  // Haversine distance filter — returns empty for destinations without a discover radius
+  const favouriteItemsRaw = showFavourites
+    ? (city.latitude != null && city.longitude != null)
+      ? allCountryFavs.filter((f) => {
+          const R = 6371;
+          const dLat = ((f.latitude - city.latitude!) * Math.PI) / 180;
+          const dLon = ((f.longitude - city.longitude!) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos((city.latitude! * Math.PI) / 180) *
+              Math.cos((f.latitude * Math.PI) / 180) *
+              Math.sin(dLon / 2) ** 2;
+          const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          return dist <= favRadiusKm;
+        })
+      : allCountryFavs
+    : [];
 
   const favouriteItems: FavouriteItemDTO[] = favouriteItemsRaw.map((f) => ({
     id: f.id,
@@ -418,8 +429,21 @@ export default async function CityDetailPage({
     0,
   );
 
-  // Backfill accommodation addresses via Mapbox reverse geocode
+  // Auto-set accommodationPoiId if it's null but ACCOMMODATION POIs exist.
+  // Only for destinations — travel stops require explicit selection by the user.
   const accomPois = city.pois.filter((p) => p.category === "ACCOMMODATION");
+  if (!isStop && !city.accommodationPoiId && accomPois.length > 0) {
+    const firstAccom = accomPois.find((p) => p.latitude != null && p.longitude != null);
+    if (firstAccom) {
+      await prisma.city.update({
+        where: { id: city.id },
+        data: { accommodationPoiId: firstAccom.id },
+      });
+      city.accommodationPoiId = firstAccom.id;
+    }
+  }
+
+  // Backfill accommodation addresses via Mapbox reverse geocode
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (mapboxToken) {
     const needsAddress = accomPois.filter((p) => !p.description && p.latitude != null && p.longitude != null);
@@ -532,12 +556,7 @@ export default async function CityDetailPage({
           favourites: favouriteItems,
           cityLat: city.latitude,
           cityLon: city.longitude,
-          pois: pois.map((p) => ({ id: p.id, category: p.category })),
-          accomPois: accomPois.map((p) => ({
-            id: p.id,
-            name: p.name,
-            address: p.description && p.description.includes(",") ? p.description : undefined,
-          })),
+          pois: pois.map((p) => ({ id: p.id, name: p.name, category: p.category, latitude: p.latitude, longitude: p.longitude })),
           dayPlanIds: dayPlans.map((dp) => dp.id),
         } : undefined}
       />

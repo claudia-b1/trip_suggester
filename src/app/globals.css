@@ -6,39 +6,39 @@
 
 :root {
   --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
-  --card: 210 20% 98%;
-  --card-foreground: 222 47% 11%;
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 210 40% 98%;
-  --accent: 210 40% 96%;
-  --accent-foreground: 222 47% 11%;
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 221 83% 53%;
+  --foreground: 240 40% 11%;
+  --card: 240 20% 98%;
+  --card-foreground: 240 40% 11%;
+  --muted: 240 30% 96%;
+  --muted-foreground: 240 10% 46%;
+  --primary: 243 75% 59%;
+  --primary-foreground: 240 40% 99%;
+  --accent: 240 30% 96%;
+  --accent-foreground: 240 40% 11%;
+  --border: 240 24% 90%;
+  --input: 240 24% 90%;
+  --ring: 243 75% 59%;
   --radius: 0.625rem;
   --destructive: 0 72% 51%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 240 40% 99%;
 }
 
 .dark {
-  --background: 222 47% 6%;
-  --foreground: 210 40% 98%;
-  --card: 222 47% 9%;
-  --card-foreground: 210 40% 98%;
-  --muted: 217 33% 14%;
-  --muted-foreground: 215 20% 55%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 222 47% 6%;
-  --accent: 217 33% 14%;
-  --accent-foreground: 210 40% 98%;
-  --border: 217 33% 17%;
-  --input: 217 33% 17%;
-  --ring: 224 76% 48%;
+  --background: 240 30% 6%;
+  --foreground: 240 30% 96%;
+  --card: 240 30% 9%;
+  --card-foreground: 240 30% 96%;
+  --muted: 240 20% 14%;
+  --muted-foreground: 240 15% 55%;
+  --primary: 243 80% 70%;
+  --primary-foreground: 240 30% 6%;
+  --accent: 240 20% 14%;
+  --accent-foreground: 240 30% 96%;
+  --border: 240 20% 18%;
+  --input: 240 20% 18%;
+  --ring: 243 70% 55%;
   --destructive: 0 63% 31%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive-foreground: 240 30% 96%;
 }
 
 @theme inline {
@@ -72,14 +72,14 @@ body {
 
 /* Gradient text utility */
 .text-gradient {
-  background: linear-gradient(135deg, hsl(var(--primary)), hsl(260 80% 60%));
+  background: linear-gradient(135deg, hsl(243 75% 59%), hsl(280 70% 58%));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .dark .text-gradient {
-  background: linear-gradient(135deg, hsl(217 91% 70%), hsl(260 80% 75%));
+  background: linear-gradient(135deg, hsl(243 80% 72%), hsl(280 70% 72%));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -106,6 +106,14 @@ body {
 
 /* Clip map canvas to rounded corners; popup is rendered outside the map DOM */
 .poi-map-outer .mapboxgl-canvas-container { overflow: hidden; border-radius: 0.75rem; }
+
+/* Place scale control next to zoom buttons instead of below */
+.poi-map-outer .mapboxgl-ctrl-top-right {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  gap: 4px;
+}
 
 /* Mapbox popup readability */
 .mapboxgl-popup-content {

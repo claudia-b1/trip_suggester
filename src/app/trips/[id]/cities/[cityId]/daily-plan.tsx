@@ -170,7 +170,7 @@ function MiniCalendar({
               {day}
               {isTripDay && !isSelected && (hasPois || hasAccom) && (
                 <span className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 flex gap-0.5">
-                  {hasPois && <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />}
+                  {hasPois && <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />}
                   {hasAccom && <span className="text-[8px] leading-none">🏠</span>}
                 </span>
               )}
@@ -393,7 +393,7 @@ function DayMapModal({
                 <button
                   type="button"
                   onClick={openGoogleMapsRoute}
-                  className="rounded-md border border-[hsl(var(--border))] bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:hover:bg-blue-900"
+                  className="rounded-md border border-[hsl(var(--border))] bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 dark:hover:bg-indigo-900"
                   title="Walking route through POIs in order"
                 >
                   🚶 Walking route
@@ -1506,7 +1506,7 @@ export function DailyPlan({
                       <button
                         type="button"
                         onClick={() => setMapDayPlan(currentDayPlan)}
-                        className="text-xs text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
+                        className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
                         Show on map
@@ -1705,9 +1705,9 @@ export function DailyPlan({
                       key={slot}
                       className={`space-y-2 rounded-lg p-3 transition-colors ${SLOT_CSS[slot]} ${
                         isPoiOver
-                          ? "ring-2 ring-blue-400 bg-blue-50/50 dark:bg-blue-900/20"
+                          ? "ring-2 ring-indigo-400 bg-indigo-50/50 dark:bg-indigo-900/20"
                           : isDropTarget
-                            ? "ring-2 ring-dashed ring-blue-300"
+                            ? "ring-2 ring-dashed ring-indigo-300"
                             : ""
                       }`}
                       onDragOver={(e) => {
@@ -1728,7 +1728,7 @@ export function DailyPlan({
                       {items.length === 0 && !selectedPoi && (
                         <div className={`rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs ${
                           isPoiOver
-                            ? "border-blue-300 text-blue-500"
+                            ? "border-indigo-300 text-indigo-500"
                             : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"
                         }`}>
                           {isPoiOver ? "Drop here" : "Drag a POI here"}

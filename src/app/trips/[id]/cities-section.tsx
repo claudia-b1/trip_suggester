@@ -74,7 +74,7 @@ function validateDates(start: string, end: string): string | null {
 }
 
 const MARKER_COLORS = [
-  "#3b82f6",
+  "#4f46e5",
   "#10b981",
   "#f59e0b",
   "#ef4444",

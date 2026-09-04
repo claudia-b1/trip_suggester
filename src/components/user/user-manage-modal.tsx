@@ -12,7 +12,7 @@ import {
 } from "@/lib/active-user-client";
 
 const COLOR_PRESETS = [
-  "#3B82F6",
+  "#4F46E5",
   "#8B5CF6",
   "#EC4899",
   "#EF4444",
