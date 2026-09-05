@@ -689,7 +689,7 @@ export function CitiesSection({
 
             {/* Map */}
             {mapCities.length > 0 && (
-              <div className="flex-1 h-[280px] sm:h-auto" style={{ minHeight: 280 }}>
+              <div className="relative h-[280px] sm:flex-1 sm:h-[400px]">
                 <TripMap cities={mapCities} />
               </div>
             )}
