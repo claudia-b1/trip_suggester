@@ -234,7 +234,7 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
             ref={mapRef}
             mapboxAccessToken={token}
             initialViewState={initialView}
-            mapStyle="mapbox://styles/mapbox/light-v11"
+            mapStyle="mapbox://styles/mapbox/navigation-day-v1"
             style={{ width: "100%", height: "100%" }}
             onClick={handleMapClick}
             onLoad={() => setMapLoaded(true)}
