@@ -525,6 +525,8 @@ export default async function CityDetailPage({
             startDate: city.startDate.toISOString(),
             endDate: city.endDate.toISOString(),
             type: city.type ?? "destination",
+            latitude: city.latitude,
+            longitude: city.longitude,
           },
           tripStartDate: city.trip.startDate.toISOString(),
           tripEndDate: city.trip.endDate.toISOString(),
@@ -533,6 +535,8 @@ export default async function CityDetailPage({
           hasAccommodation: !!city.accommodationPoiId,
         }}
         isStop={isStop}
+        latitude={city.latitude}
+        longitude={city.longitude}
         accommodations={isStop ? undefined : accommodations}
         stopAccommodation={isStop ? {
           initial: (() => {

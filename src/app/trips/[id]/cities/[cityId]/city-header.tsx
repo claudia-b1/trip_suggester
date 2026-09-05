@@ -77,7 +77,7 @@ export type CityHeaderProps = {
   totalPois: number;
   editProps?: {
     tripId: number;
-    city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string; type?: string };
+    city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string; type?: string; latitude?: number | null; longitude?: number | null };
     tripStartDate: string;
     tripEndDate: string;
     poiCount: number;
@@ -86,6 +86,9 @@ export type CityHeaderProps = {
   };
   /** Whether this is a travel stop (simplified page — no auto-plan) */
   isStop?: boolean;
+  /** City coordinates for map centering */
+  latitude?: number | null;
+  longitude?: number | null;
   accommodations?: { name: string; address?: string }[];
   /** Stop-only: interactive accommodation picker data */
   stopAccommodation?: {
@@ -121,6 +124,8 @@ export function CityHeader({
   totalPois,
   editProps,
   isStop,
+  latitude,
+  longitude,
   accommodations,
   stopAccommodation,
 }: CityHeaderProps) {
@@ -629,6 +634,8 @@ export function CityHeader({
           parentCityName={nickname ?? name}
           parentStartDate={startDate}
           parentEndDate={endDate}
+          parentLatitude={latitude}
+          parentLongitude={longitude}
           onClose={() => setAddSubOpen(false)}
         />
       )}

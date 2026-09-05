@@ -70,8 +70,7 @@ export function TripMapImpl({ cities }: TripMapProps) {
 
   return (
     <div
-      className="poi-map-outer relative rounded-xl overflow-hidden border border-[hsl(var(--border))]"
-      style={{ width: "100%", height: "100%", minHeight: 240 }}
+      className="poi-map-outer absolute inset-0 rounded-xl overflow-hidden border border-[hsl(var(--border))]"
     >
       <MapGL
         ref={mapRef}

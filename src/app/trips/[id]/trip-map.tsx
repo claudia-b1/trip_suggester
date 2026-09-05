@@ -10,7 +10,7 @@ const TripMapDynamic = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="h-full w-full min-h-[240px] animate-pulse rounded-xl bg-[hsl(var(--muted))] border border-[hsl(var(--border))]" />
+      <div className="absolute inset-0 animate-pulse rounded-xl bg-[hsl(var(--muted))] border border-[hsl(var(--border))]" />
     ),
   },
 );
