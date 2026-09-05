@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { CityAutocomplete, type CityDetails } from "@/components/ui/city-autocomplete";
+import { MapLocationPickerModal } from "@/components/ui/map-location-picker-dynamic";
 
 /** Add days to a YYYY-MM-DD string (timezone-safe). */
 function addDaysToDate(dateStr: string, days: number): string {
@@ -21,6 +22,8 @@ export type AddSubDestinationModalProps = {
   parentCityName: string;
   parentStartDate: string; // ISO
   parentEndDate: string;   // ISO
+  parentLatitude?: number | null;
+  parentLongitude?: number | null;
   onClose: () => void;
 };
 
@@ -30,6 +33,8 @@ export function AddSubDestinationModal({
   parentCityName,
   parentStartDate,
   parentEndDate,
+  parentLatitude,
+  parentLongitude,
   onClose,
 }: AddSubDestinationModalProps) {
   const router = useRouter();
@@ -40,6 +45,7 @@ export function AddSubDestinationModal({
   const [nickname, setNickname] = useState("");
   const [showNickname, setShowNickname] = useState(false);
   const [cityMeta, setCityMeta] = useState<CityDetails | null>(null);
+  const [showMapPicker, setShowMapPicker] = useState(false);
 
   // Dates — clamp to parent range
   const minDate = parentStartDate.slice(0, 10);
@@ -162,14 +168,40 @@ export function AddSubDestinationModal({
           {/* Location */}
           <div className="space-y-2">
             <Label htmlFor="sub-city-name">Location</Label>
-            <CityAutocomplete
-              id="sub-city-name"
-              value={name}
-              onChange={setName}
-              onSelect={(d) => { setName(d.name); setCityMeta(d); }}
-              placeholder="Search destinations..."
-              required
-            />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <CityAutocomplete
+                  id="sub-city-name"
+                  value={name}
+                  onChange={setName}
+                  onSelect={(d) => { setName(d.name); setCityMeta(d); }}
+                  placeholder="Search destinations..."
+                  required
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(true)}
+                title="Pick on map"
+                className="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              </button>
+            </div>
+            {showMapPicker && (
+              <MapLocationPickerModal
+                onSelect={(d) => { setName(d.name); setCityMeta(d); }}
+                onClose={() => setShowMapPicker(false)}
+                existingCities={
+                  parentLatitude != null && parentLongitude != null
+                    ? [{ latitude: parentLatitude, longitude: parentLongitude }]
+                    : undefined
+                }
+              />
+            )}
             {cityMeta && (
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
                 {[cityMeta.country, cityMeta.timezone].filter(Boolean).join(" · ")}

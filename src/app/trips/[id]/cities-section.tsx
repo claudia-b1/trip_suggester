@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { CityAutocomplete, type CityDetails } from "@/components/ui/city-autocomplete";
+import { MapLocationPickerModal } from "@/components/ui/map-location-picker-dynamic";
 import { TripMap } from "./trip-map";
 import type { TripCity } from "./trip-map-impl";
 
@@ -275,6 +276,8 @@ export function CitiesSection({
   const [showNickname, setShowNickname] = useState(false);
   // Travel stop toggle
   const [isStop, setIsStop] = useState(false);
+  // Map location picker
+  const [showMapPicker, setShowMapPicker] = useState(false);
   // When adding a sub-destination, this is set to the parent city id
   const [addParentCityId, setAddParentCityId] = useState<number | null>(null);
   // "Move under" dropdown state
@@ -755,17 +758,45 @@ export function CitiesSection({
           )}
           <div className="space-y-2">
             <Label htmlFor="city-name">Location</Label>
-            <CityAutocomplete
-              id="city-name"
-              value={name}
-              onChange={setName}
-              onSelect={(d) => {
-                setName(d.name);
-                setCityMeta(d);
-              }}
-              placeholder="Search destinations…"
-              required
-            />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <CityAutocomplete
+                  id="city-name"
+                  value={name}
+                  onChange={setName}
+                  onSelect={(d) => {
+                    setName(d.name);
+                    setCityMeta(d);
+                  }}
+                  placeholder="Search destinations…"
+                  required
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMapPicker(true)}
+                title="Pick on map"
+                className="shrink-0 inline-flex items-center justify-center h-9 w-9 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                  <circle cx="12" cy="10" r="3" />
+                </svg>
+              </button>
+            </div>
+            {showMapPicker && (
+              <MapLocationPickerModal
+                onSelect={(d) => {
+                  setName(d.name);
+                  setCityMeta(d);
+                }}
+                onClose={() => setShowMapPicker(false)}
+                existingCities={localCities
+                  .flatMap((c) => [c, ...c.subcities])
+                  .filter((c) => c.latitude != null && c.longitude != null)
+                  .map((c) => ({ latitude: c.latitude!, longitude: c.longitude! }))}
+              />
+            )}
             {cityMeta && (
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
                 {[cityMeta.country, cityMeta.timezone].filter(Boolean).join(" · ")}
