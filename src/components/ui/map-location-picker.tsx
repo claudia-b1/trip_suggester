@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import MapGL, { Marker, NavigationControl, type MapRef, type MapMouseEvent } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import type { CityDetails } from "@/components/ui/city-autocomplete";
 
 export type MapLocationPickerProps = {
@@ -29,6 +30,8 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
   const mapRef = useRef<MapRef>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [picked, setPicked] = useState<PickedLocation | null>(null);
+  const [locating, setLocating] = useState(false);
+  const { toast } = useToast();
 
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -60,10 +63,8 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
     );
   }, [mapLoaded, existingCities]);
 
-  // Handle map click: reverse geocode → find city → get details
-  const handleMapClick = useCallback(async (e: MapMouseEvent) => {
-    const { lng, lat } = e.lngLat;
-
+  // Core location resolution: reverse geocode → city search → full details
+  const resolveLocation = useCallback(async (lat: number, lng: number) => {
     setPicked({ lat, lng, cityName: "Looking up…", country: "", details: null, loading: true });
 
     try {
@@ -115,6 +116,46 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
       setPicked((p) => p ? { ...p, loading: false, error: "Network error" } : null);
     }
   }, []);
+
+  // Handle map click
+  const handleMapClick = useCallback((e: MapMouseEvent) => {
+    resolveLocation(e.lngLat.lat, e.lngLat.lng);
+  }, [resolveLocation]);
+
+  // Handle "Use my location" via browser Geolocation API
+  const handleUseMyLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast("Your browser does not support geolocation.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocating(false);
+        const { latitude: lat, longitude: lng } = pos.coords;
+
+        // Fly the map to the user's location
+        const map = mapRef.current?.getMap();
+        if (map) {
+          map.flyTo({ center: [lng, lat], zoom: 10, duration: 1000 });
+        }
+
+        // Resolve the location to a city
+        resolveLocation(lat, lng);
+      },
+      (err) => {
+        setLocating(false);
+        const messages: Record<number, string> = {
+          1: "Location permission was denied. Allow location access in your browser settings.",
+          2: "Your location could not be determined. Please try again.",
+          3: "Location request timed out. Please try again.",
+        };
+        toast(messages[err.code] || "Could not access your location.");
+      },
+      { enableHighAccuracy: false, timeout: 10000 },
+    );
+  }, [resolveLocation, toast]);
 
   const handleConfirm = useCallback(() => {
     if (picked?.details) {
@@ -189,6 +230,25 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
               </Marker>
             )}
           </MapGL>
+
+          {/* My location button */}
+          <button
+            type="button"
+            onClick={handleUseMyLocation}
+            disabled={locating}
+            title="Use my location"
+            className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium text-[hsl(var(--foreground))] shadow-sm backdrop-blur-sm hover:bg-[hsl(var(--muted))] transition-colors min-h-[36px] min-w-[36px] disabled:opacity-60"
+          >
+            {locating ? (
+              <div className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v4M12 18v4M2 12h4M18 12h4" />
+              </svg>
+            )}
+            <span className="hidden sm:inline">My location</span>
+          </button>
         </div>
 
         {/* Footer with picked location info */}
