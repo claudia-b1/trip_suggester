@@ -120,6 +120,12 @@ export function DestinationAdvisor() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Trip creation flow state
+  const [pendingRec, setPendingRec] = useState<Recommendation | null>(null);
+  const [tripStartDate, setTripStartDate] = useState("");
+  const [tripEndDate, setTripEndDate] = useState("");
+  const [creatingTrip, setCreatingTrip] = useState(false);
+
   // Auto-scroll to bottom on new messages / streaming content
   useEffect(() => {
     if (scrollRef.current) {
@@ -179,34 +185,59 @@ export function DestinationAdvisor() {
   );
 
   const handleCreateTrip = useCallback(
-    async (rec: Recommendation) => {
+    (rec: Recommendation) => {
+      // Default dates: 2 weeks from now, 1 week duration
+      const start = new Date();
+      start.setDate(start.getDate() + 14);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      setTripStartDate(start.toISOString().slice(0, 10));
+      setTripEndDate(end.toISOString().slice(0, 10));
+      setPendingRec(rec);
+    },
+    [],
+  );
+
+  const confirmCreateTrip = useCallback(
+    async () => {
+      if (!pendingRec || !tripStartDate || !tripEndDate) return;
+      setCreatingTrip(true);
       try {
-        // Create a trip with generous date range (2 weeks from now, 1 week duration)
-        const start = new Date();
-        start.setDate(start.getDate() + 14);
-        const end = new Date(start);
-        end.setDate(end.getDate() + 7);
+        const tripName = `${pendingRec.name}, ${pendingRec.country}`;
 
-        const tripName = `${rec.name}, ${rec.country}`;
-
+        // 1. Create the trip
         const res = await fetch("/api/trips", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: tripName,
-            startDate: start.toISOString(),
-            endDate: end.toISOString(),
+            startDate: tripStartDate,
+            endDate: tripEndDate,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to create trip");
+        const trip = await res.json();
+
+        // 2. Add the recommended place as the first destination
+        await fetch(`/api/trips/${trip.id}/cities`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: pendingRec.name,
+            startDate: tripStartDate,
+            endDate: tripEndDate,
           }),
         });
 
-        if (!res.ok) throw new Error("Failed to create trip");
-        const trip = await res.json();
+        setPendingRec(null);
         router.push(`/trips/${trip.id}`);
       } catch {
         // Silently fail — the user can create manually
+      } finally {
+        setCreatingTrip(false);
       }
     },
-    [router],
+    [pendingRec, tripStartDate, tripEndDate, router],
   );
 
   const handleReset = useCallback(() => {
@@ -215,6 +246,7 @@ export function DestinationAdvisor() {
     setInput("");
     setIsLoading(false);
     setShowInput(false);
+    setPendingRec(null);
   }, []);
 
   // Get quick-reply options from the last assistant message
@@ -336,6 +368,63 @@ export function DestinationAdvisor() {
           </div>
         )}
       </div>
+
+      {/* Trip date picker — shown when user clicks "Create trip to X" */}
+      {pendingRec && (
+        <div className="border-t border-[hsl(var(--border))] px-4 py-3 space-y-3 bg-[hsl(var(--primary))]/[0.03]">
+          <p className="text-sm font-medium">
+            Create trip to {pendingRec.name}, {pendingRec.country}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label htmlFor="advisor-start" className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+                Start date
+              </label>
+              <input
+                id="advisor-start"
+                type="date"
+                value={tripStartDate}
+                onChange={(e) => {
+                  setTripStartDate(e.target.value);
+                  if (tripEndDate < e.target.value) setTripEndDate(e.target.value);
+                }}
+                className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]/30"
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="advisor-end" className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+                End date
+              </label>
+              <input
+                id="advisor-end"
+                type="date"
+                value={tripEndDate}
+                min={tripStartDate}
+                onChange={(e) => setTripEndDate(e.target.value)}
+                className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]/30"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={confirmCreateTrip}
+              disabled={creatingTrip || !tripStartDate || !tripEndDate}
+              className="flex-1 rounded-lg bg-[hsl(var(--primary))] px-3 py-1.5 text-sm font-medium text-[hsl(var(--primary-foreground))] hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              {creatingTrip ? "Creating…" : "Create trip"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPendingRec(null)}
+              disabled={creatingTrip}
+              className="rounded-lg border border-[hsl(var(--border))] px-3 py-1.5 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Quick-reply options */}
       {quickOptions && quickOptions.length > 0 && (

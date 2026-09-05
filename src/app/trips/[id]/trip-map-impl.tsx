@@ -233,11 +233,10 @@ export function TripMapImpl({ cities }: TripMapProps) {
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      gap: 2,
                       backgroundColor: "white",
                       border: "1.5px dashed #9ca3af",
-                      borderRadius: 12,
-                      padding: "2px 6px 2px 4px",
+                      borderRadius: "50%",
+                      padding: 4,
                       fontSize: 11,
                       fontWeight: 600,
                       color: "#6b7280",
@@ -250,7 +249,6 @@ export function TripMapImpl({ cities }: TripMapProps) {
                     }}
                   >
                     <span style={{ fontSize: 13, lineHeight: 1 }}>🚗</span>
-                    <span>{displayNumber}</span>
                   </button>
                 ) : (
                   /* Regular destination: colored circle with number */

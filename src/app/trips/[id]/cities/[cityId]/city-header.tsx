@@ -77,9 +77,12 @@ export type CityHeaderProps = {
   totalPois: number;
   editProps?: {
     tripId: number;
-    city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string };
+    city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string; type?: string };
     tripStartDate: string;
     tripEndDate: string;
+    poiCount: number;
+    hasRecommendations: boolean;
+    hasAccommodation: boolean;
   };
   /** Whether this is a travel stop (simplified page — no auto-plan) */
   isStop?: boolean;
@@ -371,6 +374,9 @@ export function CityHeader({
                   city={editProps.city}
                   tripStartDate={editProps.tripStartDate}
                   tripEndDate={editProps.tripEndDate}
+                  poiCount={editProps.poiCount}
+                  hasRecommendations={editProps.hasRecommendations}
+                  hasAccommodation={editProps.hasAccommodation}
                 />
               )}
             </div>
