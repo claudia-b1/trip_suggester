@@ -524,9 +524,13 @@ export default async function CityDetailPage({
             nickname: city.nickname,
             startDate: city.startDate.toISOString(),
             endDate: city.endDate.toISOString(),
+            type: city.type ?? "destination",
           },
           tripStartDate: city.trip.startDate.toISOString(),
           tripEndDate: city.trip.endDate.toISOString(),
+          poiCount: pois.length,
+          hasRecommendations: !!cachedActivities,
+          hasAccommodation: !!city.accommodationPoiId,
         }}
         isStop={isStop}
         accommodations={isStop ? undefined : accommodations}

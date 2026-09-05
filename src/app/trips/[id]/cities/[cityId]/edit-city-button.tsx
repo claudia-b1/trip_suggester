@@ -17,11 +17,20 @@ export function EditCityButton({
   city,
   tripStartDate,
   tripEndDate,
+  poiCount = 0,
+  hasRecommendations = false,
+  hasAccommodation = false,
 }: {
   tripId: number;
-  city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string };
+  city: { id: number; name: string; nickname: string | null; startDate: string; endDate: string; type?: string };
   tripStartDate: string;
   tripEndDate: string;
+  /** Number of POIs currently on this city */
+  poiCount?: number;
+  /** Whether cached activity recommendations exist */
+  hasRecommendations?: boolean;
+  /** Whether an accommodation is currently selected (accommodationPoiId is set) */
+  hasAccommodation?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -33,12 +42,16 @@ export function EditCityButton({
   const [saving, setSaving] = useState(false);
   const [cityMeta, setCityMeta] = useState<CityDetails | null>(null);
 
+  const isStop = city.type === "stop";
+
   // Location change dialog state
   const [showLocationChangeDialog, setShowLocationChangeDialog] = useState(false);
   const [deletingPois, setDeletingPois] = useState(false);
   const [poisDeleted, setPoisDeleted] = useState(false);
   const [clearingRecs, setClearingRecs] = useState(false);
   const [recsCleared, setRecsCleared] = useState(false);
+  const [clearingAccom, setClearingAccom] = useState(false);
+  const [accomCleared, setAccomCleared] = useState(false);
 
   function onCancel() {
     setName(city.name);
@@ -49,6 +62,7 @@ export function EditCityButton({
     setShowLocationChangeDialog(false);
     setPoisDeleted(false);
     setRecsCleared(false);
+    setAccomCleared(false);
     setOpen(false);
   }
 
@@ -83,7 +97,16 @@ export function EditCityButton({
       return;
     }
     if (cityMeta) {
-      setShowLocationChangeDialog(true);
+      // Only show the cleanup dialog if there's actually data to clean up
+      const showPois = poiCount > 0;
+      const showRecs = !isStop && hasRecommendations;
+      const showAccom = isStop && hasAccommodation;
+      if (showPois || showRecs || showAccom) {
+        setShowLocationChangeDialog(true);
+      } else {
+        setOpen(false);
+        router.refresh();
+      }
     } else {
       setOpen(false);
       router.refresh();
@@ -117,10 +140,28 @@ export function EditCityButton({
     }
   }
 
+  async function handleClearAccommodation() {
+    setClearingAccom(true);
+    try {
+      await fetch(`/api/trips/${tripId}/cities/${city.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accommodationPoiId: null }),
+      });
+      setAccomCleared(true);
+      toast("Accommodation cleared");
+    } catch {
+      toast("Failed to clear accommodation", { variant: "error" });
+    } finally {
+      setClearingAccom(false);
+    }
+  }
+
   function handleDone() {
     setShowLocationChangeDialog(false);
     setPoisDeleted(false);
     setRecsCleared(false);
+    setAccomCleared(false);
     setOpen(false);
     setCityMeta(null);
     router.refresh();
@@ -223,30 +264,48 @@ export function EditCityButton({
             📍 Location changed — what about existing data?
           </p>
           <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleDeletePois}
-              disabled={deletingPois || poisDeleted}
-              className="flex items-center gap-2 w-full text-left rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
-            >
-              {poisDeleted ? "✅" : "🗑️"}
-              <div>
-                <span className="font-medium">{poisDeleted ? "Places deleted" : deletingPois ? "Deleting..." : "Delete all discovered places"}</span>
-                {!poisDeleted && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Remove POIs so you can Discover for the new location</p>}
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={handleClearRecommendations}
-              disabled={clearingRecs || recsCleared}
-              className="flex items-center gap-2 w-full text-left rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
-            >
-              {recsCleared ? "✅" : "🔄"}
-              <div>
-                <span className="font-medium">{recsCleared ? "Recommendations cleared" : clearingRecs ? "Clearing..." : "Clear recommendations"}</span>
-                {!recsCleared && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Clear cached recommendations so they can be regenerated</p>}
-              </div>
-            </button>
+            {poiCount > 0 && (
+              <button
+                type="button"
+                onClick={handleDeletePois}
+                disabled={deletingPois || poisDeleted}
+                className="flex items-center gap-2 w-full text-left rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+              >
+                {poisDeleted ? "✅" : "🗑️"}
+                <div>
+                  <span className="font-medium">{poisDeleted ? "Places deleted" : deletingPois ? "Deleting..." : "Delete all discovered places"}</span>
+                  {!poisDeleted && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Remove {poiCount} POI{poiCount !== 1 ? "s" : ""} so you can Discover for the new location</p>}
+                </div>
+              </button>
+            )}
+            {!isStop && hasRecommendations && (
+              <button
+                type="button"
+                onClick={handleClearRecommendations}
+                disabled={clearingRecs || recsCleared}
+                className="flex items-center gap-2 w-full text-left rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+              >
+                {recsCleared ? "✅" : "🔄"}
+                <div>
+                  <span className="font-medium">{recsCleared ? "Recommendations cleared" : clearingRecs ? "Clearing..." : "Clear recommendations"}</span>
+                  {!recsCleared && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Clear cached recommendations so they can be regenerated</p>}
+                </div>
+              </button>
+            )}
+            {isStop && hasAccommodation && (
+              <button
+                type="button"
+                onClick={handleClearAccommodation}
+                disabled={clearingAccom || accomCleared}
+                className="flex items-center gap-2 w-full text-left rounded-md border border-[hsl(var(--border))] px-3 py-2 text-sm hover:bg-[hsl(var(--muted))] transition-colors disabled:opacity-50"
+              >
+                {accomCleared ? "✅" : "🏨"}
+                <div>
+                  <span className="font-medium">{accomCleared ? "Accommodation cleared" : clearingAccom ? "Clearing..." : "Clear accommodation"}</span>
+                  {!accomCleared && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Unset the selected accommodation for this stop</p>}
+                </div>
+              </button>
+            )}
           </div>
           <Button type="button" size="sm" onClick={handleDone} className="w-full">
             Done

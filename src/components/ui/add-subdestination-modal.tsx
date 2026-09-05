@@ -62,6 +62,8 @@ export function AddSubDestinationModal({
   const [genNearbyActivities, setGenNearbyActivities] = useState(true);
   const [maxCitiesKm, setMaxCitiesKm] = useState(150);
   const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
+  const [genHikes, setGenHikes] = useState(false);
+  const [genCycling, setGenCycling] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function AddSubDestinationModal({
         } catch { /* non-critical */ }
       }
 
-      if (genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities)) {
+      if (genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities || genHikes || genCycling)) {
         setGenerating("recommendations");
         try {
           await fetch(`/api/cities/${newCityId}/activities`, {
@@ -119,6 +121,8 @@ export function AddSubDestinationModal({
               includeMustDo: genMustDo,
               includeNearbyCities: genNearbyCities,
               includeNearbyActivities: genNearbyActivities,
+              includeHikes: genHikes,
+              includeCycling: genCycling,
               maxNearbyCitiesKm: maxCitiesKm,
               maxNearbyActivitiesKm: maxActivitiesKm,
             }),
@@ -264,6 +268,14 @@ export function AddSubDestinationModal({
                   Recommended activities nearby
                   <Input type="number" value={maxActivitiesKm} onChange={(e) => setMaxActivitiesKm(Number(e.target.value))} className="w-14 h-5 text-[10px] px-1" />
                   <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={genHikes} onChange={(e) => setGenHikes(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  🥾 Hikes & walks
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" checked={genCycling} onChange={(e) => setGenCycling(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  🚴 Cycling routes
                 </label>
               </div>
             )}

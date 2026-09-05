@@ -289,6 +289,8 @@ export function CitiesSection({
   const [genNearbyActivities, setGenNearbyActivities] = useState(true);
   const [maxCitiesKm, setMaxCitiesKm] = useState(150);
   const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
+  const [genHikes, setGenHikes] = useState(false);
+  const [genCycling, setGenCycling] = useState(false);
   const [generating, setGenerating] = useState<string | null>(null); // null | "about" | "recommendations" | "done"
 
   function openAddForm(parentCityId?: number) {
@@ -364,7 +366,7 @@ export function CitiesSection({
 
     // Run background generation tasks (skip for travel stops)
     const shouldGenAbout = genAbout && !isStop;
-    const shouldGenRecs = genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities) && !isStop;
+    const shouldGenRecs = genRecommendations && (genMustDo || genNearbyCities || genNearbyActivities || genHikes || genCycling) && !isStop;
 
     if (shouldGenAbout || shouldGenRecs) {
       // Show generating state and keep form open
@@ -385,6 +387,8 @@ export function CitiesSection({
               includeMustDo: genMustDo,
               includeNearbyCities: genNearbyCities,
               includeNearbyActivities: genNearbyActivities,
+              includeHikes: genHikes,
+              includeCycling: genCycling,
               maxNearbyCitiesKm: maxCitiesKm,
               maxNearbyActivitiesKm: maxActivitiesKm,
             }),
@@ -946,6 +950,14 @@ export function CitiesSection({
                       <span className="text-[10px]">km max</span>
                     </span>
                   )}
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-[hsl(var(--muted-foreground))]">
+                  <input type="checkbox" checked={genHikes} onChange={(e) => setGenHikes(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  🥾 Hikes & walks
+                </label>
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-[hsl(var(--muted-foreground))]">
+                  <input type="checkbox" checked={genCycling} onChange={(e) => setGenCycling(e.target.checked)} className="rounded h-3.5 w-3.5" />
+                  🚴 Cycling routes
                 </label>
               </div>
             )}
