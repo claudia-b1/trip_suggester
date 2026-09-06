@@ -13,7 +13,7 @@ const ALL_SLOTS: TimeSlot[] = ["MORNING", "AFTERNOON", "EVENING"];
 
 function formatDay(iso: string, idx: number) {
   const d = new Date(iso);
-  return `${d.toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" })} (Dag ${idx + 1})`;
+  return `${d.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" })} (Day ${idx + 1})`;
 }
 
 type SubcityDayPlanForTimeline = {

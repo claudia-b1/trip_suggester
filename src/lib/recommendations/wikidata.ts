@@ -75,6 +75,8 @@ export async function fetchWikidataMini(
 export type WikidataEnrichment = {
   wikidataId: string;
   description?: string;
+  /** 1–2 sentence extract from the English Wikipedia article */
+  wikipediaSummary?: string;
   inceptionYear?: number;
   isUnescoSite: boolean;
   culturalTags: string[];
@@ -149,6 +151,7 @@ type SparqlRow = {
   heritageSite?: { value: string };  // entity URI
   instanceOf?: { value: string };
   partOf?: { value: string };
+  article?: { value: string };       // English Wikipedia article URL
 };
 
 type SparqlResponse = {
@@ -161,13 +164,14 @@ type SparqlResponse = {
  * Q18537310 = "UNESCO World Heritage List"
  */
 const SPARQL_QUERY = (qId: string) => `
-SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf WHERE {
+SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf ?article WHERE {
   BIND(wd:${qId} AS ?item)
   OPTIONAL { ?item schema:description ?desc FILTER(LANG(?desc) = "en") }
   OPTIONAL { ?item wdt:P571 ?inception }
   OPTIONAL { ?item wdt:P1435 ?heritageSite }
   OPTIONAL { ?item wdt:P31 ?instanceOf }
   OPTIONAL { ?item wdt:P361 ?partOf }
+  OPTIONAL { ?article schema:about ?item ; schema:inLanguage "en" ; schema:isPartOf <https://en.wikipedia.org/> . }
 }
 LIMIT 10
 `.trim();
@@ -183,6 +187,40 @@ function isUnesco(heritageSite?: string): boolean {
     heritageSite.includes("Q9259") ||          // UNESCO WH Site
     heritageSite.includes("Q18537310")         // UNESCO WH List
   );
+}
+
+// ─── Wikipedia summary fetcher ────────────────────────────────────────────
+
+type WikipediaSummaryResponse = {
+  extract?: string;
+  description?: string;
+};
+
+/**
+ * Fetch a clean 1–2 sentence extract from the English Wikipedia REST API.
+ * The `articleUrl` comes from the SPARQL query's sitelink (e.g.
+ * "https://en.wikipedia.org/wiki/Colosseum").
+ * Returns null if the article has no extract or the fetch fails.
+ */
+async function fetchWikipediaSummary(articleUrl: string): Promise<string | null> {
+  try {
+    // Extract the article title from the URL
+    const match = articleUrl.match(/\/wiki\/(.+)$/);
+    if (!match) return null;
+    const title = match[1];
+
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as WikipediaSummaryResponse;
+    // The "extract" field is a clean plain-text summary (1–2 sentences)
+    return data.extract ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -259,7 +297,15 @@ export async function enrichWithWikidata(
       })
       .filter((t): t is string => !!t);
 
-    return { wikidataId: qId, description, inceptionYear, isUnescoSite: unescoSite, culturalTags };
+    // Fetch Wikipedia summary if the SPARQL result includes an English article
+    const articleUrl = rows.find((r) => r.article?.value)?.article?.value;
+    let wikipediaSummary: string | undefined;
+    if (articleUrl) {
+      const summary = await fetchWikipediaSummary(articleUrl);
+      if (summary) wikipediaSummary = summary;
+    }
+
+    return { wikidataId: qId, description, wikipediaSummary, inceptionYear, isUnescoSite: unescoSite, culturalTags };
   } catch {
     return null;
   }

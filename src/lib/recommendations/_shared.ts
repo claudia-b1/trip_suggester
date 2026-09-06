@@ -1,5 +1,7 @@
 import type { Category } from "@/lib/categories";
 
+export { haversineKm, offsetLatLon } from "@/lib/geo";
+
 export type GenerateInput = {
   cityName: string;
   /** Selected subcategory IDs for this generator's category (empty = all). */
@@ -72,47 +74,3 @@ export async function geocodeCity(cityName: string): Promise<CityCoords> {
   return { lat, lon };
 }
 
-/**
- * Offset a lat/lon point by a given distance and compass bearing.
- * bearingDeg: 0 = North, 90 = East, 180 = South, 270 = West.
- */
-export function offsetLatLon(
-  lat: number,
-  lon: number,
-  distanceKm: number,
-  bearingDeg: number,
-): CityCoords {
-  const R = 6371;
-  const d = distanceKm / R;
-  const b = (bearingDeg * Math.PI) / 180;
-  const lat1 = (lat * Math.PI) / 180;
-  const lon1 = (lon * Math.PI) / 180;
-  const lat2 = Math.asin(
-    Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(b),
-  );
-  const lon2 =
-    lon1 +
-    Math.atan2(
-      Math.sin(b) * Math.sin(d) * Math.cos(lat1),
-      Math.cos(d) - Math.sin(lat1) * Math.sin(lat2),
-    );
-  return { lat: (lat2 * 180) / Math.PI, lon: (lon2 * 180) / Math.PI };
-}
-
-/** Haversine distance in km between two lat/lon points. */
-export function haversineKm(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number,
-): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}

@@ -468,6 +468,7 @@ export function FavouritesMap({
           {filteredItems.map(({ item }) => {
             const cat = isCategory(item.category) ? item.category : "CULTURE";
             const isActive = activeId === item.id;
+            const hasRating = item.personalRating != null && item.personalRating > 0;
             return (
               <Marker
                 key={item.id}
@@ -492,24 +493,47 @@ export function FavouritesMap({
                 }}
               >
                 <div className="relative flex flex-col items-center cursor-pointer group">
-                  {/* Hover tooltip */}
-                  <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                    {item.name}
+                  {/* Hover tooltip — name + rating + category */}
+                  <div className="absolute bottom-full mb-1.5 rounded-lg bg-gray-900/95 px-2.5 py-1.5 shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity max-w-[200px] z-20">
+                    <p className="text-xs font-semibold text-white leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className="text-[10px] text-gray-300">{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
+                      {hasRating && (
+                        <span className="text-[10px] text-amber-400">{"★".repeat(item.personalRating!)}</span>
+                      )}
+                    </div>
+                    {item.city && (
+                      <p className="text-[10px] text-gray-400 mt-0.5">{item.city}, {item.country}</p>
+                    )}
                   </div>
+                  {/* Marker: category emoji inside colored circle */}
                   <div
-                    className="rounded-full border-2 border-white shadow transition-transform"
+                    className="flex items-center justify-center rounded-full border-2 shadow-md transition-all duration-150"
                     style={{
                       backgroundColor: CATEGORY_STYLES[cat].dot,
-                      width: isActive ? 22 : 14,
-                      height: isActive ? 22 : 14,
-                      transform: isActive ? "scale(1.3)" : "scale(1)",
+                      width: isActive ? 32 : 24,
+                      height: isActive ? 32 : 24,
+                      borderColor: hasRating ? "#fbbf24" : "white",
+                      borderWidth: hasRating ? 3 : 2,
+                      transform: isActive ? "scale(1.15)" : "scale(1)",
                     }}
-                  />
+                  >
+                    <span style={{ fontSize: isActive ? 14 : 11, lineHeight: 1 }}>
+                      {CATEGORY_ICONS[cat]}
+                    </span>
+                  </div>
+                  {/* Visited checkmark */}
                   {item.visited && (
-                    <div className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    <div className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-emerald-500 text-white border border-white">
                       <svg className="h-2 w-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
+                    </div>
+                  )}
+                  {/* Personal rating mini-stars badge */}
+                  {hasRating && !isActive && (
+                    <div className="absolute -top-1 -right-2 flex items-center rounded-full bg-amber-400 px-1 py-0 text-[7px] font-bold text-white shadow-sm border border-white">
+                      {item.personalRating}★
                     </div>
                   )}
                 </div>
@@ -528,7 +552,7 @@ export function FavouritesMap({
               transform: "translate(-50%, calc(-100% - 18px))",
             }}
           >
-            <div className="relative max-w-[260px] min-w-[200px] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-xl p-3 text-sm">
+            <div className="relative max-w-[300px] min-w-[220px] rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-xl p-3 text-sm">
               <button
                 type="button"
                 onClick={() => setActiveId(null)}
@@ -580,6 +604,29 @@ export function FavouritesMap({
 
 /* ── Popup content ────────────────────────────────────────────────────── */
 
+const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
+
+/** Build a Google Maps search URL for a named place at coordinates */
+function googleMapsUrl(name: string, lat: number, lng: number) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
+}
+
+/** Render a single extra field value with its label */
+function ExtraFieldValue({ label, value, type }: { label: string; value: unknown; type: string }) {
+  if (value === undefined || value === null || value === "" || value === "-" || value === false) return null;
+  if (type === "boolean" && value === true) {
+    return <span className="rounded-full bg-violet-50 dark:bg-violet-950 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">✓ {label}</span>;
+  }
+  if (type === "stars" && typeof value === "number") {
+    return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {"★".repeat(value)}{"☆".repeat(5 - value)}</span>;
+  }
+  if (type === "proximity") {
+    const proxyLabels: Record<string, string> = { "2km": "< 2 km", "500m": "< 500 m", "200m": "< 200 m", "direct": "Direct" };
+    return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {proxyLabels[String(value)] ?? String(value)}</span>;
+  }
+  return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {String(value)}</span>;
+}
+
 function FavouriteMapPopup({
   item,
   listName,
@@ -589,22 +636,40 @@ function FavouriteMapPopup({
 }) {
   const cat = isCategory(item.category) ? item.category : "CULTURE";
   const [imgError, setImgError] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // Get extra field definitions for this item's category/subcategory
+  const extraDefs = getExtraFieldDefs(item.category, item.subcategory);
+  const extras = item.extraFields as Record<string, unknown> | null;
+  // Filter to only fields that have values
+  const activeExtras = extraDefs.filter((def) => {
+    const val = extras?.[def.key];
+    return val !== undefined && val !== null && val !== "" && val !== "-" && val !== false;
+  });
+
+  const hasDetails = item.openingHours || item.phoneNumber || item.fee || item.address || activeExtras.length > 0;
+  const priceLevel = item.priceLevel ?? (extras?.priceLevel != null ? Number(extras.priceLevel) : null);
 
   return (
     <div className="space-y-1.5">
+      {/* Photo */}
       {item.photoUrl && !imgError && (
         <img
           src={item.photoUrl}
           alt={item.name}
           onError={() => setImgError(true)}
-          className="w-full h-20 object-cover rounded-md"
+          className="w-full h-24 object-cover rounded-md"
         />
       )}
+
+      {/* Name */}
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold text-[hsl(var(--foreground))] leading-tight pr-4">
           {item.name}
         </span>
       </div>
+
+      {/* Badges row: category + subcategory + visited + price */}
       <div className="flex flex-wrap items-center gap-1">
         <span
           className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[cat].badge}`}
@@ -618,41 +683,120 @@ function FavouriteMapPopup({
         )}
         {item.visited && (
           <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
-            Visited
+            ✓ Visited
+          </span>
+        )}
+        {priceLevel != null && priceLevel > 0 && (
+          <span className="rounded-full bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+            {PRICE_LABELS[priceLevel] ?? ""}
           </span>
         )}
       </div>
+
+      {/* Location */}
       <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
-        {item.city}, {item.country}
+        📍 {item.city}, {item.country}
       </p>
-      {item.personalRating && (
-        <p className="text-[11px]">
+
+      {/* Address (if different from city/country) */}
+      {item.address && (
+        <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-snug">
+          {item.address}
+        </p>
+      )}
+
+      {/* Personal rating */}
+      {item.personalRating != null && item.personalRating > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Your rating:</span>
           {Array.from({ length: 5 }, (_, i) => (
-            <span key={i} className={i < item.personalRating! ? "text-amber-400" : "text-gray-300"}>
+            <span key={i} className={`text-xs ${i < item.personalRating! ? "text-amber-400" : "text-gray-300 dark:text-gray-600"}`}>
               ★
             </span>
           ))}
-        </p>
+        </div>
       )}
+
+      {/* Description */}
       {item.description && (
-        <p className="text-[11px] text-[hsl(var(--muted-foreground))] line-clamp-2">
+        <p className="text-[11px] text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">
           {item.description}
         </p>
       )}
+
+      {/* Notes */}
       {item.notes && (
-        <p className="text-[11px] italic text-[hsl(var(--foreground))]">💬 {item.notes}</p>
+        <p className="text-[11px] italic text-[hsl(var(--foreground))] bg-amber-50 dark:bg-amber-950/30 rounded px-1.5 py-1 leading-relaxed">
+          💬 {item.notes}
+        </p>
       )}
-      {item.website && (
+
+      {/* Expandable details: opening hours, phone, fee, extra fields */}
+      {hasDetails && (
+        <>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+          >
+            <span className={`transition-transform ${expanded ? "rotate-90" : ""}`} style={{ fontSize: 8 }}>▶</span>
+            {expanded ? "Hide details" : "Show details"}
+          </button>
+          {expanded && (
+            <div className="space-y-1 border-l-2 border-[hsl(var(--border))] pl-2 py-0.5">
+              {item.openingHours && (
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">🕐 {item.openingHours}</p>
+              )}
+              {item.phoneNumber && (
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">📞 {item.phoneNumber}</p>
+              )}
+              {item.fee && (
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                  🎫 {item.fee === "yes" ? "Admission fee" : item.fee === "no" ? "Free" : item.fee}
+                </p>
+              )}
+              {/* Extra fields: camping specifics, food details, etc. */}
+              {activeExtras.length > 0 && (
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {activeExtras.map((def) => (
+                    <ExtraFieldValue
+                      key={def.key}
+                      label={def.label}
+                      value={extras?.[def.key]}
+                      type={def.type}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Links row: website + Google Maps */}
+      <div className="flex items-center gap-2 flex-wrap pt-0.5">
+        {item.website && (
+          <a
+            href={item.website}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] text-[hsl(var(--primary))] hover:underline"
+          >
+            🔗 Website
+          </a>
+        )}
         <a
-          href={item.website}
+          href={googleMapsUrl(item.name, item.latitude, item.longitude)}
           target="_blank"
           rel="noopener noreferrer"
           className="text-[11px] text-[hsl(var(--primary))] hover:underline"
         >
-          🔗 Website
+          🗺️ Google Maps
         </a>
-      )}
-      <p className="text-[10px] text-[hsl(var(--muted-foreground))]">📁 {listName}</p>
+      </div>
+
+      {/* Footer: list path */}
+      <p className="text-[10px] text-[hsl(var(--muted-foreground))] border-t border-[hsl(var(--border))] pt-1">📁 {listName}</p>
     </div>
   );
 }

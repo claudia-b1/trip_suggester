@@ -48,7 +48,7 @@ const SLOT_CSS: Record<TimeSlot, string> = {
 };
 
 function formatDay(iso: string) {
-  return new Date(iso).toLocaleDateString("nl-NL", {
+  return new Date(iso).toLocaleDateString("en-US", {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -56,7 +56,7 @@ function formatDay(iso: string) {
 }
 
 function formatDayWithIndex(iso: string, dayIndex: number) {
-  return `${formatDay(iso)} (Dag ${dayIndex + 1})`;
+  return `${formatDay(iso)} (Day ${dayIndex + 1})`;
 }
 
 function isSameDay(a: Date, b: Date) {
@@ -120,7 +120,7 @@ function MiniCalendar({
 
   const prevMonth = () => setViewMonth(new Date(year, month - 1, 1));
   const nextMonth = () => setViewMonth(new Date(year, month + 1, 1));
-  const monthLabel = viewMonth.toLocaleDateString("nl-NL", { month: "long", year: "numeric" });
+  const monthLabel = viewMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
@@ -129,12 +129,12 @@ function MiniCalendar({
   return (
     <div className="w-full select-none">
       <div className="flex items-center justify-between mb-2">
-        <button type="button" onClick={prevMonth} className="p-1 hover:bg-[hsl(var(--muted))] rounded text-sm">‹</button>
-        <span className="text-sm font-medium">{monthLabel}</span>
-        <button type="button" onClick={nextMonth} className="p-1 hover:bg-[hsl(var(--muted))] rounded text-sm">›</button>
+        <button type="button" onClick={prevMonth} aria-label="Previous month" className="p-1.5 hover:bg-[hsl(var(--muted))] rounded text-sm">‹</button>
+        <span className="text-sm font-medium" aria-live="polite">{monthLabel}</span>
+        <button type="button" onClick={nextMonth} aria-label="Next month" className="p-1.5 hover:bg-[hsl(var(--muted))] rounded text-sm">›</button>
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
-        {["zo", "ma", "di", "wo", "do", "vr", "za"].map((d) => (
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
           <div key={d} className="py-1 text-[hsl(var(--muted-foreground))] font-medium">{d}</div>
         ))}
         {cells.map((day, i) => {
@@ -153,12 +153,20 @@ function MiniCalendar({
               })
             : null;
 
+          // Build accessible label for calendar day buttons
+          const totalCount = (info?.pois ?? 0) + (info?.accommodation ?? 0);
+          const calendarLabel = isTripDay
+            ? `${new Date(year, month, day).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}${totalCount > 0 ? ` - ${totalCount} ${totalCount === 1 ? "activity" : "activities"}` : ""}`
+            : undefined;
+
           return (
             <button
               key={key}
               type="button"
               disabled={!isTripDay}
               onClick={() => matchingPlan && onSelect(matchingPlan.date)}
+              aria-label={calendarLabel}
+              aria-current={isSelected ? "date" : undefined}
               className={`relative rounded py-1 text-xs transition-colors ${
                 isSelected
                   ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] font-bold"
@@ -449,10 +457,6 @@ export function DailyPlan({
   const confirm = useConfirm();
   const [selectedPoiId, setSelectedPoiId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [autoPlanning, setAutoPlanning] = useState(false);
-  const [autoPlanOpen, setAutoPlanOpen] = useState(false);
-  const [autoPlanMode, setAutoPlanMode] = useState<"all" | "selected">("all");
-  const [selectedDayIds, setSelectedDayIds] = useState<Set<number>>(() => new Set());
   const [catFilter, setCatFilter] = useState<Category | null>(null);
   const [mapDayPlan, setMapDayPlan] = useState<DayPlanDTO | null>(null);
   const [dragActivity, setDragActivity] = useState<{ activityId: number; fromDayPlanId: number; fromSlot: TimeSlot } | null>(null);
@@ -600,42 +604,6 @@ export function DailyPlan({
     if (!res.ok) {
       toast("Failed to move activity", { variant: "error" });
     }
-    router.refresh();
-  }
-
-  async function autoPlan() {
-    const targetIds = autoPlanMode === "selected" ? Array.from(selectedDayIds) : null;
-    if (autoPlanMode === "selected" && (!targetIds || targetIds.length === 0)) return;
-
-    const hasExisting = dayPlans
-      .filter((dp) => !targetIds || targetIds.includes(dp.id))
-      .some((dp) => dp.activities.length > 0);
-    if (hasExisting) {
-      const ok = await confirm({
-        title: "Overwrite plan?",
-        message: autoPlanMode === "all"
-          ? "Auto-plan will replace the current assignments for all days."
-          : `Auto-plan will replace the assignments for ${targetIds!.length} selected day(s).`,
-        confirmText: "Overwrite",
-        variant: "destructive",
-      });
-      if (!ok) return;
-    }
-    setAutoPlanning(true);
-    const res = await fetch(`/api/cities/${cityId}/auto-plan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(targetIds ? { dayPlanIds: targetIds } : {}),
-    });
-    setAutoPlanning(false);
-    if (!res.ok) {
-      const body: { error?: string } = await res.json().catch(() => ({}));
-      toast(body.error ?? "Failed to auto-plan", { variant: "error" });
-      return;
-    }
-    setSelectedPoiId(null);
-    setAutoPlanOpen(false);
-    toast("Plan generated.");
     router.refresh();
   }
 
@@ -1264,116 +1232,23 @@ export function DailyPlan({
 
   return (
     <div className="space-y-4">
-      {/* Header & auto-plan controls */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-[hsl(var(--muted-foreground))]">
-            Drag POIs between slots/days, or click a POI then a slot to assign.
-          </p>
-          <div className="flex items-center gap-2">
-            {totalActivities > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={clearAll}
-                disabled={busy}
-                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="mr-1 h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                Clear plan
-              </Button>
-            )}
-            {!autoPlanOpen ? (
-              <Button
-                type="button"
-                onClick={() => setAutoPlanOpen(true)}
-                disabled={pois.length === 0}
-              >
-                Auto-plan with AI
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setAutoPlanOpen(false)}
-              >
-                Cancel
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {autoPlanOpen && (
-          <div className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 space-y-3">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setAutoPlanMode("all")}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  autoPlanMode === "all"
-                    ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                    : "bg-[hsl(var(--background))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                }`}
-              >
-                All days
-              </button>
-              <button
-                type="button"
-                onClick={() => setAutoPlanMode("selected")}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  autoPlanMode === "selected"
-                    ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                    : "bg-[hsl(var(--background))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                }`}
-              >
-                Select days
-              </button>
-            </div>
-
-            {autoPlanMode === "selected" && (
-              <div className="flex flex-wrap gap-2">
-                {dayPlans.map((dp, idx) => {
-                  const checked = selectedDayIds.has(dp.id);
-                  return (
-                    <button
-                      key={dp.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedDayIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(dp.id)) next.delete(dp.id);
-                          else next.add(dp.id);
-                          return next;
-                        })
-                      }
-                      className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                        checked
-                          ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                          : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
-                      }`}
-                    >
-                      {formatDayWithIndex(dp.date, idx)}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <Button
-              type="button"
-              onClick={autoPlan}
-              disabled={autoPlanning || (autoPlanMode === "selected" && selectedDayIds.size === 0)}
-              className="w-full"
-            >
-              {autoPlanning
-                ? <><span className="spinner mr-1.5" /> Planning…</>
-                : autoPlanMode === "all"
-                  ? "Plan all days"
-                  : `Plan ${selectedDayIds.size} selected day${selectedDayIds.size !== 1 ? "s" : ""}`}
-            </Button>
-          </div>
+      {/* Header & plan controls */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-[hsl(var(--muted-foreground))]">
+          Drag POIs between slots/days, or click a POI then a slot to assign.
+        </p>
+        {totalActivities > 0 && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={clearAll}
+            disabled={busy}
+            className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="mr-1 h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Clear plan
+          </Button>
         )}
       </div>
 
@@ -1470,10 +1345,10 @@ export function DailyPlan({
           )}
         </aside>}
 
-        {/* Calendar + Selected day view */}
-        <div className={hideSidebar ? "grid gap-4 md:grid-cols-[1fr_4fr]" : "space-y-4"}>
-          {/* Mini Calendar */}
-          <div className={`rounded-md border border-[hsl(var(--border))] p-3 ${hideSidebar ? "self-start sticky top-20" : ""}`}>
+        {/* Calendar + Selected day view — block flow on mobile for sticky to work, grid on md+ for side-by-side */}
+        <div className={hideSidebar ? "md:grid md:gap-4 md:grid-cols-[1fr_4fr]" : "space-y-4"}>
+          {/* Mini Calendar — sticky so it stays visible while scrolling through day activities */}
+          <div className={`rounded-md border border-[hsl(var(--border))] p-3 bg-[hsl(var(--card))] mb-4 md:mb-0 ${hideSidebar ? "self-start sticky top-16 z-10" : ""}`}>
             <MiniCalendar
               dayPlans={dayPlans}
               selectedDate={selectedDate}
@@ -1534,7 +1409,7 @@ export function DailyPlan({
                       </button>
                     </>
                   )}
-                  <span className="text-xs text-[hsl(var(--muted-foreground))]">
+                  <span className="text-xs text-[hsl(var(--muted-foreground))]" role="status">
                     {currentDayPlan.activities.length} {currentDayPlan.activities.length === 1 ? "POI" : "POIs"}
                   </span>
                 </div>
@@ -1747,8 +1622,8 @@ export function DailyPlan({
                             className="flex items-center justify-between gap-1 rounded-lg bg-[hsl(var(--background))] px-2.5 py-2 text-sm cursor-grab active:cursor-grabbing shadow-sm border border-[hsl(var(--border))] hover:shadow-md transition-all"
                           >
                             <div className="flex min-w-0 items-center gap-2">
-                              <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-40 sm:group-hover:opacity-100 transition-opacity" title="Drag to reorder">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
+                              <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-40 sm:group-hover:opacity-100 transition-opacity" title="Drag to reorder" aria-label={`Drag to reorder ${a.poiName}`} role="img">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
                               </span>
                               <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15 text-[9px] font-bold text-[hsl(var(--primary))]">
                                 {slotStartNum + idx + 1}

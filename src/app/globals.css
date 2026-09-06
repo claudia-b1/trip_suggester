@@ -185,3 +185,22 @@ body {
 .dark .slot-morning { background-color: hsl(38 30% 12%); }
 .dark .slot-afternoon { background-color: hsl(48 30% 12%); }
 .dark .slot-evening { background-color: hsl(260 20% 14%); }
+
+/* High contrast mode */
+@media (prefers-contrast: more) {
+  :root {
+    --border: 240 20% 30%;
+    --ring: 0 0% 0%;
+    --muted-foreground: 240 10% 30%;
+  }
+  .dark {
+    --border: 240 20% 70%;
+    --ring: 0 0% 100%;
+    --muted-foreground: 240 15% 75%;
+  }
+  /* Make focus rings more visible */
+  *:focus-visible {
+    outline: 3px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+}

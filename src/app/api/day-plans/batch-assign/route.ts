@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTimeSlot } from "@/lib/slots";
+import { batchAssignSchema, parseBody } from "@/lib/api-schemas";
 
 /**
  * POST /api/day-plans/batch-assign
@@ -8,14 +9,14 @@ import { isTimeSlot } from "@/lib/slots";
  * Body: { poiId: number, dayPlanIds: number[], timeSlot: string }
  */
 export async function POST(req: Request) {
-  const { poiId, dayPlanIds, timeSlot } = await req.json();
+  const raw = await req.json();
+  const parsed = parseBody(batchAssignSchema, raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
 
-  if (typeof poiId !== "number") {
-    return NextResponse.json({ error: "poiId required" }, { status: 400 });
-  }
-  if (!Array.isArray(dayPlanIds) || dayPlanIds.length === 0) {
-    return NextResponse.json({ error: "dayPlanIds required" }, { status: 400 });
-  }
+  const { poiId, dayPlanIds, timeSlot } = parsed.data;
+
   if (!isTimeSlot(timeSlot)) {
     return NextResponse.json({ error: "Invalid timeSlot" }, { status: 400 });
   }

@@ -15,7 +15,7 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "historic",       label: "Historical Sites",       emoji: "🏰",  apiValues: [] },
     { id: "architecture",   label: "Architecture & Landmarks", emoji: "🏗", apiValues: [] },
     { id: "religion",       label: "Religious Sites",        emoji: "⛪",  apiValues: [] },
-    { id: "theatre_cinema", label: "Theatre & Cinema",       emoji: "🎭",  apiValues: [] },
+    { id: "theatre",        label: "Theatre & Performing Arts", emoji: "🎭", apiValues: [] },
   ],
   FOOD: [
     { id: "restaurant",  label: "Restaurants",    emoji: "🍽",  apiValues: [] },
@@ -25,9 +25,8 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "bakery",      label: "Bakeries",        emoji: "🥐",  apiValues: [] },
     { id: "ice_cream",   label: "Ice Cream",       emoji: "🍦",  apiValues: [] },
     { id: "food_markets",label: "Food Markets",    emoji: "🧺",  apiValues: [] },
-    { id: "wineries",    label: "Wineries",        emoji: "🍷",  apiValues: ["craft.winery", "tourism.winery"] },
-    { id: "wine_shops",  label: "Wine Shops",      emoji: "🍾",  apiValues: ["commercial.food_and_drink.wine"] },
-    { id: "wine_bars",   label: "Wine Bars",       emoji: "🥂",  apiValues: ["catering.wine_bar"] },
+    { id: "wineries",    label: "Wineries",        emoji: "🍷",  apiValues: ["production.winery"] },
+    { id: "breweries_distilleries", label: "Breweries & Distilleries", emoji: "🍺", apiValues: [] },
   ],
   NATURE: [
     { id: "parks",       label: "Parks & Gardens",          emoji: "🌳",  apiValues: [] },
@@ -37,7 +36,6 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "waterfalls",  label: "Waterfalls",               emoji: "🌊",  apiValues: [] },
     { id: "reserves",    label: "Nature Reserves / National Parks", emoji: "🌿", apiValues: [] },
     { id: "viewpoints",  label: "Viewpoints",               emoji: "🔭",  apiValues: [] },
-    { id: "scenic",      label: "Scenic Spots",             emoji: "📸",  apiValues: [] },
   ],
   ENTERTAINMENT: [
     { id: "theme_parks", label: "Theme & Amusement Parks",  emoji: "🎡",  apiValues: [] },
@@ -45,11 +43,12 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "zoos",        label: "Zoos & Aquariums",         emoji: "🦁",  apiValues: [] },
     { id: "sport",       label: "Sports & Recreation",      emoji: "⚽",  apiValues: [] },
     { id: "games",       label: "Escape Rooms / Bowling / Mini Golf", emoji: "🎳", apiValues: [] },
+    { id: "cinema",      label: "Cinema",                  emoji: "🎬",  apiValues: [] },
+    { id: "planetarium", label: "Planetarium",             emoji: "🔭",  apiValues: [] },
   ],
   NIGHTLIFE: [
     { id: "bars",         label: "Bars & Pubs",         emoji: "🍺",  apiValues: [] },
     { id: "clubs",        label: "Nightclubs",          emoji: "💃",  apiValues: [] },
-    { id: "live_music",   label: "Live Music Venues",   emoji: "🎵",  apiValues: [] },
     { id: "comedy_shows", label: "Comedy / Shows",      emoji: "🎤",  apiValues: [] },
     { id: "casino",       label: "Casinos",             emoji: "🎰",  apiValues: [] },
   ],
@@ -58,17 +57,19 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "local_markets",    label: "Local Markets",     emoji: "🧺",  apiValues: [] },
     { id: "boutiques",        label: "Boutiques",         emoji: "👗",  apiValues: [] },
     { id: "souvenirs",        label: "Souvenirs",         emoji: "🎁",  apiValues: [] },
-    { id: "shopping_streets", label: "Shopping Streets",  emoji: "🛤",  apiValues: [] },
+    { id: "books_antiques",   label: "Books & Antiques",  emoji: "📚",  apiValues: [] },
   ],
   GROCERIES: [
     { id: "supermarket",      label: "Supermarket",       emoji: "🛒",  apiValues: [] },
     { id: "shop_bakery",      label: "Bakery",            emoji: "🥖",  apiValues: [] },
     { id: "butcher",          label: "Butcher",           emoji: "🥩",  apiValues: [] },
     { id: "fishmonger",       label: "Fishmonger",        emoji: "🐟",  apiValues: [] },
+    { id: "wine_shops",       label: "Wine & Liquor",     emoji: "🍾",  apiValues: [] },
+    { id: "deli_specialty",   label: "Deli & Specialty",  emoji: "🧀",  apiValues: [] },
+    { id: "organic_farm",     label: "Organic & Farm",    emoji: "🌱",  apiValues: [] },
   ],
   WELLNESS: [
     { id: "spas",            label: "Spas & Saunas",    emoji: "🧖",  apiValues: [] },
-    { id: "wellness_centres",label: "Wellness Centers", emoji: "🌸",  apiValues: [] },
     { id: "yoga_fitness",    label: "Yoga / Fitness",   emoji: "🏃",  apiValues: [] },
   ],
   OUTDOORS: [
@@ -82,6 +83,7 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
     { id: "horseback",       label: "Horseback Riding",  emoji: "🐴",  apiValues: [] },
     { id: "sailing",         label: "Sailing / Boating", emoji: "⛵",  apiValues: [] },
     { id: "fishing",         label: "Fishing",           emoji: "🎣",  apiValues: [] },
+    { id: "golf",            label: "Golf",              emoji: "⛳",  apiValues: [] },
   ],
 };
 

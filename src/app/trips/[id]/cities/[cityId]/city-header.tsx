@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
+import { MS_PER_DAY } from "@/lib/constants";
 import { EditCityButton } from "./edit-city-button";
 import { AddSubDestinationModal } from "@/components/ui/add-subdestination-modal";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
@@ -84,7 +85,7 @@ export type CityHeaderProps = {
     hasRecommendations: boolean;
     hasAccommodation: boolean;
   };
-  /** Whether this is a travel stop (simplified page — no auto-plan) */
+  /** Whether this is a travel stop (simplified page) */
   isStop?: boolean;
   /** City coordinates for map centering */
   latitude?: number | null;
@@ -131,9 +132,7 @@ export function CityHeader({
 }: CityHeaderProps) {
   const router = useRouter();
   const { toast } = useToast();
-  const [autoPlanLoading, setAutoPlanLoading] = useState(false);
   const [addSubOpen, setAddSubOpen] = useState(false);
-  const [enrichLoading, setEnrichLoading] = useState(false);
 
   // ── Stop accommodation picker state ──
   const [accom, setAccom] = useState<{ id: number; name: string; latitude: number; longitude: number; address?: string } | null>(
@@ -300,45 +299,12 @@ export function CityHeader({
     }
   }
 
-  const msPerDay = 86_400_000;
   const nights = Math.round(
-    (new Date(endDate).getTime() - new Date(startDate).getTime()) / msPerDay,
+    (new Date(endDate).getTime() - new Date(startDate).getTime()) / MS_PER_DAY,
   );
   const days = nights + 1;
 
   // planPct and hasCategories removed — POI stats row no longer shown in header
-
-  async function handleAutoPlan() {
-    setAutoPlanLoading(true);
-    try {
-      const res = await fetch(`/api/cities/${cityId}/auto-plan`, {
-        method: "POST",
-      });
-      if (!res.ok) throw new Error();
-      toast("Auto-plan complete!", { variant: "default" });
-      router.refresh();
-    } catch {
-      toast("Auto-plan failed", { variant: "error" });
-    } finally {
-      setAutoPlanLoading(false);
-    }
-  }
-
-  async function handleReEnrich() {
-    setEnrichLoading(true);
-    try {
-      const res = await fetch(`/api/cities/${cityId}/re-enrich`, { method: "POST" });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      const skippedMsg = data.skipped > 0 ? ` (${data.skipped} already had photos)` : "";
-      toast(`Google photos: ${data.updated} updated out of ${data.checked} POIs${skippedMsg}`);
-      if (data.updated > 0) router.refresh();
-    } catch {
-      toast("Photo refresh failed", { variant: "error" });
-    } finally {
-      setEnrichLoading(false);
-    }
-  }
 
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
@@ -392,19 +358,6 @@ export function CityHeader({
             )}
           </div>
         </div>
-        {/* Add sub-destination — only for top-level cities (not for subcities themselves) */}
-        {!isSubcity && (
-          <button
-            type="button"
-            onClick={() => setAddSubOpen(true)}
-            className="ml-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] border border-[hsl(var(--border))] transition-colors shrink-0"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
-            </svg>
-            Add sub-destination
-          </button>
-        )}
         {totalCities > 1 && (
           <div className="flex items-center gap-1.5 flex-wrap">
             {cities.map((c) => {
@@ -414,11 +367,12 @@ export function CityHeader({
                   key={c.id}
                   onClick={() => !isActive && router.push(`/trips/${tripId}/cities/${c.id}`)}
                   aria-current={isActive ? "page" : undefined}
-                  className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                  className={`rounded-full px-3 py-1 text-sm font-medium transition-colors max-w-[180px] truncate ${
                     isActive
                       ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] cursor-default"
                       : "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
                   }`}
+                  title={c.nickname ?? c.name}
                 >
                   {c.nickname ?? c.name}
                 </button>
@@ -593,7 +547,10 @@ export function CityHeader({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => scrollTo("pois-section")}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("set-pois-view", { detail: { view: "map" } }));
+              scrollTo("pois-section");
+            }}
             className="rounded-full text-xs"
           >
             🗺 Map
@@ -601,11 +558,21 @@ export function CityHeader({
           <Button
             variant="outline"
             size="sm"
-            onClick={handleAutoPlan}
-            disabled={autoPlanLoading || totalPois === 0}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("set-pois-view", { detail: { view: "list" } }));
+              scrollTo("pois-section");
+            }}
             className="rounded-full text-xs"
           >
-            {autoPlanLoading ? "Planning…" : "📋 Auto-plan"}
+            📋 List
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => scrollTo("recommendations-section")}
+            className="rounded-full text-xs"
+          >
+            🎯 Recommendations
           </Button>
           <Button
             variant="outline"
@@ -615,15 +582,21 @@ export function CityHeader({
           >
             🧭 Discover
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleReEnrich}
-            disabled={enrichLoading || totalPois === 0}
-            className="rounded-full text-xs"
+        </div>
+      )}
+      {/* Add sub-destination — only for top-level cities */}
+      {!isSubcity && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setAddSubOpen(true)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] hover:bg-[hsl(var(--muted))] border border-[hsl(var(--border))] transition-colors"
           >
-            {enrichLoading ? "Refreshing…" : "📸 Google photos"}
-          </Button>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            Add sub-destination
+          </button>
         </div>
       )}
       {/* Add sub-destination modal */}

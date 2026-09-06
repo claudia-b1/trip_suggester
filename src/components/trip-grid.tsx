@@ -16,6 +16,8 @@ type TripItem = {
   archived: boolean;
   coverImage: string | null;
   cityCount: number;
+  cityNames?: string[];
+  countries?: string[];
 };
 
 type SortOption = "date-asc" | "date-desc" | "name-asc" | "created-desc";
@@ -67,6 +69,7 @@ export function TripGrid({
   const [sortBy, setSortBy] = useState<SortOption>("date-asc");
   const [showArchived, setShowArchived] = useState(false);
   const [copyTrip, setCopyTrip] = useState<TripItem | null>(null);
+  const [search, setSearch] = useState("");
 
   // Restore sort preference from localStorage
   useEffect(() => {
@@ -82,9 +85,19 @@ export function TripGrid({
   }
 
   const visibleTrips = useMemo(() => {
-    const filtered = showArchived
+    let filtered = showArchived
       ? trips
       : trips.filter((t) => !t.archived);
+
+    // Search filter — matches trip name, city names, countries
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      filtered = filtered.filter((t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.cityNames?.some((c) => c.toLowerCase().includes(q)) ||
+        t.countries?.some((c) => c.toLowerCase().includes(q)),
+      );
+    }
 
     const sorted = [...filtered].sort((a, b) => {
       switch (sortBy) {
@@ -102,7 +115,7 @@ export function TripGrid({
     });
 
     return sorted;
-  }, [trips, sortBy, showArchived]);
+  }, [trips, sortBy, showArchived, search]);
 
   async function toggleArchive(id: number, archived: boolean) {
     const res = await fetch(`/api/trips/${id}`, {
@@ -120,16 +133,39 @@ export function TripGrid({
 
   return (
     <div className="space-y-3">
-      {/* Sort + Archive controls */}
+      {/* Search + Sort + Archive controls */}
       <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search trips, cities, countries..."
+            aria-label="Search trips"
+            className="h-8 w-48 sm:w-56 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] pl-8 pr-2.5 text-xs text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))]"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+              aria-label="Clear search"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-[hsl(var(--muted-foreground))]">Sort:</span>
-          <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5">
+          <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5" role="tablist" aria-label="Sort order">
             {SORT_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
+                role="tab"
+                aria-selected={sortBy === opt.value}
                 onClick={() => handleSortChange(opt.value)}
-                className={`rounded px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
                   sortBy === opt.value
                     ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                     : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
@@ -189,7 +225,7 @@ export function TripGrid({
                 )}
 
                 <div className="p-4 space-y-2">
-                  <h3 className="text-lg font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors">
+                  <h3 className="text-lg font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors line-clamp-2">
                     {trip.name}
                   </h3>
                   <p className="text-sm text-[hsl(var(--muted-foreground))]">
@@ -260,10 +296,17 @@ export function TripGrid({
 
       {visibleTrips.length === 0 && trips.length > 0 && (
         <p className="text-center text-sm text-[hsl(var(--muted-foreground))] py-8">
-          All trips are archived.{" "}
-          <button onClick={() => setShowArchived(true)} className="text-[hsl(var(--primary))] hover:underline">
-            Show archived trips
-          </button>
+          {search.trim() ? (
+            <>No trips matching &ldquo;{search.trim()}&rdquo;.{" "}
+              <button onClick={() => setSearch("")} className="text-[hsl(var(--primary))] hover:underline">Clear search</button>
+            </>
+          ) : (
+            <>All trips are archived.{" "}
+              <button onClick={() => setShowArchived(true)} className="text-[hsl(var(--primary))] hover:underline">
+                Show archived trips
+              </button>
+            </>
+          )}
         </p>
       )}
 

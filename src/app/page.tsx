@@ -31,7 +31,7 @@ export default async function HomePage() {
     prisma.trip.findMany({
       where: { userId },
       orderBy: { startDate: "asc" },
-      include: { cities: { select: { id: true } } },
+      include: { cities: { select: { id: true, name: true, country: true } } },
     }),
     prisma.trip.count({ where: { archived: true, userId } }),
   ]);
@@ -45,6 +45,8 @@ export default async function HomePage() {
     archived: t.archived,
     coverImage: t.coverImage,
     cityCount: t.cities.length,
+    cityNames: t.cities.map((c) => c.name),
+    countries: [...new Set(t.cities.map((c) => c.country).filter((c): c is string => c != null))],
   }));
 
   const hasTrips = trips.length > 0;

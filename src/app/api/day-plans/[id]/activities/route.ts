@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTimeSlot } from "@/lib/slots";
+import { createActivitySchema, parseBody } from "@/lib/api-schemas";
 
 /** DELETE /api/day-plans/:id/activities — remove all activities for this day plan */
 export async function DELETE(
@@ -18,13 +19,15 @@ export async function POST(
 ) {
   const { id } = await params;
   const dayPlanId = Number(id);
-  const { poiId, timeSlot } = await req.json();
+  const raw = await req.json();
+  const parsed = parseBody(createActivitySchema, raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
 
+  const { poiId, timeSlot } = parsed.data;
   if (!isTimeSlot(timeSlot)) {
     return NextResponse.json({ error: "Invalid timeSlot" }, { status: 400 });
-  }
-  if (typeof poiId !== "number") {
-    return NextResponse.json({ error: "poiId required" }, { status: 400 });
   }
 
   const last = await prisma.dayActivity.findFirst({

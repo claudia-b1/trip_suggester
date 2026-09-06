@@ -5,9 +5,12 @@ import { verifyCityOwnership } from "@/lib/ownership";
 import {
   ACTIVITY_MODEL,
   buildActivityPrompt,
+  buildCustomSectionPrompt,
   parseActivityResponse,
+  parseCustomSectionResponse,
   type ActivityRecommendationsResult,
   type GenerateOptions,
+  type CustomRecommendationSection,
 } from "@/lib/activity-recommendations";
 
 /** DELETE /api/cities/[cityId]/activities — clear cached activity recommendations */
@@ -62,7 +65,7 @@ export async function GET(
     return NextResponse.json(JSON.parse(cached.data));
   }
 
-  return NextResponse.json({ recommendations: [], nearbyCities: [], nearbyActivities: [], hikes: [], cycling: [] });
+  return NextResponse.json({ recommendations: [], nearbyCities: [], nearbyActivities: [], hikes: [], cycling: [], customSections: [] });
 }
 
 /** Call OpenRouter and parse the response. Returns parsed sections or an error string. */
@@ -71,7 +74,7 @@ async function callAndParse(
   prompt: string,
   attempt: number,
 ): Promise<
-  | { ok: true; recommendations: ReturnType<typeof parseActivityResponse> }
+  | { ok: true; recommendations: ReturnType<typeof parseActivityResponse>; rawText: string }
   | { ok: false; error: string; status: number; retryable: boolean; rawText?: string }
 > {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -119,7 +122,7 @@ async function callAndParse(
   const parsed = parseActivityResponse(text);
   console.log(`[activities] Attempt ${attempt}: Parsed counts — recommendations:`, parsed.recommendations.length, "nearbyCities:", parsed.nearbyCities.length, "nearbyActivities:", parsed.nearbyActivities.length, "hikes:", parsed.hikes.length, "cycling:", parsed.cycling.length);
 
-  return { ok: true, recommendations: parsed };
+  return { ok: true, recommendations: parsed, rawText: text };
 }
 
 export async function POST(
@@ -154,6 +157,8 @@ export async function POST(
 
   // Parse optional generation options from request body
   let options: GenerateOptions | undefined;
+  let customPrompt: string | undefined;
+  let customSectionId: string | undefined; // for regeneration — replace existing section
   try {
     const body = await req.json();
     if (body && typeof body === "object") {
@@ -166,11 +171,87 @@ export async function POST(
         maxNearbyCitiesKm: body.maxNearbyCitiesKm,
         maxNearbyActivitiesKm: body.maxNearbyActivitiesKm,
       };
+      if (typeof body.customPrompt === "string" && body.customPrompt.trim()) {
+        customPrompt = body.customPrompt.trim();
+      }
+      if (typeof body.customSectionId === "string" && body.customSectionId.trim()) {
+        customSectionId = body.customSectionId.trim();
+      }
     }
   } catch {
     // No body or invalid JSON — use defaults
   }
 
+  // ── Custom section generation ──────────────────────────────────────
+  if (customPrompt) {
+    const customModelPrompt = buildCustomSectionPrompt(city.name, city.country ?? undefined, customPrompt);
+
+    const MAX_ATTEMPTS = 2;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const result = await callAndParse(apiKey, customModelPrompt, attempt);
+      if (!result.ok) {
+        if (!result.retryable || attempt === MAX_ATTEMPTS) {
+          return NextResponse.json({ error: result.error }, { status: result.status });
+        }
+        continue;
+      }
+
+      // The model returns JSON with a "title" and "items" array — parse it
+      const rawText = result.rawText ?? "";
+      const parsed = parseCustomSectionResponse(rawText);
+      if (!parsed || parsed.items.length === 0) {
+        if (attempt < MAX_ATTEMPTS) continue;
+        return NextResponse.json({ error: "Could not parse custom recommendations — try again" }, { status: 502 });
+      }
+
+      // Build the new section
+      const sectionId = customSectionId ?? `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const newSection: CustomRecommendationSection = {
+        id: sectionId,
+        prompt: customPrompt,
+        title: parsed.title,
+        items: parsed.items,
+      };
+
+      // Merge with existing cache
+      let existing: Partial<ActivityRecommendationsResult> = {};
+      const existingCache = await prisma.cityInfoCache.findFirst({
+        where: { cityId: cityIdNum, type: "activities" },
+      });
+      if (existingCache) {
+        try { existing = JSON.parse(existingCache.data); } catch { /* ignore */ }
+      }
+
+      const existingCustom = Array.isArray(existing.customSections) ? existing.customSections : [];
+      // If regenerating, replace existing section with same ID; otherwise append
+      const updatedCustom = customSectionId
+        ? existingCustom.map((s) => s.id === customSectionId ? newSection : s)
+        : [...existingCustom, newSection];
+
+      const finalResult: ActivityRecommendationsResult = {
+        recommendations: existing.recommendations ?? [],
+        nearbyCities: existing.nearbyCities ?? [],
+        nearbyActivities: existing.nearbyActivities ?? [],
+        hikes: existing.hikes ?? [],
+        cycling: existing.cycling ?? [],
+        customSections: updatedCustom,
+        generatedAt: new Date().toISOString(),
+        model: ACTIVITY_MODEL,
+      };
+
+      await prisma.cityInfoCache.upsert({
+        where: { cityId_type: { cityId: cityIdNum, type: "activities" } },
+        update: { data: JSON.stringify(finalResult), generatedAt: new Date() },
+        create: { cityId: cityIdNum, type: "activities", data: JSON.stringify(finalResult), generatedAt: new Date() },
+      });
+
+      return NextResponse.json(finalResult);
+    }
+
+    return NextResponse.json({ error: "Could not generate custom recommendations" }, { status: 502 });
+  }
+
+  // ── Standard section generation ────────────────────────────────────
   const prompt = buildActivityPrompt(city.name, city.country ?? undefined, options);
 
   // Determine which sections were requested
@@ -235,6 +316,7 @@ export async function POST(
       nearbyActivities: requestedNearbyActivities ? nearbyActivities : (existing.nearbyActivities ?? []),
       hikes: requestedHikes ? hikes : (existing.hikes ?? []),
       cycling: requestedCycling ? cycling : (existing.cycling ?? []),
+      customSections: Array.isArray(existing.customSections) ? existing.customSections : [],
       generatedAt: new Date().toISOString(),
       model: ACTIVITY_MODEL,
     };
