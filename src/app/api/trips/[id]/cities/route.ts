@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyTripOwnership } from "@/lib/ownership";
 import { syncFavouritesToCity } from "@/lib/favourite-poi-sync";
+import { createCitySchema, parseBody } from "@/lib/api-schemas";
 
 export async function GET(
   _req: Request,
@@ -39,7 +40,12 @@ export async function POST(
   if (!await verifyTripOwnership(tripId, userId)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const { name, nickname, startDate, endDate, country, countryCode, latitude, longitude, timezone, parentCityId, type } = await req.json();
+  const raw = await req.json();
+  const parsed = parseBody(createCitySchema, raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const { name, nickname, startDate, endDate, country, countryCode, latitude, longitude, timezone, parentCityId, type } = parsed.data;
 
   // Validate parentCityId if provided
   if (parentCityId != null) {

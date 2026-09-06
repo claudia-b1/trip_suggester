@@ -13,6 +13,7 @@ import { CityAutocomplete, type CityDetails } from "@/components/ui/city-autocom
 import { MapLocationPickerModal } from "@/components/ui/map-location-picker-dynamic";
 import { TripMap } from "./trip-map";
 import type { TripCity } from "./trip-map-impl";
+import { formatDate as formatDateSetting } from "@/lib/use-settings";
 
 type City = {
   id: number;
@@ -33,13 +34,13 @@ function displayName(city: City): string {
   return city.nickname ?? city.name;
 }
 
-/** Short date like "Jun 6" */
+/** Short date — uses the user's preferred date format from settings */
 function fmtShort(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatDateSetting(d);
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateSetting(d);
 }
 
 function sortCities(list: City[]): City[] {
@@ -104,6 +105,135 @@ export function CitiesSection({
   // Local sorted list — enables optimistic reorder
   const [localCities, setLocalCities] = useState<City[]>(() => sortCities(cities));
   useEffect(() => { setLocalCities(sortCities(cities)); }, [cities]);
+
+  // Drag-and-drop state (top-level cities only)
+  const [draggingCityId, setDraggingCityId] = useState<number | null>(null);
+  const [dragOverCityId, setDragOverCityId] = useState<number | null>(null);
+  const [dragOverPosition, setDragOverPosition] = useState<"above" | "below">("below");
+  // Touch drag state
+  const touchStartY = useRef<number | null>(null);
+  const touchCityId = useRef<number | null>(null);
+  const cityRowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  function handleDragStart(e: React.DragEvent, cityId: number) {
+    setDraggingCityId(cityId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(cityId));
+    // Make the drag image slightly transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.dataTransfer.setDragImage(e.currentTarget, 0, 0);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent, cityId: number) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (cityId === draggingCityId) return;
+    // Determine whether cursor is in top or bottom half of the element
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    setDragOverPosition(e.clientY < midY ? "above" : "below");
+    setDragOverCityId(cityId);
+  }
+
+  function handleDragLeave(e: React.DragEvent, cityId: number) {
+    // Only clear if we're actually leaving this element (not entering a child)
+    const related = e.relatedTarget as HTMLElement | null;
+    if (related && (e.currentTarget as HTMLElement).contains(related)) return;
+    if (dragOverCityId === cityId) {
+      setDragOverCityId(null);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, targetCityId: number) {
+    e.preventDefault();
+    const sourceCityId = draggingCityId;
+    setDraggingCityId(null);
+    setDragOverCityId(null);
+    if (!sourceCityId || sourceCityId === targetCityId) return;
+    reorderCities(sourceCityId, targetCityId, dragOverPosition);
+  }
+
+  function handleDragEnd() {
+    setDraggingCityId(null);
+    setDragOverCityId(null);
+  }
+
+  // Touch-based drag support
+  function handleTouchStart(e: React.TouchEvent, cityId: number) {
+    // Only start drag from the grip handle area
+    const target = e.target as HTMLElement;
+    if (!target.closest("[data-drag-handle]")) return;
+    touchStartY.current = e.touches[0].clientY;
+    touchCityId.current = cityId;
+    setDraggingCityId(cityId);
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (touchCityId.current === null || touchStartY.current === null) return;
+    const touchY = e.touches[0].clientY;
+
+    // Determine which city row the touch is over
+    let foundId: number | null = null;
+    let position: "above" | "below" = "below";
+    for (const [id, el] of cityRowRefs.current.entries()) {
+      if (id === touchCityId.current) continue;
+      const rect = el.getBoundingClientRect();
+      if (touchY >= rect.top && touchY <= rect.bottom) {
+        foundId = id;
+        const midY = rect.top + rect.height / 2;
+        position = touchY < midY ? "above" : "below";
+        break;
+      }
+    }
+    if (foundId !== null) {
+      setDragOverCityId(foundId);
+      setDragOverPosition(position);
+    } else {
+      setDragOverCityId(null);
+    }
+  }
+
+  function handleTouchEnd() {
+    const sourceCityId = touchCityId.current;
+    const targetCityId = dragOverCityId;
+    touchStartY.current = null;
+    touchCityId.current = null;
+    setDraggingCityId(null);
+    setDragOverCityId(null);
+    if (!sourceCityId || !targetCityId || sourceCityId === targetCityId) return;
+    reorderCities(sourceCityId, targetCityId, dragOverPosition);
+  }
+
+  async function reorderCities(sourceCityId: number, targetCityId: number, position: "above" | "below") {
+    const sourceIdx = localCities.findIndex((c) => c.id === sourceCityId);
+    const targetIdx = localCities.findIndex((c) => c.id === targetCityId);
+    if (sourceIdx === -1 || targetIdx === -1) return;
+
+    const newList = [...localCities];
+    const [removed] = newList.splice(sourceIdx, 1);
+    // Insert at the correct position relative to the target
+    let insertIdx = newList.findIndex((c) => c.id === targetCityId);
+    if (position === "below") insertIdx += 1;
+    newList.splice(insertIdx, 0, removed);
+
+    // Optimistic update
+    setLocalCities(newList);
+
+    // Persist via API
+    const cityIds = newList.map((c) => c.id);
+    const res = await fetch(`/api/trips/${tripId}/cities/reorder`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cityIds }),
+    });
+    if (!res.ok) {
+      toast("Failed to reorder destinations", { variant: "error" });
+      setLocalCities(sortCities(cities));
+      return;
+    }
+    router.refresh();
+  }
 
   // Pre-fill the add city form from query params (e.g. from recommendations nearby city)
   useEffect(() => {
@@ -487,8 +617,8 @@ export function CitiesSection({
           {/* Connecting indicator */}
           <span className="absolute -left-5 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] text-xs select-none">└</span>
 
-          {/* Reorder column for subcities */}
-          <div className="flex flex-col gap-0.5 shrink-0 w-5 sm:w-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+          {/* Reorder column for subcities — hidden on desktop until hover */}
+          <div className="flex flex-col gap-0.5 shrink-0 w-5 sm:w-0 sm:overflow-hidden sm:group-hover:w-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-150">
             <button
               type="button"
               onClick={() => moveCity(city.id, "up", city.parentCityId)}
@@ -519,7 +649,7 @@ export function CitiesSection({
           {/* Detach button */}
           <button
             type="button"
-            className="shrink-0 rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] sm:group-hover:opacity-100"
+            className="shrink-0 rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
             onClick={() => detachSubcity(city.id)}
             title="Promote to top-level destination"
           >
@@ -529,7 +659,7 @@ export function CitiesSection({
           {/* Delete button */}
           <button
             type="button"
-            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-red-50 hover:text-red-600 sm:group-hover:opacity-100 disabled:opacity-30"
+            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-flex transition-all hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
             onClick={() => onDelete(city)}
             disabled={deletingId === city.id}
             aria-label={`Delete ${displayName(city)}`}
@@ -558,11 +688,45 @@ export function CitiesSection({
     const canMoveDown = sameDateNext;
     const otherTopLevel = localCities.filter((c) => c.id !== city.id);
 
+    const isDragging = draggingCityId === city.id;
+    const isDragOver = dragOverCityId === city.id;
+
     return (
       <div key={city.id}>
-        <div className="group relative flex items-center gap-2.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 py-2 transition-all duration-150 hover:shadow-sm hover:border-[hsl(var(--ring))]">
-          {/* Reorder column */}
-          <div className="flex flex-col gap-0.5 shrink-0 w-6 sm:w-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+        <div
+          ref={(el) => { if (el) cityRowRefs.current.set(city.id, el); else cityRowRefs.current.delete(city.id); }}
+          draggable
+          onDragStart={(e) => handleDragStart(e, city.id)}
+          onDragOver={(e) => handleDragOver(e, city.id)}
+          onDragLeave={(e) => handleDragLeave(e, city.id)}
+          onDrop={(e) => handleDrop(e, city.id)}
+          onDragEnd={handleDragEnd}
+          onTouchStart={(e) => handleTouchStart(e, city.id)}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          aria-roledescription="sortable city"
+          className={`group relative flex items-center gap-2.5 rounded-lg border bg-[hsl(var(--card))] px-3 py-2 transition-all duration-150 hover:shadow-sm ${isDragging ? "opacity-50 border-[hsl(var(--primary))]" : "border-[hsl(var(--border))] hover:border-[hsl(var(--ring))]"} ${isDragOver && dragOverPosition === "above" ? "border-t-2 border-t-blue-500" : ""} ${isDragOver && dragOverPosition === "below" ? "border-b-2 border-b-blue-500" : ""} ${draggingCityId !== null ? "cursor-grabbing" : ""}`}
+        >
+          {/* Drag handle — hidden on desktop until hover */}
+          <div
+            data-drag-handle
+            className="shrink-0 items-center justify-center w-5 cursor-grab active:cursor-grabbing text-[hsl(var(--muted-foreground))] opacity-40 hover:opacity-100 transition-all duration-150 flex sm:hidden sm:w-0 sm:group-hover:flex sm:group-hover:w-5"
+            title="Drag to reorder"
+            aria-label={`Drag to reorder ${displayName(city)}`}
+            role="img"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <circle cx="9" cy="5" r="1.5" />
+              <circle cx="15" cy="5" r="1.5" />
+              <circle cx="9" cy="10" r="1.5" />
+              <circle cx="15" cy="10" r="1.5" />
+              <circle cx="9" cy="15" r="1.5" />
+              <circle cx="15" cy="15" r="1.5" />
+            </svg>
+          </div>
+
+          {/* Reorder column (up/down arrows) — hidden on desktop until hover */}
+          <div className="flex flex-col gap-0.5 shrink-0 w-6 sm:w-0 sm:overflow-hidden sm:group-hover:w-4 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-150">
             <button
               type="button"
               onClick={() => moveCity(city.id, "up", null)}
@@ -615,7 +779,7 @@ export function CitiesSection({
             <div className="relative shrink-0">
               <button
                 type="button"
-                className="rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] sm:group-hover:opacity-100"
+                className="rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
                 onClick={() => setMoveMenuOpenId(moveMenuOpenId === city.id ? null : city.id)}
                 title="Move under another destination"
               >
@@ -641,7 +805,7 @@ export function CitiesSection({
           {/* Delete button */}
           <button
             type="button"
-            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 transition-all hover:bg-red-50 hover:text-red-600 sm:group-hover:opacity-100 disabled:opacity-30"
+            className="shrink-0 rounded p-1.5 sm:p-1 text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-flex transition-all hover:bg-red-50 hover:text-red-600 disabled:opacity-30"
             onClick={() => onDelete(city)}
             disabled={deletingId === city.id}
             aria-label={`Delete ${displayName(city)}`}

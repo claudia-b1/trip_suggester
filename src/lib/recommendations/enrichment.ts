@@ -108,12 +108,14 @@ export async function enrichPlace(
   const w = wiki.status === "fulfilled" ? wiki.value : null;
   const g = google.status === "fulfilled" ? google.value : null;
 
-  // Build description: prefer Wikidata, then Google editorial, then address
+  // Build description: prefer Wikipedia summary (rich 1–2 sentence extract),
+  // then Google editorial, then Wikidata short description.
+  // Skip Geoapify's "description" — it's almost always just the formatted address
+  // (e.g. "Edeka Klein, Himberger Straße 35, 53604 Bad Honnef"), which is useless as a description.
   const description =
-    w?.description ??
+    w?.wikipediaSummary ??
     g?.editorialSummary ??
-    place.description ??
-    place.address ??
+    w?.description ??
     "";
 
   // Rating: prefer Google (1–5), normalize source rating (1–10) as fallback

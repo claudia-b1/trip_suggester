@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyPoiOwnership } from "@/lib/ownership";
-
-const VALID_CATEGORIES = [
-  "CULTURE", "FOOD", "NATURE", "ENTERTAINMENT",
-  "NIGHTLIFE", "SHOPPING", "GROCERIES", "WELLNESS", "OUTDOORS", "ACCOMMODATION", "FUEL",
-];
+import { updatePoiSchema, parseBody } from "@/lib/api-schemas";
 
 export async function PATCH(
   req: Request,
@@ -21,42 +17,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const body = await req.json();
+  const raw = await req.json();
+  const parsed = parseBody(updatePoiSchema, raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
 
+  const body = parsed.data;
   const data: Record<string, unknown> = {};
 
-  // String fields
-  for (const field of ["name", "description", "website", "phoneNumber", "openingHours", "fee", "tips", "bestTimeToVisit", "subcategory", "address", "notes"] as const) {
-    if (typeof body[field] === "string" || body[field] === null) {
-      data[field] = body[field];
-    }
-  }
-
-  // Category with validation
-  if (typeof body.category === "string") {
-    if (!VALID_CATEGORIES.includes(body.category)) {
-      return NextResponse.json({ error: "Invalid category" }, { status: 400 });
-    }
-    data.category = body.category;
-  }
-
-  // Photo URL (string or null)
-  if (typeof body.photoUrl === "string" || body.photoUrl === null) {
-    data.photoUrl = body.photoUrl;
-  }
-
-  // Number fields
-  for (const field of ["priceLevel", "estimatedDurationMinutes"] as const) {
-    if (typeof body[field] === "number" || body[field] === null) {
-      data[field] = body[field];
-    }
-  }
-
-  // Extra fields (JSON)
-  if (body.extraFields !== undefined) {
-    data.extraFields = body.extraFields && typeof body.extraFields === "object"
-      ? body.extraFields
-      : null;
+  // Copy all validated fields that were provided
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined) data[key] = value;
   }
 
   if (Object.keys(data).length === 0) {

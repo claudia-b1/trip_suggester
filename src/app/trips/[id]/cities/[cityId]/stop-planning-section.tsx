@@ -20,6 +20,19 @@ import { TimelineSidebar } from "./timeline-sidebar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+export type StopScoreBreakdownDTO = {
+  rating: number;
+  proximity: number;
+  notability: number;
+  categoryMatch: number;
+  hiddenGem: number;
+  unesco: number;
+  photo: number;
+  preferences: number;
+  googleCoord: number;
+  total: number;
+};
+
 export type StopPoiDTO = {
   id: number;
   name: string;
@@ -45,6 +58,7 @@ export type StopPoiDTO = {
   favouriteItemId: number | null;
   extraFields?: Record<string, unknown> | null;
   hasOriginalData?: boolean;
+  scoreBreakdown?: StopScoreBreakdownDTO | null;
 };
 
 type View = "map" | "list";
@@ -104,6 +118,26 @@ function HeartIcon({ filled, className }: { filled: boolean; className?: string 
       <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
     </svg>
   );
+}
+
+// ─── Score explainer badges ──────────────────────────────────────────────
+
+type ScoreBadge = { emoji: string; label: string; weight: number };
+
+function getStopScoreBadges(breakdown: StopScoreBreakdownDTO | null | undefined): ScoreBadge[] {
+  if (!breakdown) return [];
+  const badges: ScoreBadge[] = [];
+  if (breakdown.rating >= 24) badges.push({ emoji: "⭐", label: "Highly rated", weight: breakdown.rating });
+  if (breakdown.notability >= 15) badges.push({ emoji: "📸", label: "Popular", weight: breakdown.notability });
+  if (breakdown.proximity >= 12) badges.push({ emoji: "📍", label: "Nearby", weight: breakdown.proximity });
+  if (breakdown.hiddenGem > 0) badges.push({ emoji: "💎", label: "Hidden gem", weight: breakdown.hiddenGem });
+  return badges.sort((a, b) => b.weight - a.weight).slice(0, 3);
+}
+
+function getClusterCount(extraFields: Record<string, unknown> | null | undefined): number {
+  if (!extraFields) return 0;
+  const count = extraFields.nearbyClusterCount;
+  return typeof count === "number" ? count : 0;
 }
 
 // ─── StopPoiCard ─────────────────────────────────────────────────────────────
@@ -211,6 +245,16 @@ function StopPoiCard({
           )}
           {poi.priceLevel != null && poi.priceLevel > 0 && (
             <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{PRICE_LABELS[poi.priceLevel]}</span>
+          )}
+          {getStopScoreBadges(poi.scoreBreakdown).map((b) => (
+            <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+              {b.emoji} {b.label}
+            </span>
+          ))}
+          {getClusterCount(poi.extraFields) > 0 && (
+            <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+              +{getClusterCount(poi.extraFields)} more nearby
+            </span>
           )}
         </div>
 

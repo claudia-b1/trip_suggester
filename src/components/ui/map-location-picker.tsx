@@ -6,6 +6,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import type { CityDetails } from "@/components/ui/city-autocomplete";
+import { formatDistance } from "@/lib/use-settings";
 
 export type MapLocationPickerProps = {
   /** Called when the user confirms a location */
@@ -318,7 +319,7 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
                         </span>
                       ) : picked.drivingDistanceKm != null ? (
                         <span>
-                          🚗 {picked.drivingDistanceKm.toLocaleString()} km from you
+                          🚗 {formatDistance(picked.drivingDistanceKm)} from you
                         </span>
                       ) : null}
                     </p>

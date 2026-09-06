@@ -5,22 +5,8 @@ import { RecommendationsPanel } from "./recommendations-panel";
 import { PoisSection, type PoiDTO } from "./pois-section";
 import type { DayPlanDTO, SubcityDayPlanDTO } from "./daily-plan";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
-
-const DEFAULT_RADIUS_KM = 5;
-const DEFAULT_NEARBY_RADIUS_KM = 30;
-
-/** Haversine distance in km (client-side copy). */
-function distKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
+import { haversineKm } from "@/lib/geo";
+import { DEFAULT_DISCOVER_RADIUS_KM, DEFAULT_NEARBY_RADIUS_KM, NEARBY_THRESHOLD_KM } from "@/lib/constants";
 
 /**
  * Detect whether a previous discover run used nearby search by checking if any
@@ -36,11 +22,11 @@ function deriveNearbyRadius(
   let maxKm = 0;
   for (const p of pois) {
     if (p.latitude != null && p.longitude != null) {
-      const d = distKm(cityLat, cityLon, p.latitude, p.longitude);
+      const d = haversineKm(cityLat, cityLon, p.latitude, p.longitude);
       if (d > maxKm) maxKm = d;
     }
   }
-  if (maxKm < 15) return null;
+  if (maxKm < NEARBY_THRESHOLD_KM) return null;
   return Math.max(DEFAULT_NEARBY_RADIUS_KM, Math.ceil(maxKm / 5) * 5);
 }
 
@@ -77,7 +63,7 @@ export function CityPlanningSection({
   subcityDayPlans?: SubcityDayPlanDTO[];
   initialRadiusKm?: number;
 }) {
-  const [radiusKm, setRadiusKm] = useState(initialRadiusKm ?? DEFAULT_RADIUS_KM);
+  const [radiusKm, setRadiusKm] = useState(initialRadiusKm ?? DEFAULT_DISCOVER_RADIUS_KM);
   const [nearbyEnabled, setNearbyEnabled] = useState(false);
   const [nearbyRadiusKm, setNearbyRadiusKm] = useState(DEFAULT_NEARBY_RADIUS_KM);
 

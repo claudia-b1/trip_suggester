@@ -80,12 +80,12 @@ export function RecommendationsPanel({
   const { toast } = useToast();
 
   const [selected, setSelected] = useState<Set<RecommendableCategory>>(
-    () => new Set(RECOMMENDABLE_CATEGORIES),
+    () => new Set(),
   );
   const [counts, setCounts] = useState<Record<RecommendableCategory, number>>(
     () => ({ ...DEFAULT_COUNTS }),
   );
-  // Which subcategory IDs are selected per category (all selected by default — opt-out model)
+  // Which subcategory IDs are selected per category (all pre-selected so toggling a category on uses all its subcategories)
   const [subcats, setSubcats] = useState<Record<RecommendableCategory, Set<string>>>(
     () =>
       Object.fromEntries(
@@ -137,14 +137,7 @@ export function RecommendationsPanel({
     });
   }
 
-  function togglePref(id: PreferenceId) {
-    setPreferences((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  // togglePref removed from UI for now — preferences plumbing kept for future use
 
   async function onGenerate() {
     if (selected.size === 0 || generating) return;
@@ -288,33 +281,6 @@ export function RecommendationsPanel({
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: active ? styles.dot : "#9ca3af" }} />
                   {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
                   {subDesc && <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Preferences — pill row (includes nearby trips) */}
-        <div className="space-y-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
-            Preferences
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {PREFERENCES.map((pref) => {
-              const active = preferences.has(pref.id);
-              return (
-                <button
-                  key={pref.id}
-                  type="button"
-                  onClick={() => togglePref(pref.id)}
-                  disabled={generating}
-                  className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                    active
-                      ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                      : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                  }`}
-                >
-                  {pref.label}
                 </button>
               );
             })}

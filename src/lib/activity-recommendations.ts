@@ -82,12 +82,25 @@ export type CyclingRecommendation = {
   longitude?: number;
 };
 
+/** A user-defined custom recommendation section generated from a free-form prompt */
+export type CustomRecommendationSection = {
+  /** Unique identifier (nanoid-style) */
+  id: string;
+  /** The user's original prompt */
+  prompt: string;
+  /** Short display title derived from the prompt */
+  title: string;
+  /** Recommendations in the same shape as must-do activities */
+  items: ActivityRecommendation[];
+};
+
 export type ActivityRecommendationsResult = {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
   nearbyActivities: NearbyActivityRecommendation[];
   hikes: HikeRecommendation[];
   cycling: CyclingRecommendation[];
+  customSections: CustomRecommendationSection[];
   generatedAt: string;
   model: string;
 };
@@ -206,27 +219,37 @@ You MUST produce the following sections:
 
 ${sections.join("\n\n")}
 
-## CRITICAL VERIFICATION RULES
+## CRITICAL VERIFICATION RULES — TRIPLE CHECK
 
-Before including ANY recommendation, you MUST verify:
+Before including ANY recommendation, run through ALL of these checks. If any fails, REMOVE the item.
 
+### Pass 1 — Location accuracy
 1. Is this activity/place ACTUALLY in or directly around ${cityName}? Double-check.
-2. Am I confusing ${cityName} with another similarly-named city? Verify the country: ${country ?? "unknown"}.
+2. Am I confusing ${cityName} with another similarly-named city in a different country? The target is specifically ${country ?? "unknown"}. For example, "Paris" = Paris, France — NOT Paris, Texas.
 3. Is this landmark/activity genuinely associated with ${cityName} and not a nearby but different city?
-4. Re-read each recommendation one more time and ask: "Would a local from ${cityName} recognize this as being in their city?"
 
-If there is ANY doubt, REMOVE the recommendation. Do NOT guess.
+### Pass 2 — Existence and specificity
+4. Does this place/activity ACTUALLY exist? Only include things you are highly confident are real.
+5. If you named a specific venue, are you sure it exists at this location and hasn't closed?
+6. Is this recommendation specific enough to be actionable, or is it generic advice that applies to any city?
+
+### Pass 3 — Final review
+7. Re-read each recommendation and ask: "Would a local from ${cityName}, ${country ?? "unknown"} recognize this?"
+8. Check for near-duplicates: if two recommendations describe essentially the same thing (e.g. "Visit the Old Town" and "Explore the Historic Centre"), merge them or remove the weaker one.
+9. Are GPS coordinates reasonable for ${cityName}, ${country ?? "unknown"}? Verify latitude/longitude are in the right region.
+
+If there is ANY doubt about any item, REMOVE it. Fewer high-confidence recommendations are better than many uncertain ones.
 
 ## OTHER RULES
 
 - Each recommendation should be 1-2 sentences
 - Be specific to ${location} — no generic travel advice
 - If a recommendation is strongly tied to a specific named place or landmark, include it as linkedPlace
-- Do NOT invent specific venue names (restaurants, hotels, bars)
+- Do NOT invent specific venue names (restaurants, hotels, bars) unless you are HIGHLY confident they exist at this location
 - Do NOT include opening hours, prices, or booking information
-- Prefer HIGH confidence facts only
 - For nearby cities: only include real, well-known places that are genuinely close to ${cityName}
-- GPS coordinates should be approximate but reasonable — do NOT use 0,0
+- GPS coordinates should be approximate but reasonable — do NOT use 0,0 or coordinates from the wrong country
+- NEVER include duplicate or near-duplicate recommendations — if two items cover the same topic, keep only the more specific one
 
 ## OUTPUT FORMAT
 
@@ -395,4 +418,118 @@ function parseRecommendationArray(arr: unknown[]): ActivityRecommendation[] {
       latitude: typeof item.latitude === "number" ? item.latitude : undefined,
       longitude: typeof item.longitude === "number" ? item.longitude : undefined,
     }));
+}
+
+// ── Custom section prompt & parser ──────────────────────────────────────────
+
+/**
+ * Build a prompt for a user-defined custom recommendation section.
+ * The response uses the same item shape as must-do activities so they
+ * render with identical cards (category badges, Add-as-POI, coordinates).
+ */
+export function buildCustomSectionPrompt(
+  cityName: string,
+  country: string | undefined,
+  userPrompt: string,
+): string {
+  const location = country ? `${cityName}, ${country}` : cityName;
+
+  return `You are a concise travel advisor. A user planning a trip to ${location} asked:
+
+"${userPrompt}"
+
+Generate 5-12 specific recommendations that answer this request for ${location}.
+
+## RULES
+
+- Each recommendation must be specific to ${location} — no generic advice
+- Determine the best-fit category for each item from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, GROCERIES, WELLNESS, OUTDOORS, ACCOMMODATION
+- If a recommendation is tied to a specific named place or landmark, include it as linkedPlace and provide approximate GPS coordinates
+- Each description should be 1-2 sentences
+- Do NOT invent specific venue names unless you are HIGHLY confident they exist at this location
+- Do NOT include opening hours, prices, or booking information
+- GPS coordinates should be approximate but reasonable — do NOT use 0,0 or coordinates from the wrong country
+- NEVER include duplicate or near-duplicate recommendations — if two items cover the same topic, keep only the more specific one
+
+## CRITICAL VERIFICATION — TRIPLE CHECK
+
+### Pass 1 — Location accuracy
+1. Is this actually in or directly around ${cityName}? Double-check.
+2. Am I confusing ${cityName} with another similarly-named city in a different country? The target is specifically ${country ?? "unknown"}.
+3. Is this genuinely associated with ${cityName} and not a nearby but different city?
+
+### Pass 2 — Existence and confidence
+4. Does this place/activity ACTUALLY exist? Only include things you are highly confident are real.
+5. If you named a specific venue, are you sure it exists at this location and hasn't closed?
+6. Is this recommendation specific enough to be actionable?
+
+### Pass 3 — Final review
+7. Would a local from ${cityName}, ${country ?? "unknown"} recognize this?
+8. Check for near-duplicates: if two items describe essentially the same thing, merge or remove the weaker one.
+9. Are GPS coordinates in the right region for ${cityName}, ${country ?? "unknown"}?
+
+If there is ANY doubt, REMOVE the item. Fewer high-confidence recommendations are better than many uncertain ones.
+
+Also generate a short display title (2-5 words) that summarizes what these recommendations are about. This title will be shown as the section header.
+
+## OUTPUT FORMAT
+
+Return a single JSON object:
+{
+  "title": "short section title, 2-5 words",
+  "items": [
+    {
+      "title": "string",
+      "description": "string",
+      "linkedPlace": "string or null",
+      "category": "CULTURE|FOOD|NATURE|ENTERTAINMENT|NIGHTLIFE|SHOPPING|GROCERIES|WELLNESS|OUTDOORS|ACCOMMODATION",
+      "latitude": number or null,
+      "longitude": number or null
+    }
+  ]
+}
+
+Return ONLY valid JSON. No markdown code fences, no explanation text. Just the raw JSON object.`;
+}
+
+/** Parse the model response for a custom section into a title + items array. */
+export function parseCustomSectionResponse(raw: string): {
+  title: string;
+  items: ActivityRecommendation[];
+} | null {
+  const cleaned = raw.replace(/^```(?:json)?\s*/gm, "").replace(/^```\s*$/gm, "").trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    // Fallback: try to parse as an array (items only)
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      try {
+        const parsed = JSON.parse(arrayMatch[0]);
+        if (Array.isArray(parsed)) {
+          const items = parseRecommendationArray(parsed);
+          if (items.length > 0) return { title: "Custom", items };
+        }
+      } catch { /* fall through */ }
+    }
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (typeof parsed !== "object" || parsed === null) return null;
+
+    const title = typeof parsed.title === "string" && parsed.title.trim()
+      ? parsed.title.trim()
+      : "Custom";
+
+    const itemsArr = parsed.items ?? parsed.recommendations ?? parsed.results;
+    if (!Array.isArray(itemsArr)) return null;
+
+    const items = parseRecommendationArray(itemsArr);
+    if (items.length === 0) return null;
+
+    return { title, items };
+  } catch {
+    return null;
+  }
 }

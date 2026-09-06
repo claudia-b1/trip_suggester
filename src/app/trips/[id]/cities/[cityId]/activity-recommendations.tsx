@@ -14,6 +14,22 @@ import type {
   ActivityRecommendationsResult,
 } from "@/lib/activity-recommendations";
 import { CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, CATEGORY_STYLES, type Category } from "@/lib/categories";
+import { DEFAULT_NEARBY_CITIES_KM, DEFAULT_NEARBY_ACTIVITIES_KM } from "@/lib/constants";
+import { formatDistance } from "@/lib/use-settings";
+
+/**
+ * Parse a distance string from AI (e.g. "~30 km", "45 km") and re-format
+ * it using the user's preferred unit. Falls back to the raw string if the
+ * numeric value can't be extracted.
+ */
+function formatDistanceString(raw: string): string {
+  const match = raw.match(/([\d.]+)\s*km/i);
+  if (!match) return raw;
+  const km = parseFloat(match[1]);
+  if (isNaN(km)) return raw;
+  const prefix = raw.startsWith("~") ? "~" : "";
+  return `${prefix}${formatDistance(km)}`;
+}
 
 /** Geocode a place name to get verified lat/lng via our geocode API */
 async function verifyLocation(
@@ -77,13 +93,20 @@ export function ActivityRecommendations({
   const [genMustDo, setGenMustDo] = useState(true);
   const [genNearbyCities, setGenNearbyCities] = useState(true);
   const [genNearbyActivities, setGenNearbyActivities] = useState(true);
-  const [maxCitiesKm, setMaxCitiesKm] = useState(150);
-  const [maxActivitiesKm, setMaxActivitiesKm] = useState(50);
+  const [maxCitiesKm, setMaxCitiesKm] = useState(DEFAULT_NEARBY_CITIES_KM);
+  const [maxActivitiesKm, setMaxActivitiesKm] = useState(DEFAULT_NEARBY_ACTIVITIES_KM);
 
   // "Generate more" panel
   const [showGenerateMore, setShowGenerateMore] = useState(false);
-  const [genHikes, setGenHikes] = useState(true);
-  const [genCycling, setGenCycling] = useState(true);
+  const [genHikes, setGenHikes] = useState(false);
+  const [genCycling, setGenCycling] = useState(false);
+
+  // Custom section state
+  const [customPrompt, setCustomPrompt] = useState("");
+  const [customSectionOpenIds, setCustomSectionOpenIds] = useState<Set<string>>(new Set());
+  /** Which custom section is being regenerated (shows inline prompt editor) */
+  const [regenCustomId, setRegenCustomId] = useState<string | null>(null);
+  const [regenCustomPrompt, setRegenCustomPrompt] = useState("");
 
   // Per-section regenerate settings (for sections with configurable distance)
   const [regenSettingsFor, setRegenSettingsFor] = useState<string | null>(null);
@@ -97,7 +120,13 @@ export function ActivityRecommendations({
 
   // Sync with server-provided initial data
   useEffect(() => {
-    if (initialData) setData(initialData);
+    if (initialData) {
+      setData(initialData);
+      // Auto-open any existing custom sections
+      if (initialData.customSections?.length) {
+        setCustomSectionOpenIds(new Set(initialData.customSections.map((s) => s.id)));
+      }
+    }
   }, [initialData]);
 
   /** Initial generation — produces the three default sections */
@@ -112,8 +141,8 @@ export function ActivityRecommendations({
           includeMustDo: genMustDo,
           includeNearbyCities: genNearbyCities,
           includeNearbyActivities: genNearbyActivities,
-          includeHikes: false,
-          includeCycling: false,
+          includeHikes: genHikes,
+          includeCycling: genCycling,
           maxNearbyCitiesKm: maxCitiesKm,
           maxNearbyActivitiesKm: maxActivitiesKm,
         }),
@@ -168,7 +197,7 @@ export function ActivityRecommendations({
     }
   }
 
-  /** Generate additional sections (hikes, cycling) via "Generate more" */
+  /** Generate additional sections via "Generate other" */
   async function generateMore() {
     setLoadingSection("more");
     setError(null);
@@ -177,11 +206,11 @@ export function ActivityRecommendations({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          includeMustDo: false,
-          includeNearbyCities: false,
-          includeNearbyActivities: false,
-          includeHikes: genHikes,
-          includeCycling: genCycling,
+          includeMustDo: !hasRecommendations && genMustDo,
+          includeNearbyCities: !hasNearbyCities && genNearbyCities,
+          includeNearbyActivities: !hasNearbyActivities && genNearbyActivities,
+          includeHikes: !hasHikes && genHikes,
+          includeCycling: !hasCycling && genCycling,
           maxNearbyCitiesKm: maxCitiesKm,
           maxNearbyActivitiesKm: maxActivitiesKm,
         }),
@@ -201,6 +230,69 @@ export function ActivityRecommendations({
     } finally {
       setLoadingSection(null);
     }
+  }
+
+  /** Generate a custom section from a user prompt */
+  async function generateCustomSection(prompt: string, existingSectionId?: string) {
+    const sectionKey = existingSectionId ?? `generating-custom`;
+    setLoadingSection(sectionKey);
+    setError(null);
+    try {
+      const res = await fetch(`/api/cities/${cityId}/activities`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          includeMustDo: false,
+          includeNearbyCities: false,
+          includeNearbyActivities: false,
+          includeHikes: false,
+          includeCycling: false,
+          customPrompt: prompt,
+          ...(existingSectionId && { customSectionId: existingSectionId }),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to generate custom recommendations");
+      }
+      const result: ActivityRecommendationsResult = await res.json();
+      setData(result);
+      setCustomPrompt("");
+      setRegenCustomId(null);
+      setRegenCustomPrompt("");
+      // Auto-open the new section
+      const newSection = (result.customSections ?? []).find((s) =>
+        existingSectionId ? s.id === existingSectionId : !data?.customSections?.some((old) => old.id === s.id),
+      );
+      if (newSection) {
+        setCustomSectionOpenIds((prev) => new Set([...prev, newSection.id]));
+      }
+      toast(existingSectionId ? "Regenerated custom section" : "Generated custom recommendations");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
+      toast(msg, { variant: "error" });
+    } finally {
+      setLoadingSection(null);
+    }
+  }
+
+  /** Delete a custom section from the cached data */
+  /** Delete a custom section — update local state immediately, persist in background */
+  async function deleteCustomSection(sectionId: string) {
+    if (!data) return;
+    // Optimistic local update
+    setData({
+      ...data,
+      customSections: (data.customSections ?? []).filter((s) => s.id !== sectionId),
+    });
+    setRegenCustomId(null);
+    setRegenCustomPrompt("");
+    toast("Custom section removed");
+    // Persist to server
+    try {
+      await fetch(`/api/cities/${cityId}/activities/custom/${sectionId}`, { method: "DELETE" });
+    } catch { /* non-critical — local state is already updated */ }
   }
 
   // Try to find a matching POI for a linked place name
@@ -383,16 +475,20 @@ export function ActivityRecommendations({
   const hasNearbyActivities = data && data.nearbyActivities && data.nearbyActivities.length > 0;
   const hasHikes = data && data.hikes && data.hikes.length > 0;
   const hasCycling = data && data.cycling && data.cycling.length > 0;
-  const hasContent = hasRecommendations || hasNearbyCities || hasNearbyActivities || hasHikes || hasCycling;
+  const hasCustomSections = data && data.customSections && data.customSections.length > 0;
+  const hasContent = hasRecommendations || hasNearbyCities || hasNearbyActivities || hasHikes || hasCycling || hasCustomSections;
 
-  // Sections available for "generate more" (not yet generated)
+  // Sections available for "generate more" — show any sections not already generated
   const generateMoreOptions = [
+    ...(!hasRecommendations ? [{ key: "mustDo" as const, label: "Must-do activities", state: genMustDo, setState: setGenMustDo }] : []),
+    ...(!hasNearbyCities ? [{ key: "nearbyCities" as const, label: "Nearby cities", state: genNearbyCities, setState: setGenNearbyCities }] : []),
+    ...(!hasNearbyActivities ? [{ key: "nearbyActivities" as const, label: "Recommended activities nearby", state: genNearbyActivities, setState: setGenNearbyActivities }] : []),
     ...(!hasHikes ? [{ key: "hikes" as const, label: "🥾 Hikes & walks", state: genHikes, setState: setGenHikes }] : []),
     ...(!hasCycling ? [{ key: "cycling" as const, label: "🚴 Cycling routes", state: genCycling, setState: setGenCycling }] : []),
   ];
 
   return (
-    <Card>
+    <Card id="recommendations-section">
       <CardHeader className="pb-3">
         <button
           type="button"
@@ -417,7 +513,8 @@ export function ActivityRecommendations({
               <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">
                 ({data!.recommendations.length} activities
                 {hasNearbyActivities ? ` · ${data!.nearbyActivities.length} nearby` : ""}
-                {hasNearbyCities ? ` · ${data!.nearbyCities.length} cities` : ""})
+                {hasNearbyCities ? ` · ${data!.nearbyCities.length} cities` : ""}
+                {hasCustomSections ? ` · ${data!.customSections.length} custom` : ""})
               </span>
             )}
           </CardTitle>
@@ -449,7 +546,7 @@ export function ActivityRecommendations({
                         type="number"
                         value={maxCitiesKm}
                         onChange={(e) => setMaxCitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
-                        onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(150); }}
+                        onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(DEFAULT_NEARBY_CITIES_KM); }}
                         className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                         min={10}
                         max={500}
@@ -469,7 +566,7 @@ export function ActivityRecommendations({
                         type="number"
                         value={maxActivitiesKm}
                         onChange={(e) => setMaxActivitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
-                        onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(50); }}
+                        onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(DEFAULT_NEARBY_ACTIVITIES_KM); }}
                         className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                         min={5}
                         max={200}
@@ -478,17 +575,79 @@ export function ActivityRecommendations({
                     </span>
                   )}
                 </div>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genHikes} onChange={(e) => setGenHikes(e.target.checked)} className="rounded" />
+                  🥾 Hikes & walks
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={genCycling} onChange={(e) => setGenCycling(e.target.checked)} className="rounded" />
+                  🚴 Cycling routes
+                </label>
               </div>
 
               <div className="text-center">
                 <Button
                   type="button"
                   onClick={generate}
-                  disabled={isLoading || (!genMustDo && !genNearbyCities && !genNearbyActivities)}
+                  disabled={isLoading || (!genMustDo && !genNearbyCities && !genNearbyActivities && !genHikes && !genCycling)}
                   className="min-w-[200px]"
                 >
                   {"✨"} Generate recommendations
                 </Button>
+              </div>
+
+              {/* Generate other — custom prompt section */}
+              <div className="space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/20 max-w-md mx-auto">
+                <p className="text-xs font-medium text-[hsl(var(--foreground))]">Or ask for something specific:</p>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    "Best neighborhoods to explore",
+                    "Local food & dishes to try",
+                    "Best wine bars & cocktail bars",
+                    "Live music & nightlife spots",
+                    "Shopping streets & districts",
+                    "Family-friendly activities",
+                    "Free things to do",
+                    "Rainy day activities",
+                    "Best viewpoints & photo spots",
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => setCustomPrompt(chip)}
+                      className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[11px] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  placeholder="Or type your own question..."
+                  className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && customPrompt.trim()) {
+                      generateCustomSection(customPrompt.trim());
+                    }
+                  }}
+                />
+                <div className="flex items-center justify-center">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => generateCustomSection(customPrompt.trim())}
+                    disabled={isLoading || !customPrompt.trim()}
+                  >
+                    {loadingSection === "generating-custom" ? (
+                      <><span className="spinner !h-3 !w-3" /> Generating…</>
+                    ) : (
+                      <>{"✨"} Generate</>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -550,7 +709,7 @@ export function ActivityRecommendations({
                       type="number"
                       value={maxActivitiesKm}
                       onChange={(e) => setMaxActivitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
-                      onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(50); }}
+                      onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(DEFAULT_NEARBY_ACTIVITIES_KM); }}
                       className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                       min={5}
                       max={200}
@@ -673,7 +832,7 @@ export function ActivityRecommendations({
                       type="number"
                       value={maxCitiesKm}
                       onChange={(e) => setMaxCitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
-                      onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(150); }}
+                      onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(DEFAULT_NEARBY_CITIES_KM); }}
                       className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                       min={10}
                       max={500}
@@ -719,8 +878,102 @@ export function ActivityRecommendations({
             </CollapsibleSubsection>
           )}
 
-          {/* Generate more panel — shown when there are ungenerated optional sections */}
-          {hasContent && generateMoreOptions.length > 0 && (
+          {/* Custom sections */}
+          {hasCustomSections && data!.customSections.map((section) => {
+            const isOpen = customSectionOpenIds.has(section.id);
+            const isRegenerating = regenCustomId === section.id;
+            return (
+              <CollapsibleSubsection
+                key={section.id}
+                title={`🔍 ${section.title}`}
+                count={section.items.length}
+                open={isOpen}
+                onToggle={() => setCustomSectionOpenIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(section.id)) next.delete(section.id);
+                  else next.add(section.id);
+                  return next;
+                })}
+                onRegenerate={() => {
+                  if (isRegenerating) {
+                    setRegenCustomId(null);
+                    setRegenCustomPrompt("");
+                  } else {
+                    setRegenCustomId(section.id);
+                    setRegenCustomPrompt(section.prompt);
+                  }
+                }}
+                regenerating={loadingSection === section.id}
+                disabled={isLoading}
+                settingsOpen={isRegenerating}
+                settingsPanel={
+                  <div className="space-y-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
+                    <label className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Edit prompt and regenerate:</label>
+                    <input
+                      type="text"
+                      value={regenCustomPrompt}
+                      onChange={(e) => setRegenCustomPrompt(e.target.value)}
+                      className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]"
+                      placeholder="Update your prompt..."
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && regenCustomPrompt.trim()) {
+                          generateCustomSection(regenCustomPrompt.trim(), section.id);
+                        }
+                      }}
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => generateCustomSection(regenCustomPrompt.trim(), section.id)}
+                        disabled={isLoading || !regenCustomPrompt.trim()}
+                        className="h-7 text-xs px-2.5"
+                      >
+                        {loadingSection === section.id ? <><span className="spinner !h-3 !w-3" /> Regenerating…</> : <>{"🔄"} Regenerate</>}
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => deleteCustomSection(section.id)}
+                        disabled={isLoading}
+                        className="text-[10px] text-red-500 hover:text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        Delete section
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setRegenCustomId(null); setRegenCustomPrompt(""); }}
+                        className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                }
+              >
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {section.items.map((rec, i) => {
+                    const poiLink = findPoiLink(rec.linkedPlace);
+                    return (
+                      <RecommendationCard
+                        key={i}
+                        rec={rec}
+                        index={i}
+                        poiLink={poiLink}
+                        onAddPoi={(categoryOverride?: string) => addPoiFromRecommendation(rec, categoryOverride)}
+                        addingPoi={addingPoiFor === (rec.linkedPlace || rec.title)}
+                      />
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-2 italic">
+                  Prompt: &ldquo;{section.prompt}&rdquo;
+                </p>
+              </CollapsibleSubsection>
+            );
+          })}
+
+          {/* Ask AI section — always available after initial generation */}
+          {hasContent && (
             !showGenerateMore ? (
               <div className="text-center pt-1">
                 <button
@@ -729,40 +982,127 @@ export function ActivityRecommendations({
                   disabled={isLoading}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
                 >
-                  + Generate more
+                  + Generate other
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/20 max-w-sm mx-auto">
-                <p className="text-xs font-medium text-[hsl(var(--foreground))]">Generate additional sections:</p>
-                {generateMoreOptions.map((opt) => (
-                  <label key={opt.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={opt.state} onChange={(e) => opt.setState(e.target.checked)} className="rounded" />
-                    {opt.label}
-                  </label>
-                ))}
-                <div className="flex items-center justify-center gap-2 pt-1">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={generateMore}
-                    disabled={isLoading || generateMoreOptions.every((o) => !o.state)}
-                  >
-                    {loadingSection === "more" ? (
-                      <><span className="spinner !h-3 !w-3" /> Generating…</>
-                    ) : (
-                      <>{"✨"} Generate</>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowGenerateMore(false)}
-                    disabled={isLoading}
-                  >
-                    Cancel
-                  </Button>
+              <div className="space-y-3 rounded-lg border border-dashed border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/20 max-w-sm mx-auto">
+                {generateMoreOptions.length > 0 && (
+                  <>
+                    <p className="text-xs font-medium text-[hsl(var(--foreground))]">Add sections:</p>
+                    {generateMoreOptions.map((opt) => (
+                      <div key={opt.key} className="flex items-center gap-2 text-sm">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" checked={opt.state} onChange={(e) => opt.setState(e.target.checked)} className="rounded" />
+                          {opt.label}
+                        </label>
+                        {opt.key === "nearbyCities" && opt.state && (
+                          <span className="inline-flex items-center gap-1 ml-1">
+                            <input
+                              type="number"
+                              value={maxCitiesKm}
+                              onChange={(e) => setMaxCitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                              onBlur={() => { if (!maxCitiesKm) setMaxCitiesKm(DEFAULT_NEARBY_CITIES_KM); }}
+                              className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                              min={10}
+                              max={500}
+                            />
+                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                          </span>
+                        )}
+                        {opt.key === "nearbyActivities" && opt.state && (
+                          <span className="inline-flex items-center gap-1 ml-1">
+                            <input
+                              type="number"
+                              value={maxActivitiesKm}
+                              onChange={(e) => setMaxActivitiesKm(e.target.value === "" ? 0 : Number(e.target.value))}
+                              onBlur={() => { if (!maxActivitiesKm) setMaxActivitiesKm(DEFAULT_NEARBY_ACTIVITIES_KM); }}
+                              className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                              min={5}
+                              max={200}
+                            />
+                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={generateMore}
+                        disabled={isLoading || generateMoreOptions.every((o) => !o.state)}
+                      >
+                        {loadingSection === "more" ? (
+                          <><span className="spinner !h-3 !w-3" /> Generating…</>
+                        ) : (
+                          <>{"✨"} Generate</>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="border-t border-[hsl(var(--border))] my-1" />
+                  </>
+                )}
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-[hsl(var(--foreground))]">Ask for something specific:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {[
+                      "Best neighborhoods to explore",
+                      "Local food & dishes to try",
+                      "Best wine bars & cocktail bars",
+                      "Live music & nightlife spots",
+                      "Shopping streets & districts",
+                      "Family-friendly activities",
+                      "Free things to do",
+                      "Rainy day activities",
+                      "Best viewpoints & photo spots",
+                    ].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        disabled={isLoading}
+                        onClick={() => setCustomPrompt(chip)}
+                        className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[11px] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
+                      >
+                        {chip}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="Or type your own question..."
+                    className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customPrompt.trim()) {
+                        generateCustomSection(customPrompt.trim());
+                      }
+                    }}
+                  />
+                  <div className="flex items-center justify-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => generateCustomSection(customPrompt.trim())}
+                      disabled={isLoading || !customPrompt.trim()}
+                    >
+                      {loadingSection === "generating-custom" ? (
+                        <><span className="spinner !h-3 !w-3" /> Generating…</>
+                      ) : (
+                        <>{"✨"} Generate</>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => { setShowGenerateMore(false); setCustomPrompt(""); }}
+                      disabled={isLoading}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               </div>
             )
@@ -1042,7 +1382,7 @@ function NearbyActivityCard({
         </h4>
         {activity.distance && (
           <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
-            {activity.distance}
+            {formatDistanceString(activity.distance)}
           </span>
         )}
       </div>
@@ -1119,7 +1459,7 @@ function NearbyCityCard({
         </h4>
         {city.distance && (
           <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
-            {city.distance}
+            {formatDistanceString(city.distance)}
           </span>
         )}
       </div>
@@ -1189,7 +1529,7 @@ function RouteCard({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {route.distance && (
           <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
-            📏 {route.distance}
+            📏 {formatDistanceString(route.distance)}
           </span>
         )}
         {route.duration && (

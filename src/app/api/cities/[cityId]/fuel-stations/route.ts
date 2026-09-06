@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyCityOwnership } from "@/lib/ownership";
+import { haversineM } from "@/lib/geo";
 
 const GEOAPIFY_BASE = "https://api.geoapify.com/v2/places";
 
@@ -118,14 +119,8 @@ export async function POST(
     const lon = f.properties.lon ?? fLon;
     const isDupe = seenStations.some((s) => {
       if (s.name !== name) return false;
-      // Haversine distance check — treat as duplicate only if <200m
-      const R = 6371000;
-      const dLat = ((lat - s.lat) * Math.PI) / 180;
-      const dLon = ((lon - s.lon) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((s.lat * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) < 100;
+      // Haversine distance check — treat as duplicate only if <100m
+      return haversineM(s.lat, s.lon, lat, lon) < 100;
     });
     if (isDupe) return false;
     seenStations.push({ name, lat, lon });
@@ -156,13 +151,7 @@ export async function POST(
     const nameMatch = existingFuel.some((p) => {
       if (p.name.toLowerCase().trim() !== name) return false;
       if (p.latitude == null || p.longitude == null) return true; // same name, no coords → assume dupe
-      const R = 6371000;
-      const dLat = ((newLat - p.latitude) * Math.PI) / 180;
-      const dLon = ((newLon - p.longitude) * Math.PI) / 180;
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((p.latitude * Math.PI) / 180) * Math.cos((newLat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) < 100;
+      return haversineM(p.latitude, p.longitude, newLat, newLon) < 100;
     });
     return !nameMatch;
   });

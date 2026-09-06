@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyTripOwnership } from "@/lib/ownership";
+import { updateTripSchema, parseBody } from "@/lib/api-schemas";
 
 export async function GET(
   _req: Request,
@@ -37,17 +38,19 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const body = await req.json();
+  const raw = await req.json();
+  const parsed = parseBody(updateTripSchema, raw);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  const body = parsed.data;
   const data: Record<string, unknown> = {};
-  if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
+  if (body.name) data.name = body.name.trim();
   if (body.startDate) data.startDate = new Date(body.startDate);
   if (body.endDate) data.endDate = new Date(body.endDate);
-  if (typeof body.archived === "boolean") data.archived = body.archived;
-  if (typeof body.coverImage === "string") data.coverImage = body.coverImage;
-  if (body.coverImage === null) data.coverImage = null;
-  if (Object.keys(data).length === 0) {
-    return NextResponse.json({ error: "No fields to update" }, { status: 400 });
-  }
+  if (body.archived !== undefined) data.archived = body.archived;
+  if (body.coverImage !== undefined) data.coverImage = body.coverImage;
   const trip = await prisma.trip.update({ where: { id: tripId }, data });
   return NextResponse.json(trip);
 }

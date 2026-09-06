@@ -8,6 +8,8 @@
  * Docs: https://developers.google.com/maps/documentation/places/web-service/op-overview
  */
 
+import { haversineM } from "@/lib/geo";
+
 const PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText";
 const PHOTO_BASE        = "https://places.googleapis.com/v1";
 
@@ -32,6 +34,8 @@ const FIELD_MASK = [
  */
 export type GoogleMeta = {
   googlePlaceId: string;
+  /** Display name from Google Places — used for name-similarity scoring */
+  name?: string;
   rating?: number;
   userRatingCount?: number;
   /** 0 = free, 1 = inexpensive, 2 = moderate, 3 = expensive, 4 = very expensive */
@@ -166,6 +170,7 @@ export async function fetchGoogleMeta(
 
     return {
       googlePlaceId: place.id,
+      name:            place.displayName?.text,
       rating:          place.rating,
       userRatingCount: place.userRatingCount,
       priceLevel:      place.priceLevel ? PRICE_MAP[place.priceLevel] : undefined,
@@ -177,17 +182,6 @@ export async function fetchGoogleMeta(
       latitude:        place.location?.latitude,
       longitude:       place.location?.longitude,
     };
-  }
-
-  /** Haversine distance in metres between two coordinates */
-  function distanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
   try {
@@ -206,13 +200,13 @@ export async function fetchGoogleMeta(
     // Google may return a different branch than the one at our exact coordinates.
     if (address && meta) {
       const dist = meta.latitude != null && meta.longitude != null
-        ? distanceM(lat, lon, meta.latitude, meta.longitude)
+        ? haversineM(lat, lon, meta.latitude, meta.longitude)
         : Infinity;
       if (dist > 500) {
         console.log(`[google-meta] coord mismatch for "${name}" (${Math.round(dist)}m), retrying with address`);
         const addrMeta = await doSearch(address);
         if (addrMeta?.latitude != null && addrMeta?.longitude != null) {
-          const addrDist = distanceM(lat, lon, addrMeta.latitude, addrMeta.longitude);
+          const addrDist = haversineM(lat, lon, addrMeta.latitude, addrMeta.longitude);
           if (addrDist < dist) {
             console.log(`[google-meta] address retry for "${name}": ${Math.round(addrDist)}m (was ${Math.round(dist)}m) — using address result`);
             return addrMeta;
