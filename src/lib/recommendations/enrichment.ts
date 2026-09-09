@@ -67,9 +67,9 @@ const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"] as const;
 
 // ─── Core enrichment functions ────────────────────────────────────────────────
 
-async function getWikidata(placeId: string, name: string, cityName?: string): Promise<WikidataEnrichment | null> {
+async function getWikidata(placeId: string, name: string, cityName?: string, knownQId?: string): Promise<WikidataEnrichment | null> {
   return withEnrichCache<WikidataEnrichment>(placeId, "wikidata", () =>
-    enrichWithWikidata(name, cityName),
+    enrichWithWikidata(name, cityName, knownQId),
   );
 }
 
@@ -94,14 +94,21 @@ async function getGoogle(
  * Wikidata and Google run in parallel. Cache is checked per-source — a partial
  * cache hit (e.g. Wikidata cached, Google not) still avoids duplicate calls.
  */
+// Categories where Wikidata enrichment is worthwhile — only major cultural
+// landmarks and natural sites tend to have Wikidata entries.
+const WIKIDATA_CATEGORIES = new Set<string>(["CULTURE", "NATURE"]);
+
 export async function enrichPlace(
   place: DiscoveredPlace,
   category: Category,
   cityName: string,
   googleMeta?: GoogleMeta | null,
 ): Promise<RecommendedPoi> {
+  const wikiPromise = WIKIDATA_CATEGORIES.has(category)
+    ? getWikidata(place.placeId, place.name, cityName, place.wikidataId)
+    : Promise.resolve(null);
   const [wiki, google] = await Promise.allSettled([
-    getWikidata(place.placeId, place.name, cityName),
+    wikiPromise,
     getGoogle(place.placeId, place.name, cityName, place.latitude, place.longitude, googleMeta),
   ]);
 

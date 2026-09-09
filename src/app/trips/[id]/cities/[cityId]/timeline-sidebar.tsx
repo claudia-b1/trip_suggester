@@ -104,7 +104,7 @@ export function TimelineSidebar({
         ? allDays.filter((dp) => dp.date.slice(0, 10) >= todayStr)
         : allDays.filter((dp) => dp.activities.length > 0);
 
-  if (visibleDays.length === 0 && viewMode === "active") return null;
+  const hasAnyActivities = allDays.some((dp) => dp.activities.length > 0);
 
   return (
     <div className="sticky top-20 space-y-3">
@@ -133,8 +133,11 @@ export function TimelineSidebar({
       </div>
 
       {timelineOpen && <>
+      {!hasAnyActivities && (
+        <p className="text-xs text-[hsl(var(--muted-foreground))] italic">No activities planned yet</p>
+      )}
       {/* View mode toggle — hidden in compact mode */}
-      {!compact && (
+      {!compact && hasAnyActivities && (
       <div className="flex items-center gap-1">
         <button
           type="button"

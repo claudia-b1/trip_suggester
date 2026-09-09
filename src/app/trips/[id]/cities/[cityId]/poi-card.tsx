@@ -7,7 +7,8 @@ import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
 import { useToast } from "@/components/ui/toast";
 import { resizeImageFile } from "@/lib/resize-image";
 import type { DayPlanOption } from "./poi-map";
-import type { PoiDTO, ScoreBreakdownDTO } from "./pois-section";
+import type { PoiDTO, ScoreBreakdownDTO, AttachmentDTO } from "./pois-section";
+import { AttachmentsSection } from "@/components/ui/attachments-section";
 
 // ─── Utility functions ──────────────────────────────────────────────────────
 
@@ -653,6 +654,19 @@ export function PoiCard({
             {poi.openingHours && <p>🕐 {poi.openingHours}</p>}
             {poi.phoneNumber && <p>📞 {poi.phoneNumber}</p>}
             {poi.inceptionYear && <p>📅 Est. {poi.inceptionYear}</p>}
+          </div>
+        )}
+
+        {/* Attachments (read-only in card, edit in modal) */}
+        {poi.attachments && poi.attachments.length > 0 && (
+          <div className="mb-2">
+            <AttachmentsSection
+              entityType="poi"
+              entityId={poi.id}
+              attachments={poi.attachments}
+              onChanged={() => {}}
+              readOnly
+            />
           </div>
         )}
 

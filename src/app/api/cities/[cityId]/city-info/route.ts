@@ -6,8 +6,11 @@ import { parseAIResponse, type GeneratedCityInfo } from "@/lib/city-info";
 
 // ── Prompt builder ─────────────────────────────────────────────────────────────
 
-function buildPrompt(cityLabel: string, cityName: string): string {
-  return `You are a factual extraction engine for city information about the city ${cityLabel}.
+function buildPrompt(cityLabel: string, cityName: string, coords?: { lat: number; lon: number } | null): string {
+  const coordHint = coords
+    ? ` This city is located at approximately ${coords.lat.toFixed(2)}°N, ${coords.lon.toFixed(2)}°E. Do NOT confuse "${cityName}" with any similarly-named place in another country.`
+    : "";
+  return `You are a factual extraction engine for city information about the city ${cityLabel}.${coordHint}
 
 Your ONLY goal is to output verified, useful, location-specific information with MEDIUM or HIGH confidence.
 
@@ -356,7 +359,10 @@ export async function POST(
   }
 
   const cityLabel = city.country ? `${city.name}, ${city.country}` : city.name;
-  const prompt = buildPrompt(cityLabel, city.name);
+  const cityCoords = city.latitude != null && city.longitude != null
+    ? { lat: city.latitude, lon: city.longitude }
+    : null;
+  const prompt = buildPrompt(cityLabel, city.name, cityCoords);
 
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
@@ -365,12 +371,12 @@ export async function POST(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "nvidia/nemotron-3-super-120b-a12b:free",
+      model: "inclusionai/ling-3.0-flash-sante:free",
       messages: [
         { role: "system", content: prompt },
         { role: "user", content: "Generate the city information now." },
       ],
-      max_tokens: 8000,
+      max_tokens: 16000,
     }),
   });
 

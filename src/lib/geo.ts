@@ -48,6 +48,34 @@ export function haversineKm(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+/**
+ * Compute initial compass bearing (in degrees, 0–360) from point 1 to point 2.
+ * 0 = North, 90 = East, 180 = South, 270 = West.
+ */
+export function bearingDeg(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) -
+    Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+}
+
+/** Convert a bearing (0–360) to a compass label like "N", "NE", "E", etc. */
+export function compassLabel(deg: number): string {
+  const labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;
+  const index = Math.round(((deg % 360) + 360) % 360 / 45) % 8;
+  return labels[index];
+}
+
 /** Haversine distance in metres between two lat/lon points. */
 export function haversineM(
   lat1: number,

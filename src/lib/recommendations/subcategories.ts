@@ -5,7 +5,12 @@ export type SubcategoryDef = {
   label: string;
   emoji: string;
   apiValues: string[];
-  special?: "vegetarian" | "fine_dining";
+  /** Parent group ID — UI groups children under the same parent. */
+  group?: string;
+  /** Display label for the group (only needed on the first member). */
+  groupLabel?: string;
+  /** When true, this subcategory is manual-add only (no Geoapify tags, hidden from Discover). */
+  manualOnly?: boolean;
 };
 
 export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
@@ -19,10 +24,8 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
   ],
   FOOD: [
     { id: "restaurant",  label: "Restaurants",    emoji: "🍽",  apiValues: [] },
-    { id: "fine_dining", label: "Fine Dining",     emoji: "🥂",  apiValues: [], special: "fine_dining" },
     { id: "cafe",        label: "Cafés",           emoji: "☕",  apiValues: [] },
     { id: "fast_food",   label: "Fast Food",       emoji: "🥙",  apiValues: [] },
-    { id: "bakery",      label: "Bakeries",        emoji: "🥐",  apiValues: [] },
     { id: "ice_cream",   label: "Ice Cream",       emoji: "🍦",  apiValues: [] },
     { id: "food_markets",label: "Food Markets",    emoji: "🧺",  apiValues: [] },
     { id: "wineries",    label: "Wineries",        emoji: "🍷",  apiValues: ["production.winery"] },
@@ -61,7 +64,7 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
   ],
   GROCERIES: [
     { id: "supermarket",      label: "Supermarket",       emoji: "🛒",  apiValues: [] },
-    { id: "shop_bakery",      label: "Bakery",            emoji: "🥖",  apiValues: [] },
+    { id: "bakery",           label: "Bakery",            emoji: "🥖",  apiValues: [] },
     { id: "butcher",          label: "Butcher",           emoji: "🥩",  apiValues: [] },
     { id: "fishmonger",       label: "Fishmonger",        emoji: "🐟",  apiValues: [] },
     { id: "wine_shops",       label: "Wine & Liquor",     emoji: "🍾",  apiValues: [] },
@@ -70,22 +73,94 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
   ],
   WELLNESS: [
     { id: "spas",            label: "Spas & Saunas",    emoji: "🧖",  apiValues: [] },
-    { id: "yoga_fitness",    label: "Yoga / Fitness",   emoji: "🏃",  apiValues: [] },
+    { id: "fitness_yoga",    label: "Fitness / Yoga",   emoji: "🏃",  apiValues: [] },
   ],
   OUTDOORS: [
-    { id: "hiking",          label: "Hiking",            emoji: "🥾",  apiValues: [] },
-    { id: "cycling",         label: "Cycling",           emoji: "🚴",  apiValues: [] },
-    { id: "kayaking",        label: "Kayaking / Canoeing", emoji: "🛶", apiValues: [] },
-    { id: "climbing",        label: "Climbing",          emoji: "🧗",  apiValues: [] },
-    { id: "surfing",         label: "Surfing / Water Sports", emoji: "🏄", apiValues: [] },
-    { id: "skiing",          label: "Skiing / Snowboarding", emoji: "⛷️", apiValues: [] },
-    { id: "diving",          label: "Diving / Snorkeling", emoji: "🤿", apiValues: [] },
-    { id: "horseback",       label: "Horseback Riding",  emoji: "🐴",  apiValues: [] },
-    { id: "sailing",         label: "Sailing / Boating", emoji: "⛵",  apiValues: [] },
-    { id: "fishing",         label: "Fishing",           emoji: "🎣",  apiValues: [] },
-    { id: "golf",            label: "Golf",              emoji: "⛳",  apiValues: [] },
+    // ── Ungrouped (activity-only, no rental counterpart) ──
+    { id: "hiking",              label: "Hiking Trails",        emoji: "🥾",  apiValues: [], manualOnly: true },
+    { id: "climbing_spots",      label: "Climbing Spots",       emoji: "🧗",  apiValues: [], manualOnly: true },
+    { id: "golf",                label: "Golf Courses",         emoji: "⛳",  apiValues: [], manualOnly: true },
+
+    // ── Cycling ──
+    { id: "cycling_routes",      label: "Cycling Routes",       emoji: "🚴",  apiValues: [], manualOnly: true, group: "cycling", groupLabel: "Cycling" },
+    { id: "bike_rental",         label: "Bike Rental & Shops",  emoji: "🚲",  apiValues: [], group: "cycling" },
+
+    // ── Skiing ──
+    { id: "ski_areas",           label: "Ski Areas",            emoji: "⛷️",  apiValues: [], manualOnly: true, group: "skiing", groupLabel: "Skiing" },
+    { id: "ski_rental",          label: "Ski Rental",           emoji: "🎿",  apiValues: [], group: "skiing" },
+
+    // ── Water Sports ──
+    { id: "surf_spots",          label: "Surf Spots",           emoji: "🏄",  apiValues: [], manualOnly: true, group: "water_sports", groupLabel: "Water Sports" },
+    { id: "dive_spots",          label: "Dive Spots",           emoji: "🤿",  apiValues: [], manualOnly: true, group: "water_sports" },
+    { id: "kayak_spots",         label: "Kayaking Spots",       emoji: "🛶",  apiValues: [], manualOnly: true, group: "water_sports" },
+    { id: "water_sports_rental", label: "Water Sports Rental",  emoji: "🚣",  apiValues: [], group: "water_sports" },
+
+    // ── Sailing ──
+    { id: "sailing_routes",      label: "Sailing Routes",       emoji: "⛵",  apiValues: [], manualOnly: true, group: "sailing", groupLabel: "Sailing" },
+    { id: "marina",              label: "Marinas & Boat Rental",emoji: "🚢",  apiValues: [], group: "sailing" },
+
+    // ── Fishing ──
+    { id: "fishing_spots",       label: "Fishing Spots",        emoji: "🎣",  apiValues: [], manualOnly: true, group: "fishing", groupLabel: "Fishing" },
+    { id: "fishing_services",    label: "Fishing Services",     emoji: "🐟",  apiValues: [], group: "fishing" },
+
+    // ── Horseback ──
+    { id: "horseback_trails",    label: "Horseback Trails",     emoji: "🐴",  apiValues: [], manualOnly: true, group: "horseback", groupLabel: "Horseback Riding" },
+    { id: "horse_riding",        label: "Riding Schools",       emoji: "🏇",  apiValues: [], group: "horseback" },
   ],
 };
+
+// ─── Backward compatibility ──────────────────────────────────────────────────
+
+/** Maps old (pre-split) subcategory IDs to their new equivalents. */
+export const LEGACY_SUBCAT_MAP: Record<string, string> = {
+  cycling:   "bike_rental",
+  kayaking:  "kayak_spots",
+  surfing:   "surf_spots",
+  skiing:    "ski_areas",
+  diving:    "dive_spots",
+  horseback: "horseback_trails",
+  sailing:   "sailing_routes",
+  fishing:   "fishing_spots",
+  climbing:  "climbing_spots",
+};
+
+/** Normalize a subcategory ID — maps legacy IDs to their new form. */
+export function normalizeSubcategory(id: string | null | undefined): string | null {
+  if (!id) return null;
+  return LEGACY_SUBCAT_MAP[id] ?? id;
+}
+
+// ─── Grouping utility ────────────────────────────────────────────────────────
+
+export type SubcategoryGroup =
+  | { type: "single"; def: SubcategoryDef }
+  | { type: "group"; groupId: string; groupLabel: string; members: SubcategoryDef[] };
+
+/** Group a category's subcategories by their `group` field for UI rendering. */
+export function groupSubcategories(category: RecommendableCategory): SubcategoryGroup[] {
+  const defs = SUBCATEGORIES[category];
+  const result: SubcategoryGroup[] = [];
+  const seen = new Set<string>();
+
+  for (const def of defs) {
+    if (!def.group) {
+      result.push({ type: "single", def });
+    } else if (!seen.has(def.group)) {
+      seen.add(def.group);
+      const members = defs.filter((d) => d.group === def.group);
+      const first = members.find((m) => m.groupLabel);
+      result.push({
+        type: "group",
+        groupId: def.group,
+        groupLabel: first?.groupLabel ?? def.group,
+        members,
+      });
+    }
+  }
+  return result;
+}
+
+// ─── Existing utilities ──────────────────────────────────────────────────────
 
 export function resolveApiValues(
   category: RecommendableCategory,
@@ -110,7 +185,9 @@ export function resolveSpecialFlags(
   const defs = SUBCATEGORIES[category];
   const specials = new Set<string>();
   for (const d of defs) {
-    if (selectedIds.includes(d.id) && d.special) specials.add(d.special);
+    if (selectedIds.includes(d.id) && (d as SubcategoryDef & { special?: string }).special) {
+      specials.add((d as SubcategoryDef & { special?: string }).special!);
+    }
   }
   return specials;
 }

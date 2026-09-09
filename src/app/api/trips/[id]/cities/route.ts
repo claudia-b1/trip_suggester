@@ -4,6 +4,7 @@ import { getActiveUserId } from "@/lib/active-user";
 import { verifyTripOwnership } from "@/lib/ownership";
 import { syncFavouritesToCity } from "@/lib/favourite-poi-sync";
 import { createCitySchema, parseBody } from "@/lib/api-schemas";
+import { reverseGeocodeCountry } from "@/lib/reverse-geocode";
 
 export async function GET(
   _req: Request,
@@ -45,7 +46,20 @@ export async function POST(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const { name, nickname, startDate, endDate, country, countryCode, latitude, longitude, timezone, parentCityId, type } = parsed.data;
+  let { name, nickname, startDate, endDate, country, countryCode, latitude, longitude, timezone, parentCityId, type } = parsed.data;
+
+  // ── Resolve country from coordinates when missing ──────────────────────
+  if (!country && latitude != null && longitude != null) {
+    try {
+      const geo = await reverseGeocodeCountry(latitude, longitude);
+      if (geo) {
+        country = geo.country;
+        if (!countryCode && geo.countryCode) countryCode = geo.countryCode;
+      }
+    } catch {
+      // Best-effort — proceed without country
+    }
+  }
 
   // Validate parentCityId if provided
   if (parentCityId != null) {

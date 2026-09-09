@@ -367,7 +367,7 @@ export async function POST(
     }
   }
 
-  const PRESCAN_MULTIPLIER = 4;
+  const PRESCAN_MULTIPLIER = 3;
   const prescanIds = new Set<string>();
   for (const cat of categories) {
     const catPlaces = discoveryByCategory[cat] ?? [];
@@ -434,7 +434,7 @@ export async function POST(
   // Use place.poiCityName (actual municipality from Geoapify) as the query city
   // so nearby places in different towns are matched correctly.
   const googleMetaMap = new Map<string, GoogleMeta | null>();
-  const PRESCAN_BATCH = 12;
+  const PRESCAN_BATCH = 40;
   const allPrescanCandidates = [...regularCandidates, ...nearbyCandidatesFiltered];
 
   console.log(`[prescan] regular=${regularCandidates.length} nearby=${nearbyCandidatesFiltered.length} total=${allPrescanCandidates.length}`);
@@ -604,6 +604,15 @@ export async function POST(
         (c) => haversineKm(c.lat, c.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
       );
       if (nearSeen) { coordDupSet.add(item.place.placeId); continue; }
+      // Within-call coord dedup: catch duplicates selected in this same call
+      // (seenCoords is only updated AFTER selectTopN returns, so items selected
+      // earlier in this loop are invisible to the sameCatCoords check above).
+      // E.g. "Dani Noc" and "Dan i Noč" — same place, different Geoapify entries,
+      // different names after tokenisation, but only 11m apart.
+      const nearSelected = selectedInfo.some(
+        (s) => haversineKm(s.lat, s.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
+      );
+      if (nearSelected) { coordDupSet.add(item.place.placeId); continue; }
       // Fuzzy name dedup: catch semantically identical places with different names
       // (e.g. "Louvre Museum" vs "Musée du Louvre") within 300 m
       const fuzzyDup = selectedInfo.some((s) => {
@@ -847,7 +856,7 @@ export async function POST(
 
   // ── 4. ENRICHMENT — Wikidata + Google photo for top-N only (cached) ────────────
   // Pass pre-scanned GoogleMeta so enrichPlace skips the Text Search API call
-  const BATCH_SIZE = 8;
+  const BATCH_SIZE = 25;
   const enrichedResults: PromiseSettledResult<import("@/lib/recommendations/_shared").RecommendedPoi>[] = [];
   for (let i = 0; i < topPlaces.length; i += BATCH_SIZE) {
     const batch = topPlaces.slice(i, i + BATCH_SIZE);

@@ -7,17 +7,25 @@ import {
   isCategory,
   type Category,
 } from "@/lib/categories";
-import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
+import { SUBCATEGORIES, groupSubcategories, type SubcategoryGroup } from "@/lib/recommendations/subcategories";
+import type { RecommendableCategory } from "@/lib/recommendations";
 import { ACCOMMODATION_SUBCATEGORIES, getExtraFieldDefs, PROXIMITY_OPTIONS, type ExtraFieldDef } from "@/lib/favourite-fields";
 import { useFavourites, type FavouriteItemDTO } from "./favourites-provider";
 import { useToast } from "@/components/ui/toast";
 import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
+import { AttachmentsSection } from "@/components/ui/attachments-section";
 
 /* ── Subcategory lookup helper ─────────────────────────────────────────── */
 
 function getSubcatsForCategory(cat: string): { id: string; label: string; emoji: string }[] {
   if (cat === "ACCOMMODATION") return ACCOMMODATION_SUBCATEGORIES;
   return (SUBCATEGORIES as Record<string, { id: string; label: string; emoji: string }[]>)[cat] ?? [];
+}
+
+function getSubcatGroups(cat: string): SubcategoryGroup[] | null {
+  if (cat === "ACCOMMODATION") return null;
+  if (cat in SUBCATEGORIES) return groupSubcategories(cat as RecommendableCategory);
+  return null;
 }
 
 /* ── Autocomplete suggestion type ──────────────────────────────────────── */
@@ -604,6 +612,7 @@ export function AddToFavouritesModal() {
 
   const availableLists = flattenLists();
   const subcats = getSubcatsForCategory(category);
+  const subcatGroups = getSubcatGroups(category);
   const extraFieldDefs = getExtraFieldDefs(category, subcategory || null);
 
   // ── Location helpers ─────────────────────────────────────────────────────
@@ -973,7 +982,20 @@ export function AddToFavouritesModal() {
               <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">Subcategory</label>
               <select value={subcategory} onChange={(e) => { setSubcategory(e.target.value); setExtraFields({}); }} className={inputCls}>
                 <option value="">— None —</option>
-                {subcats.map((s) => (
+                {subcatGroups
+                  ? subcatGroups.map((g) => {
+                      if (g.type === "single") {
+                        return <option key={g.def.id} value={g.def.id}>{g.def.emoji} {g.def.label}</option>;
+                      }
+                      return (
+                        <optgroup key={g.groupId} label={g.groupLabel}>
+                          {g.members.map((m) => (
+                            <option key={m.id} value={m.id}>{m.emoji} {m.label}</option>
+                          ))}
+                        </optgroup>
+                      );
+                    })
+                  : subcats.map((s) => (
                   <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>
                 ))}
               </select>
@@ -1224,6 +1246,16 @@ export function AddToFavouritesModal() {
           {/* Extra fields (dynamic based on category/subcategory) */}
           {extraFieldDefs.length > 0 && (
             <ExtraFieldsEditor fields={extraFieldDefs} values={extraFields} onChange={setExtraFields} />
+          )}
+
+          {/* Attachments (edit mode only — item must exist for FK) */}
+          {isEditMode && editModalItem && (
+            <AttachmentsSection
+              entityType="favourite"
+              entityId={editModalItem.id}
+              attachments={editModalItem.attachments ?? []}
+              onChanged={() => refreshLists()}
+            />
           )}
 
           {/* List picker */}

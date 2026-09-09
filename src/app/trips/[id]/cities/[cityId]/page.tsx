@@ -18,6 +18,7 @@ import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 import { ActivityRecommendations } from "./activity-recommendations";
 import { SubcityTabs } from "./subcity-tabs";
 import { syncFavouritesToCity } from "@/lib/favourite-poi-sync";
+import { reverseGeocodeCountry } from "@/lib/reverse-geocode";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { haversineKm } from "@/lib/geo";
 import { DEFAULT_FAV_RADIUS_KM } from "@/lib/constants";
@@ -93,7 +94,15 @@ export default async function CityDetailPage({
     where: { id: cityIdNum },
     include: {
       trip: true,
-      pois: { orderBy: { createdAt: "asc" } },
+      pois: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          attachments: {
+            select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
       parentCity: { select: { id: true, name: true, nickname: true } },
       subcities: {
         orderBy: { order: "asc" },
@@ -102,6 +111,28 @@ export default async function CityDetailPage({
     },
   });
   if (!city || city.tripId !== tripId || city.trip.userId !== userId) notFound();
+
+  // ── Backfill country from coordinates for existing cities with null country ──
+  if (!city.country && city.latitude != null && city.longitude != null) {
+    try {
+      const geo = await reverseGeocodeCountry(city.latitude, city.longitude);
+      if (geo) {
+        await prisma.city.update({
+          where: { id: city.id },
+          data: {
+            country: geo.country,
+            ...(geo.countryCode && !city.countryCode && { countryCode: geo.countryCode }),
+          },
+        });
+        city.country = geo.country;
+        if (geo.countryCode && !city.countryCode) {
+          (city as typeof city & { countryCode: string }).countryCode = geo.countryCode;
+        }
+      }
+    } catch {
+      // Best-effort — don't block page load
+    }
+  }
 
   // Sibling cities for stepper — always top-level destinations only, sorted by arrival date
   const siblingCities = await prisma.city.findMany({
@@ -182,8 +213,14 @@ export default async function CityDetailPage({
     const freshPois = await prisma.poi.findMany({
       where: { cityId: city.id },
       orderBy: { createdAt: "asc" },
+      include: {
+        attachments: {
+          select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
-    city.pois = freshPois;
+    city.pois = freshPois as typeof city.pois;
   }
 
   let dayPlansRaw = await prisma.dayPlan.findMany({
@@ -347,6 +384,13 @@ export default async function CityDetailPage({
     hasOriginalData: !!p.originalData,
     extraFields: p.extraFields as Record<string, unknown> | null,
     scoreBreakdown: p.scoreBreakdown ? (() => { try { return JSON.parse(p.scoreBreakdown!) } catch { return null } })() : null,
+    attachments: (p.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      createdAt: a.createdAt.toISOString(),
+    })),
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -636,8 +680,10 @@ export default async function CityDetailPage({
               tripEndDate={city.trip.endDate.toISOString()}
               cityStartDate={city.startDate.toISOString()}
               cityEndDate={city.endDate.toISOString()}
+              cityLatitude={city.latitude}
+              cityLongitude={city.longitude}
               initialData={cachedActivities}
-              pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl }))}
+              pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite }))}
               parentCityId={city.parentCityId}
             />
           </ErrorBoundary>

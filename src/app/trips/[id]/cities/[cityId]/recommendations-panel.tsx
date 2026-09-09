@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
@@ -85,11 +85,15 @@ export function RecommendationsPanel({
   const [counts, setCounts] = useState<Record<RecommendableCategory, number>>(
     () => ({ ...DEFAULT_COUNTS }),
   );
-  // Which subcategory IDs are selected per category (all pre-selected so toggling a category on uses all its subcategories)
+  // Which subcategory IDs are selected per category (all discoverable ones pre-selected;
+  // manualOnly subcategories are excluded — they have no Geoapify tags)
   const [subcats, setSubcats] = useState<Record<RecommendableCategory, Set<string>>>(
     () =>
       Object.fromEntries(
-        RECOMMENDABLE_CATEGORIES.map((c) => [c, new Set(SUBCATEGORIES[c].map((s) => s.id))]),
+        RECOMMENDABLE_CATEGORIES.map((c) => [
+          c,
+          new Set(SUBCATEGORIES[c].filter((s) => !s.manualOnly).map((s) => s.id)),
+        ]),
       ) as Record<RecommendableCategory, Set<string>>,
   );
   // Which category rows have their subcategory panel expanded
@@ -110,7 +114,98 @@ export function RecommendationsPanel({
   // overwrite confirmation: null = not asked, "pending" = waiting for choice
   const [overwriteMode, setOverwriteMode] = useState<"pending" | null>(null);
 
+  // Abort controller for cancelling in-flight discover requests
+  const abortRef = useRef<AbortController | null>(null);
+
+  function cancelDiscover() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setGenerating(false);
+    setProgressStep(null);
+    toast("Discovery cancelled");
+  }
+
+  // ── Discover profiles ───────────────────────────────────────────────────
+  type DiscoverProfileDTO = {
+    id: number;
+    name: string;
+    categories: string[];
+    counts: Record<string, number>;
+    subcats: Record<string, string[]>;
+    isDefault: boolean;
+  };
+
+  const [profiles, setProfiles] = useState<DiscoverProfileDTO[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
+  const profilesFetched = useRef(false);
+
+  const applyProfile = useCallback((p: DiscoverProfileDTO) => {
+    // Set selected categories
+    setSelected(
+      new Set(
+        p.categories.filter((c): c is RecommendableCategory =>
+          RECOMMENDABLE_CATEGORIES.includes(c as RecommendableCategory),
+        ),
+      ),
+    );
+
+    // Merge counts with defaults
+    const newCounts = { ...DEFAULT_COUNTS };
+    for (const [cat, count] of Object.entries(p.counts)) {
+      if (cat in newCounts) newCounts[cat as RecommendableCategory] = count;
+    }
+    setCounts(newCounts);
+
+    // Apply subcategory selections (filter out stale IDs)
+    const newSubcats = Object.fromEntries(
+      RECOMMENDABLE_CATEGORIES.map((c) => {
+        if (p.subcats[c]) {
+          const validIds = p.subcats[c].filter((id) =>
+            SUBCATEGORIES[c].some((s) => s.id === id),
+          );
+          return [c, new Set(validIds)];
+        }
+        // Not in profile — use all discoverable
+        return [
+          c,
+          new Set(SUBCATEGORIES[c].filter((s) => !s.manualOnly).map((s) => s.id)),
+        ];
+      }),
+    ) as Record<RecommendableCategory, Set<string>>;
+    setSubcats(newSubcats);
+    setSelectedProfileId(p.id);
+  }, []);
+
+  // Fetch profiles when Discover opens for the first time
+  useEffect(() => {
+    if (!discoverOpen || profilesFetched.current) return;
+    profilesFetched.current = true;
+
+    fetch("/api/discover-profiles")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data: DiscoverProfileDTO[]) => {
+        setProfiles(data);
+        // Auto-load default profile (only if no categories are manually selected yet)
+        const defaultProfile = data.find((p) => p.isDefault);
+        if (defaultProfile && selected.size === 0) {
+          applyProfile(defaultProfile);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discoverOpen]);
+
+  function handleProfileChange(profileId: string) {
+    if (!profileId) {
+      setSelectedProfileId(null);
+      return;
+    }
+    const p = profiles.find((pr) => pr.id === Number(profileId));
+    if (p) applyProfile(p);
+  }
+
   function toggleCat(cat: RecommendableCategory) {
+    setSelectedProfileId(null); // manual change diverges from profile
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat);
@@ -129,6 +224,7 @@ export function RecommendationsPanel({
   }
 
   function toggleSubcat(cat: RecommendableCategory, id: string) {
+    setSelectedProfileId(null); // manual change diverges from profile
     setSubcats((prev) => {
       const current = new Set(prev[cat]);
       if (current.has(id)) current.delete(id);
@@ -153,69 +249,92 @@ export function RecommendationsPanel({
   async function runGenerate(overwrite: boolean) {
     setOverwriteMode(null);
     if (selected.size === 0 || generating) return;
+
+    // Create a new AbortController for this request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setGenerating(true);
     setError(null);
     setResult(null);
     setProgressStep("🔍 Discovering places…");
 
-    // Build subcategories map: only include when a subset is selected (some deselected)
+    // Build subcategories map: only include discoverable subcategories (not manualOnly),
+    // and only when a subset is selected (some deselected)
     const subcategoriesPayload: Record<string, string[]> = {};
     for (const cat of selected) {
-      const allIds = SUBCATEGORIES[cat].map((s) => s.id);
-      const selectedIds = Array.from(subcats[cat]);
-      // Only send to API when fewer than all subcategories are selected
-      if (selectedIds.length < allIds.length) {
+      const discoverableIds = SUBCATEGORIES[cat].filter((s) => !s.manualOnly).map((s) => s.id);
+      const selectedIds = Array.from(subcats[cat]).filter((id) => discoverableIds.includes(id));
+      // Only send to API when fewer than all discoverable subcategories are selected
+      if (selectedIds.length < discoverableIds.length) {
         subcategoriesPayload[cat] = selectedIds;
       }
     }
 
     setProgressStep("📊 Scoring & ranking…");
 
-    const res = await fetch(`/api/cities/${cityId}/recommendations`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        categories: Array.from(selected),
-        counts: Object.fromEntries(
-          Array.from(selected).map((c) => [c, counts[c]]),
-        ),
-        subcategories: subcategoriesPayload,
-        cuisineFilter: cuisineFilter.trim() || undefined,
-        preferences: Array.from(preferences),
-        nearbyTrips: false,
-        overwrite,
-        radiusKm,
-        nearbyEnabled,
-        nearbyRadiusKm: nearbyEnabled ? nearbyRadiusKm : undefined,
-      }),
-    });
+    try {
+      const res = await fetch(`/api/cities/${cityId}/recommendations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          categories: Array.from(selected),
+          counts: Object.fromEntries(
+            Array.from(selected).map((c) => [c, counts[c]]),
+          ),
+          subcategories: subcategoriesPayload,
+          cuisineFilter: cuisineFilter.trim() || undefined,
+          preferences: Array.from(preferences),
+          nearbyTrips: false,
+          overwrite,
+          radiusKm,
+          nearbyEnabled,
+          nearbyRadiusKm: nearbyEnabled ? nearbyRadiusKm : undefined,
+        }),
+      });
 
-    setProgressStep("✨ Enriching results…");
+      setProgressStep("✨ Enriching results…");
 
-    setGenerating(false);
-    setProgressStep(null);
-    if (!res.ok) {
-      const body: { error?: string } = await res.json().catch(() => ({}));
-      const msg = body.error ?? "Failed to run Discover";
+      setGenerating(false);
+      setProgressStep(null);
+      abortRef.current = null;
+
+      if (!res.ok) {
+        const body: { error?: string } = await res.json().catch(() => ({}));
+        const msg = body.error ?? "Failed to run Discover";
+        setError(msg);
+        toast(msg, { variant: "error" });
+        return;
+      }
+      const body: { created: number; failures: Failure[] } = await res.json();
+      setResult(body);
+      if (nearbyEnabled) onNearbyRan?.(nearbyRadiusKm);
+      // Persist the discover radius to the database (best-effort)
+      fetch(`/api/trips/${tripId}/cities/${cityId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ discoverRadiusKm: radiusKm }),
+      }).catch(() => {/* best-effort */});
+      toast(
+        `Added ${body.created} POI${body.created === 1 ? "" : "s"}${
+          body.failures.length > 0 ? ` · ${body.failures.length} failed` : ""
+        }`,
+      );
+      router.refresh();
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // Cancelled by user — state already cleaned up in cancelDiscover()
+        return;
+      }
+      setGenerating(false);
+      setProgressStep(null);
+      abortRef.current = null;
+      const msg = err instanceof Error ? err.message : "Failed to run Discover";
       setError(msg);
       toast(msg, { variant: "error" });
-      return;
     }
-    const body: { created: number; failures: Failure[] } = await res.json();
-    setResult(body);
-    if (nearbyEnabled) onNearbyRan?.(nearbyRadiusKm);
-    // Persist the discover radius to the database (best-effort)
-    fetch(`/api/trips/${tripId}/cities/${cityId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ discoverRadiusKm: radiusKm }),
-    }).catch(() => {/* best-effort */});
-    toast(
-      `Added ${body.created} POI${body.created === 1 ? "" : "s"}${
-        body.failures.length > 0 ? ` · ${body.failures.length} failed` : ""
-      }`,
-    );
-    router.refresh();
   }
 
   return (
@@ -250,6 +369,28 @@ export function RecommendationsPanel({
         </button>
       </CardHeader>
       {discoverOpen && <CardContent className="space-y-4">
+        {/* Profile selector */}
+        {profiles.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+              Profile
+            </p>
+            <select
+              value={selectedProfileId ?? ""}
+              onChange={(e) => handleProfileChange(e.target.value)}
+              disabled={generating}
+              className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-sm disabled:opacity-40"
+            >
+              <option value="">— Custom —</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.isDefault ? " ★" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         {/* Categories — compact pill row */}
         <div className="space-y-1.5">
           <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
@@ -338,7 +479,8 @@ export function RecommendationsPanel({
                 const active = selected.has(cat);
                 if (!active) return null;
                 const styles = CATEGORY_STYLES[cat];
-                const catSubcats = SUBCATEGORIES[cat];
+                // Filter out manualOnly subcategories — they have no Geoapify tags
+                const catSubcats = SUBCATEGORIES[cat].filter((s) => !s.manualOnly);
                 const selectedSubs = subcats[cat];
 
                 return (
@@ -354,12 +496,13 @@ export function RecommendationsPanel({
                         min={1}
                         max={100}
                         value={counts[cat]}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          setSelectedProfileId(null);
                           setCounts((prev) => ({
                             ...prev,
                             [cat]: Math.max(1, Math.min(100, Number(e.target.value) || 1)),
-                          }))
-                        }
+                          }));
+                        }}
                         disabled={generating}
                         className="w-14 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs disabled:opacity-40"
                       />
@@ -493,15 +636,25 @@ export function RecommendationsPanel({
             </div>
           )}
 
-          <Button
-            type="button"
-            onClick={onGenerate}
-            disabled={generating || selected.size === 0}
-            className="w-1/3 min-w-[180px]"
-          >
-            {generating && <span className="spinner mr-1.5" />}
-            {generating ? "Discovering…" : `🔍 Discover places`}
-          </Button>
+          {generating ? (
+            <Button
+              type="button"
+              onClick={cancelDiscover}
+              variant="outline"
+              className="w-1/3 min-w-[180px] border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+            >
+              ✕ Cancel discovery
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              onClick={onGenerate}
+              disabled={selected.size === 0}
+              className="w-1/3 min-w-[180px]"
+            >
+              🔍 Discover places
+            </Button>
+          )}
 
           {/* Progress steps */}
           {generating && progressStep && (

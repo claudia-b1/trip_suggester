@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 
 const MARKER_COLORS = ["#4f46e5", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
@@ -26,10 +27,12 @@ type TimelineCity = {
 };
 
 export function TripTimeline({
+  tripId,
   cities,
   tripStartDate,
   tripEndDate,
 }: {
+  tripId: number;
   cities: TimelineCity[];
   tripStartDate: string;
   tripEndDate: string;
@@ -115,14 +118,18 @@ export function TripTimeline({
                 {/* Parent row */}
                 <div className="flex items-center gap-2">
                   {/* City label */}
-                  <div className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 sm:gap-1.5 min-w-0">
+                  <Link
+                    href={`/trips/${tripId}/cities/${city.id}`}
+                    className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 sm:gap-1.5 min-w-0 hover:opacity-70 transition-opacity"
+                    title={city.name}
+                  >
                     {city.type === "stop" ? (
                       <span className="h-2.5 w-2.5 shrink-0 text-[10px] leading-none">{"🚗"}</span>
                     ) : (
                       <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
                     )}
                     <span className={`text-[10px] sm:text-xs truncate ${city.type === "stop" ? "text-[hsl(var(--muted-foreground))]" : "font-medium"}`}>{city.name}</span>
-                  </div>
+                  </Link>
                   {/* Bar track */}
                   <div className="relative h-7 flex-1 rounded-md bg-[hsl(var(--muted))]/50">
                     {/* Vertical grid lines */}
@@ -164,12 +171,16 @@ export function TripTimeline({
                       return (
                         <div key={sub.id} className="flex items-center gap-2">
                           {/* Subcity label — indented with connecting branch */}
-                          <div className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 min-w-0 pl-3 sm:pl-4">
+                          <Link
+                            href={`/trips/${tripId}/cities/${sub.id}`}
+                            className="w-[64px] sm:w-[120px] shrink-0 flex items-center gap-1 min-w-0 pl-3 sm:pl-4 hover:opacity-70 transition-opacity"
+                            title={sub.name}
+                          >
                             <span className="text-[10px] select-none" style={{ color, opacity: 0.5 }}>
                               {isLast ? "└" : "├"}
                             </span>
                             <span className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">{sub.name}</span>
-                          </div>
+                          </Link>
                           {/* Bar track — thinner */}
                           <div className="relative h-5 flex-1 rounded-md">
                             {/* Vertical grid lines */}

@@ -16,14 +16,14 @@ const GEOAPIFY_BASE = "https://api.geoapify.com/v2/places";
 
 export const CATEGORY_CATEGORIES: Record<RecommendableCategory, string> = {
   CULTURE:       "entertainment.museum,entertainment.culture,tourism.sights.memorial,tourism.sights.castle,tourism.sights.fort,tourism.sights.ruines,tourism.sights.archaeological_site,tourism.sights.place_of_worship,tourism.sights.tower,tourism.sights.bridge,tourism.sights.monastery,tourism.sights.city_gate,tourism.sights.windmill,tourism.sights.lighthouse,tourism.attraction.fountain,heritage,building.historic,tourism.attraction",
-  FOOD:          "catering.restaurant,catering.cafe,catering.fast_food,catering.ice_cream,catering.food_court,commercial.food_and_drink.bakery,commercial.food_and_drink.ice_cream,production.winery,production.brewery,production.distillery,catering.taproom",
+  FOOD:          "catering.restaurant,catering.cafe,catering.fast_food,catering.ice_cream,catering.food_court,commercial.food_and_drink.ice_cream,production.winery,production.brewery,production.distillery,catering.taproom",
   NATURE:        "leisure.park,natural.forest,natural.water,natural.mountain,national_park,beach,leisure.park.garden,leisure.park.nature_reserve,natural.protected_area,natural.water.hot_spring,natural.water.spring,natural.water.whitewater,waterway.whitewater,tourism.attraction.viewpoint,natural.mountain.cave_entrance,natural.mountain.volcano,natural.mountain.glacier,natural.water.reef,natural.water.river_system,natural.water.bay",
   ENTERTAINMENT: "entertainment.theme_park,entertainment.zoo,entertainment.aquarium,entertainment.water_park,entertainment.activity_park,entertainment.planetarium,entertainment.bowling_alley,entertainment.miniature_golf,entertainment.escape_game,entertainment.cinema",
-  NIGHTLIFE:     "catering.bar,catering.pub,catering.biergarten,adult.nightclub,adult.casino,entertainment.culture.theatre",
+  NIGHTLIFE:     "catering.bar,catering.pub,catering.biergarten,adult.nightclub,adult.casino",
   SHOPPING:      "commercial.shopping_mall,commercial.marketplace,commercial.clothing,commercial.gift_and_souvenir,commercial.department_store,commercial.books,commercial.antiques,commercial.art",
   GROCERIES:     "commercial.supermarket,commercial.food_and_drink.bakery,commercial.food_and_drink.butcher,commercial.food_and_drink.seafood,commercial.food_and_drink,commercial.food_and_drink.deli,commercial.food_and_drink.confectionery,commercial.food_and_drink.chocolate,commercial.food_and_drink.coffee_and_tea,commercial.food_and_drink.farm,commercial.food_and_drink.fruit_and_vegetable,commercial.food_and_drink.health_food,commercial.food_and_drink.organic",
   WELLNESS:      "leisure.spa,leisure.spa.public_bath,leisure.spa.sauna,sport.fitness.fitness_centre,service.beauty.spa",
-  OUTDOORS:      "entertainment.activity_park.climbing,sport.dive_centre,sport.horse_riding,sport.fishing,ski,rental.ski,maritime.marina,rental.bicycle,commercial.outdoor_and_sport.water_sports,leisure.park.nature_reserve,natural.mountain,beach,tourism.attraction.viewpoint,sport.golf_course",
+  OUTDOORS:      "sport.dive_centre,sport.horse_riding,sport.fishing,rental.ski,maritime.marina,rental.bicycle,commercial.outdoor_and_sport.water_sports,commercial.outdoor_and_sport.bicycle",
 };
 
 export const SUBCAT_CATEGORIES: Record<string, string> = {
@@ -36,15 +36,12 @@ export const SUBCAT_CATEGORIES: Record<string, string> = {
   theatre:           "entertainment.culture.theatre",
   // FOOD
   restaurant:        "catering.restaurant",
-  fine_dining:       "catering.restaurant",
   cafe:              "catering.cafe",
   fast_food:         "catering.fast_food",
-  bakery:            "commercial.food_and_drink.bakery",
   ice_cream:         "catering.ice_cream,catering.cafe.ice_cream,commercial.food_and_drink.ice_cream",
   food_markets:      "commercial.marketplace,catering.food_court",
   wineries:          "production.winery",
   breweries_distilleries: "production.brewery,production.distillery",
-  wine_shops:        "commercial.food_and_drink.drinks",
   // NATURE
   parks:             "leisure.park,leisure.park.garden",
   beaches:           "beach",
@@ -64,36 +61,31 @@ export const SUBCAT_CATEGORIES: Record<string, string> = {
   // NIGHTLIFE
   bars:              "catering.bar,catering.pub,catering.biergarten",
   clubs:             "adult.nightclub",
-  comedy_shows:      "entertainment.culture.theatre",
   casino:            "adult.casino",
   // SHOPPING
   shopping_malls:    "commercial.shopping_mall,commercial.department_store",
   local_markets:     "commercial.marketplace",
   boutiques:         "commercial.clothing",
   souvenirs:         "commercial.gift_and_souvenir",
-  books_antiques:    "commercial.books,commercial.antiques,commercial.art",
+  books_antiques:    "commercial.books,commercial.antiques",
   // GROCERIES
   supermarket:       "commercial.supermarket",
-  shop_bakery:       "commercial.food_and_drink.bakery",
+  bakery:            "commercial.food_and_drink.bakery",
   butcher:           "commercial.food_and_drink.butcher",
   fishmonger:        "commercial.food_and_drink.seafood",
   deli_specialty:    "commercial.food_and_drink.deli,commercial.food_and_drink.confectionery,commercial.food_and_drink.chocolate,commercial.food_and_drink.coffee_and_tea",
   organic_farm:      "commercial.food_and_drink.farm,commercial.food_and_drink.fruit_and_vegetable,commercial.food_and_drink.health_food,commercial.food_and_drink.organic",
-  // WELLNESS
+  wine_shops:        "commercial.food_and_drink.drinks",
+    // WELLNESS
   spas:              "leisure.spa,leisure.spa.public_bath,leisure.spa.sauna,service.beauty.spa",
-  yoga_fitness:      "sport.fitness.fitness_centre",
-  // OUTDOORS
-  hiking:            "leisure.park.nature_reserve,natural.mountain,tourism.attraction.viewpoint",
-  cycling:           "rental.bicycle,commercial.outdoor_and_sport.bicycle",
-  kayaking:          "commercial.outdoor_and_sport.water_sports",
-  climbing:          "entertainment.activity_park.climbing",
-  surfing:           "beach,commercial.outdoor_and_sport.water_sports",
-  skiing:            "ski,rental.ski",
-  diving:            "sport.dive_centre",
-  horseback:         "sport.horse_riding",
-  sailing:           "maritime.marina",
-  fishing:           "sport.fishing",
-  golf:              "sport.golf_course",
+  fitness_yoga:      "sport.fitness.fitness_centre",
+  // OUTDOORS — rental / shop / service only (activity subcategories are manual-add)
+  bike_rental:          "rental.bicycle,commercial.outdoor_and_sport.bicycle",
+  ski_rental:           "rental.ski",
+  water_sports_rental:  "commercial.outdoor_and_sport.water_sports,sport.dive_centre",
+  marina:               "maritime.marina",
+  fishing_services:     "sport.fishing",
+  horse_riding:         "sport.horse_riding",
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { CATEGORIES } from "@/lib/categories";
+import { RECOMMENDABLE_CATEGORIES } from "@/lib/recommendations";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -90,3 +91,33 @@ export const batchAssignSchema = z.object({
   dayPlanIds: z.array(z.number().int()).min(1, "At least one dayPlanId required"),
   timeSlot: z.string().min(1, "timeSlot is required"),
 });
+
+// ─── Attachment schemas ─────────────────────────────────────────────────────
+
+export const attachmentUploadSchema = z.object({
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(100),
+  data: z.string().min(1),
+});
+
+// ─── Discover profile schemas ───────────────────────────────────────────────
+
+const recommendableCategoryEnum = z.enum(
+  [...RECOMMENDABLE_CATEGORIES] as [string, ...string[]],
+);
+
+export const createDiscoverProfileSchema = z.object({
+  name: z.string().min(1, "Name is required").max(200),
+  categories: z.array(recommendableCategoryEnum).min(1, "At least one category"),
+  counts: z.record(z.string(), z.number().int().min(1).max(100)),
+  subcats: z.record(z.string(), z.array(z.string())),
+  isDefault: z.boolean().optional(),
+});
+
+export const updateDiscoverProfileSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  categories: z.array(recommendableCategoryEnum).min(1).optional(),
+  counts: z.record(z.string(), z.number().int().min(1).max(100)).optional(),
+  subcats: z.record(z.string(), z.array(z.string())).optional(),
+  isDefault: z.boolean().optional(),
+}).refine((d) => Object.keys(d).length > 0, { message: "No fields to update" });

@@ -7,5 +7,8 @@ if (process.env.NODE_ENV !== "production") {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["react-map-gl", "mapbox-gl"],
+  experimental: {
+    serverActions: { bodySizeLimit: "8mb" },
+  },
 };
 module.exports = nextConfig;

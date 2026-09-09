@@ -1,6 +1,6 @@
 "use client";
 
-import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
+import { SUBCATEGORIES, groupSubcategories, normalizeSubcategory } from "@/lib/recommendations/subcategories";
 import { ACCOMMODATION_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, isCategory, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
-import { PoiMap, type DayPlanOption } from "./poi-map";
+import { PoiMap, type DayPlanOption, type RecommendationMarker } from "./poi-map";
 import { DailyPlan, type DayPlanDTO, type SubcityDayPlanDTO } from "./daily-plan";
 import { TimelineSidebar } from "./timeline-sidebar";
 import { useToast } from "@/components/ui/toast";
@@ -64,6 +64,15 @@ export type PoiDTO = {
   hasOriginalData?: boolean;
   extraFields?: Record<string, unknown> | null;
   scoreBreakdown?: ScoreBreakdownDTO | null;
+  attachments?: AttachmentDTO[];
+};
+
+export type AttachmentDTO = {
+  id: number;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 };
 
 import {
@@ -369,6 +378,43 @@ export function PoisSection({
     return () => window.removeEventListener("set-pois-view", handleSetView);
   }, []);
 
+  // ── Recommendation preview markers from ActivityRecommendations ──
+  const [previewMarkers, setPreviewMarkers] = useState<RecommendationMarker[]>([]);
+  const [highlightedPreviewId, setHighlightedPreviewId] = useState<string | null>(null);
+  useEffect(() => {
+    // Read markers that may have been emitted before this listener registered
+    // (ActivityRecommendations mounts before PoisSection, so the initial
+    // CustomEvent can fire before this listener exists)
+    const existing = (window as any).__recommendationMarkers;
+    if (Array.isArray(existing) && existing.length > 0) {
+      setPreviewMarkers(existing);
+    }
+    function handleMarkers(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      setPreviewMarkers(detail?.items ?? []);
+    }
+    window.addEventListener("recommendation-markers", handleMarkers);
+    return () => window.removeEventListener("recommendation-markers", handleMarkers);
+  }, []);
+  // Relay highlight events from recommendation cards to the map
+  useEffect(() => {
+    function handleHighlight(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.id) return;
+      if (detail.action === "hover") setHighlightedPreviewId(detail.id);
+      else if (detail.action === "unhover") setHighlightedPreviewId((prev) => prev === detail.id ? null : prev);
+      else if (detail.action === "click") {
+        // Clear then re-set so the flyTo effect fires even for the same marker
+        setHighlightedPreviewId(null);
+        requestAnimationFrame(() => setHighlightedPreviewId(detail.id));
+        setView("map");
+        document.getElementById("pois-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+    window.addEventListener("highlight-recommendation", handleHighlight);
+    return () => window.removeEventListener("highlight-recommendation", handleHighlight);
+  }, []);
+
   // Detect POI drag start/end globally so the timeline sidebar can appear as drop target
   useEffect(() => {
     function handleDragOver(e: DragEvent) {
@@ -644,6 +690,7 @@ export function PoisSection({
   // Empty = show all (no filter); non-empty = show only those subcategories.
   const [includedSubcategories, setIncludedSubcategories] = useState<Set<string>>(() => new Set());
   const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
+  const [showUnescoOnly, setShowUnescoOnly] = useState(false);
 
   function toggleSubcategory(id: string) {
     setIncludedSubcategories((prev) => {
@@ -659,15 +706,17 @@ export function PoisSection({
     setStatusFilters(new Set());
     setIncludedSubcategories(new Set());
     setShowFavouritesOnly(false);
+    setShowUnescoOnly(false);
   }
   const allCategoriesSelected = activeCategories.size === CATEGORIES.length;
-  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || includedSubcategories.size > 0 || showFavouritesOnly;
+  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || includedSubcategories.size > 0 || showFavouritesOnly || showUnescoOnly;
   const searchLower = search.trim().toLowerCase();
   const filteredPois = pois.filter((p) => {
     if (!activeCategories.has(p.category)) return false;
     if (searchLower !== "" && !p.name.toLowerCase().includes(searchLower)) return false;
-    if (includedSubcategories.size > 0 && !includedSubcategories.has(p.subcategory ?? "__none__")) return false;
+    if (includedSubcategories.size > 0 && !includedSubcategories.has(normalizeSubcategory(p.subcategory) ?? "__none__")) return false;
     if (showFavouritesOnly && !isPoiFavourited(p)) return false;
+    if (showUnescoOnly && !p.isUnescoSite) return false;
     // Every active status filter must be satisfied (AND logic across filters)
     for (const f of statusFilters) {
       if (f === "assigned"            && !assignedPoiIds.has(p.id))  return false;
@@ -864,8 +913,7 @@ export function PoisSection({
     router.refresh();
   }
 
-  const hasActivities = liveDayPlans.some((dp) => dp.activities.length > 0);
-  const showTimeline = hasActivities || (poiDragActive && liveDayPlans.length > 0);
+  const showTimeline = liveDayPlans.length > 0;
 
   // Compute favourited POI IDs for DailyPlan
   const favouritedPoiIds = useMemo(() => {
@@ -954,7 +1002,7 @@ export function PoisSection({
 
   return (
     <div className="space-y-2">
-    <div className={showTimeline ? "grid gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
+    <div className={showTimeline ? "grid gap-4 lg:gap-6 grid-cols-[1fr_auto] lg:grid-cols-[19fr_4fr]" : ""}>
       <div className="min-w-0 space-y-2">
       <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -1053,6 +1101,20 @@ export function PoisSection({
               >
                 ♥ Favourites
               </button>
+              {pois.some((p) => p.isUnescoSite) && (
+                <button
+                  type="button"
+                  onClick={() => setShowUnescoOnly((v) => !v)}
+                  aria-pressed={showUnescoOnly}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                    showUnescoOnly
+                      ? "border-indigo-400 bg-indigo-100 text-indigo-700 ring-2 ring-offset-1 ring-indigo-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-500 dark:ring-indigo-500"
+                      : "border-indigo-200 bg-indigo-50 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-500 dark:border-indigo-800 dark:hover:bg-indigo-900/40"
+                  }`}
+                >
+                  {"🏛"} UNESCO ({pois.filter((p) => p.isUnescoSite).length})
+                </button>
+              )}
               {CATEGORIES.map((c) => {
                 const active = activeCategories.has(c);
                 const count = pois.filter((p) => p.category === c).length;
@@ -1077,19 +1139,39 @@ export function PoisSection({
             </div>
             {/* Subcategory chips — only shown when there are subcategories to show */}
             {(() => {
-              // Collect subcategory defs for active categories that have POIs
-              const subDefs: { id: string; label: string; emoji: string; cat: Category }[] = [];
+              // Collect subcategory defs for active categories that have POIs,
+              // normalizing legacy subcategory IDs to their new equivalents.
+              const subDefs: { id: string; label: string; emoji: string; cat: Category; group?: string; groupLabel?: string }[] = [];
               for (const cat of CATEGORIES) {
                 if (!activeCategories.has(cat)) continue;
                 const catPois = pois.filter(p => p.category === cat && p.subcategory);
                 if (catPois.length === 0) continue;
-                const presentSubs = new Set(catPois.map(p => p.subcategory!));
+                const presentSubs = new Set(catPois.map(p => normalizeSubcategory(p.subcategory)!));
                 for (const def of SUBCATEGORIES[cat as keyof typeof SUBCATEGORIES] ?? []) {
                   if (presentSubs.has(def.id)) subDefs.push({ ...def, cat });
                 }
               }
               if (subDefs.length === 0) return null;
               const noneSelected = includedSubcategories.size === 0;
+
+              // Build grouped structure for visual grouping
+              type FilterPill = { id: string; label: string; emoji: string; group?: string; groupLabel?: string };
+              type FilterGroup =
+                | { type: "single"; def: FilterPill }
+                | { type: "group"; groupId: string; groupLabel: string; members: FilterPill[] };
+              const groups: FilterGroup[] = [];
+              const seenGroups = new Set<string>();
+              for (const def of subDefs) {
+                if (!def.group) {
+                  groups.push({ type: "single", def });
+                } else if (!seenGroups.has(def.group)) {
+                  seenGroups.add(def.group);
+                  const members = subDefs.filter((d) => d.group === def.group);
+                  const first = members.find((m) => m.groupLabel);
+                  groups.push({ type: "group", groupId: def.group, groupLabel: first?.groupLabel ?? def.group, members });
+                }
+              }
+
               return (
                 <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Subcategory filters">
                   <span className="text-xs text-[hsl(var(--muted-foreground))]">Subcategory:</span>
@@ -1106,23 +1188,48 @@ export function PoisSection({
                   >
                     All
                   </button>
-                  {subDefs.map(({ id, label, emoji }) => {
-                    // Active (coloured) = included; clicking toggles inclusion
-                    const active = includedSubcategories.has(id);
+                  {groups.map((g) => {
+                    if (g.type === "single") {
+                      const { id, label, emoji } = g.def;
+                      const active = includedSubcategories.has(id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => toggleSubcategory(id)}
+                          aria-pressed={active}
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
+                            active
+                              ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
+                              : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
+                          }`}
+                        >
+                          {emoji} {label}
+                        </button>
+                      );
+                    }
+                    // Grouped: render members with a subtle visual bracket
                     return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => toggleSubcategory(id)}
-                        aria-pressed={active}
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
-                          active
-                            ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
-                            : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                        }`}
-                      >
-                        {emoji} {label}
-                      </button>
+                      <span key={g.groupId} className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--border))]/50 bg-[hsl(var(--muted))]/30 px-0.5 py-0.5">
+                        {g.members.map(({ id, label, emoji }) => {
+                          const active = includedSubcategories.has(id);
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => toggleSubcategory(id)}
+                              aria-pressed={active}
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium transition border ${
+                                active
+                                  ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
+                                  : "border-transparent hover:bg-[hsl(var(--muted))]"
+                              }`}
+                            >
+                              {emoji} {label}
+                            </button>
+                          );
+                        })}
+                      </span>
                     );
                   })}
                 </div>
@@ -1155,6 +1262,14 @@ export function PoisSection({
                 favouriteItems={filteredFavouriteItems}
                 onFavourite={(poi) => handleFavourite(poi as PoiDTO)}
                 isPoiFavourited={(poi) => isPoiFavourited(poi as PoiDTO)}
+                previewMarkers={previewMarkers}
+                highlightedPreviewId={highlightedPreviewId}
+                onPreviewMarkerClick={(id) => {
+                  window.dispatchEvent(new CustomEvent("recommendation-focused", { detail: { id } }));
+                }}
+                onPreviewAddPoi={(marker) => {
+                  window.dispatchEvent(new CustomEvent("add-recommendation-poi", { detail: { recData: marker.recData } }));
+                }}
               />
             </div>
           </div>
@@ -1247,6 +1362,7 @@ export function PoisSection({
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
                       extraFields: p.extraFields,
+                      attachments: p.attachments,
                     })}
                   />
                 ))}
@@ -1284,6 +1400,7 @@ export function PoisSection({
                       personalRating: userRatings[p.id] ?? null,
                       hasOriginalData: p.hasOriginalData,
                       extraFields: p.extraFields,
+                      attachments: p.attachments,
                     })}
                   />
                 ))}
@@ -1378,12 +1495,27 @@ export function PoisSection({
                       className="flex h-10 w-full rounded-md border border-[hsl(var(--input))] bg-[hsl(var(--background))] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--ring))]"
                     >
                       <option value="">— None —</option>
-                      {(category === "ACCOMMODATION"
-                        ? ACCOMMODATION_SUBCATEGORIES
-                        : (SUBCATEGORIES as Record<string, { id: string; label: string; emoji: string }[]>)[category] ?? []
-                      ).map((s) => (
-                        <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>
-                      ))}
+                      {category === "ACCOMMODATION"
+                        ? ACCOMMODATION_SUBCATEGORIES.map((s) => (
+                            <option key={s.id} value={s.id}>{s.emoji} {s.label}</option>
+                          ))
+                        : (() => {
+                            const groups = groupSubcategories(category as keyof typeof SUBCATEGORIES);
+                            if (!groups.length) return null;
+                            return groups.map((g) => {
+                              if (g.type === "single") {
+                                return <option key={g.def.id} value={g.def.id}>{g.def.emoji} {g.def.label}</option>;
+                              }
+                              return (
+                                <optgroup key={g.groupId} label={g.groupLabel}>
+                                  {g.members.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.emoji} {m.label}</option>
+                                  ))}
+                                </optgroup>
+                              );
+                            });
+                          })()
+                      }
                     </select>
                   </div>
                 </div>
@@ -1521,7 +1653,7 @@ export function PoisSection({
     )}
     </div>
     {showTimeline && (
-      <aside className="hidden lg:block">
+      <aside>
         <TimelineSidebar
           dayPlans={liveDayPlans}
           onActivityClick={(dayDate, activityId) => {

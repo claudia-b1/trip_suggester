@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORIES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
-import { SUBCATEGORIES, type SubcategoryDef } from "@/lib/recommendations/subcategories";
+import { SUBCATEGORIES, groupSubcategories, type SubcategoryDef, type SubcategoryGroup } from "@/lib/recommendations/subcategories";
 import { ACCOMMODATION_SUBCATEGORIES, FUEL_SUBCATEGORIES } from "@/lib/favourite-fields";
 import type { RecommendableCategory } from "@/lib/recommendations";
 import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
+import { AttachmentsSection, type AttachmentMeta } from "@/components/ui/attachments-section";
 
-/** Get subcategory options for a given category */
+/** Get flat subcategory options for a given category (used for lookup/matching) */
 function getSubcategoryOptions(cat: string): { id: string; label: string; emoji: string }[] {
   if (cat === "ACCOMMODATION") {
     return ACCOMMODATION_SUBCATEGORIES;
@@ -27,6 +28,15 @@ function getSubcategoryOptions(cat: string): { id: string; label: string; emoji:
     }));
   }
   return [];
+}
+
+/** Get grouped subcategory structure for <optgroup> rendering */
+function getSubcategoryGroups(cat: string): SubcategoryGroup[] | null {
+  if (cat === "ACCOMMODATION" || cat === "FUEL") return null; // flat lists, no grouping
+  if (cat in SUBCATEGORIES) {
+    return groupSubcategories(cat as RecommendableCategory);
+  }
+  return null;
 }
 
 export type EditPoiData = {
@@ -53,6 +63,7 @@ export type EditPoiData = {
   personalRating: number | null;
   hasOriginalData?: boolean;
   extraFields?: Record<string, unknown> | null;
+  attachments?: AttachmentMeta[];
 };
 
 export function EditPoiModal({
@@ -327,6 +338,7 @@ export function EditPoiModal({
                   return <Input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder="e.g. gas station" className="text-sm" />;
                 }
                 const currentInList = opts.some((o) => o.id === subcategory);
+                const groups = getSubcategoryGroups(category);
                 return (
                   <select
                     value={currentInList ? subcategory : "__other__"}
@@ -334,9 +346,23 @@ export function EditPoiModal({
                     className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-sm"
                   >
                     <option value="">—</option>
-                    {opts.map((o) => (
-                      <option key={o.id} value={o.id}>{o.emoji} {o.label}</option>
-                    ))}
+                    {groups
+                      ? groups.map((g) => {
+                          if (g.type === "single") {
+                            return <option key={g.def.id} value={g.def.id}>{g.def.emoji} {g.def.label}</option>;
+                          }
+                          return (
+                            <optgroup key={g.groupId} label={g.groupLabel}>
+                              {g.members.map((m) => (
+                                <option key={m.id} value={m.id}>{m.emoji} {m.label}</option>
+                              ))}
+                            </optgroup>
+                          );
+                        })
+                      : opts.map((o) => (
+                          <option key={o.id} value={o.id}>{o.emoji} {o.label}</option>
+                        ))
+                    }
                     {subcategory && !currentInList && (
                       <option value="__other__">{subcategory}</option>
                     )}
@@ -495,6 +521,14 @@ export function EditPoiModal({
               </div>
             </div>
           )}
+
+          {/* Attachments */}
+          <AttachmentsSection
+            entityType="poi"
+            entityId={poi.id}
+            attachments={poi.attachments ?? []}
+            onChanged={() => router.refresh()}
+          />
 
           {/* Visited + Personal rating row */}
           <div className="grid grid-cols-2 gap-3 items-end">

@@ -134,13 +134,19 @@ async function findQId(name: string): Promise<string | null> {
   // Try English first (most common)
   const en = await findQIdInLang(name, "en");
   if (en) return en;
-  // Try other common languages for European travel destinations
-  for (const lang of ["de", "hr", "it", "fr", "es", "nl", "pt"]) {
-    await sleep(250); // Rate-limit protection for Wikidata API
-    const qid = await findQIdInLang(name, lang);
-    if (qid) return qid;
-  }
-  return null;
+  // Try other languages in two parallel groups to reduce worst-case latency
+  // (previously sequential with 250ms sleeps = up to 4–6s; now ~1.5–2s worst case)
+  await sleep(100);
+  const group1 = await Promise.all(
+    ["de", "hr", "it", "fr"].map((lang) => findQIdInLang(name, lang)),
+  );
+  const hit1 = group1.find((qid) => qid !== null);
+  if (hit1) return hit1;
+  await sleep(100);
+  const group2 = await Promise.all(
+    ["es", "nl", "pt"].map((lang) => findQIdInLang(name, lang)),
+  );
+  return group2.find((qid) => qid !== null) ?? null;
 }
 
 // ─── SPARQL detail query ──────────────────────────────────────────────────────
@@ -228,17 +234,23 @@ async function fetchWikipediaSummary(articleUrl: string): Promise<string | null>
 export async function enrichWithWikidata(
   name: string,
   cityName?: string,
+  knownQId?: string,
 ): Promise<WikidataEnrichment | null> {
   try {
-    // Append city name to improve entity search accuracy, but skip if
-    // the name already contains the city name (e.g. "Arena Pula" + "Pula").
-    const nameLC = name.toLowerCase();
-    const cityLC = cityName?.toLowerCase() ?? "";
-    const needsCityQualifier = cityName && !nameLC.includes(cityLC);
-    const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
-    const qId = needsCityQualifier
-      ? (await findQId(searchQuery) ?? await findQId(name))
-      : await findQId(name);
+    // If Geoapify already provided a Wikidata QID (from OSM data), use it
+    // directly — skip the expensive multi-language entity search entirely.
+    let qId: string | null = knownQId ?? null;
+    if (!qId) {
+      // Append city name to improve entity search accuracy, but skip if
+      // the name already contains the city name (e.g. "Arena Pula" + "Pula").
+      const nameLC = name.toLowerCase();
+      const cityLC = cityName?.toLowerCase() ?? "";
+      const needsCityQualifier = cityName && !nameLC.includes(cityLC);
+      const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
+      qId = needsCityQualifier
+        ? (await findQId(searchQuery) ?? await findQId(name))
+        : await findQId(name);
+    }
     if (!qId) return null;
 
     const sparql = SPARQL_QUERY(qId);

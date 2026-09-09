@@ -66,8 +66,8 @@ type View = "map" | "list";
 // Only FOOD, GROCERIES, and FUEL for travel stops
 const STOP_CATEGORIES: RecommendableCategory[] = ["FOOD", "GROCERIES"];
 const STOP_SUBCATEGORY_IDS: Record<string, string[]> = {
-  FOOD: ["restaurant", "fine_dining", "fast_food", "cafe"],
-  GROCERIES: ["supermarket", "shop_bakery"],
+  FOOD: ["restaurant", "fast_food", "cafe"],
+  GROCERIES: ["supermarket", "bakery"],
   FUEL: ["gas_station", "ev_charging", "lpg"],
 };
 
@@ -1106,6 +1106,39 @@ export function StopPlanningSection({
             <div className="flex-1 min-w-0">
               {pois.length > 0 && (
                 <div className="space-y-2 mb-4">
+                  {/* Search + sort row (sort only in list view) */}
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        value={filterSearch}
+                        onChange={(e) => setFilterSearch(e.target.value)}
+                        placeholder="Search places..."
+                        className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
+                      />
+                      {filterSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterSearch("")}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    {view === "list" && (
+                      <select
+                        value={filterSort}
+                        onChange={(e) => setFilterSort(e.target.value as "rating" | "name" | "reviews")}
+                        className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-xs"
+                      >
+                        <option value="rating">Rating</option>
+                        <option value="name">Name</option>
+                        <option value="reviews">Reviews</option>
+                      </select>
+                    )}
+                  </div>
+
                   {/* Favourites toggle + category pills */}
                   <div className="flex items-center gap-2 flex-wrap">
                     {/* Favourites toggle */}
@@ -1206,39 +1239,6 @@ export function StopPlanningSection({
                     </div>
                   )}
 
-                  {/* Search + sort row (sort only in list view) */}
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type="text"
-                        value={filterSearch}
-                        onChange={(e) => setFilterSearch(e.target.value)}
-                        placeholder="Search places..."
-                        className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-xs placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--primary))]"
-                      />
-                      {filterSearch && (
-                        <button
-                          type="button"
-                          onClick={() => setFilterSearch("")}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    {view === "list" && (
-                      <select
-                        value={filterSort}
-                        onChange={(e) => setFilterSort(e.target.value as "rating" | "name" | "reviews")}
-                        className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-xs"
-                      >
-                        <option value="rating">Rating</option>
-                        <option value="name">Name</option>
-                        <option value="reviews">Reviews</option>
-                      </select>
-                    )}
-                  </div>
-
                   {/* Active filter count */}
                   {(filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly) && (
                     <div className="flex items-center gap-2">
@@ -1333,7 +1333,7 @@ export function StopPlanningSection({
               )}
             </div>
             {/* Right: timeline sidebar */}
-            <div className="hidden lg:block w-56 shrink-0">
+            <div className="w-40 lg:w-56 shrink-0">
               <TimelineSidebar
                 dayPlans={liveDayPlans}
                 onDropPoi={handleDropPoiOnTimeline}

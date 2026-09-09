@@ -160,6 +160,15 @@ body {
   position: relative;
 }
 
+/* Recommendation card pulse — when map marker is clicked */
+.rec-card-pulse {
+  animation: poi-focus-pulse 0.8s ease-in-out 2;
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 1px;
+  z-index: 10;
+  position: relative;
+}
+
 /* Toast slide-in */
 @keyframes toast-slide-in {
   from { transform: translateX(100%); opacity: 0; }

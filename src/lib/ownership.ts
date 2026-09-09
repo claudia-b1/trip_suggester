@@ -63,3 +63,45 @@ export async function verifyPoiOwnership(
   });
   return poi !== null;
 }
+
+/** Verify an attachment belongs to the given user (via POI→City→Trip or FavouriteItem→List). */
+export async function verifyAttachmentOwnership(
+  attachmentId: number,
+  userId: number,
+): Promise<boolean> {
+  const att = await prisma.attachment.findUnique({
+    where: { id: attachmentId },
+    select: {
+      poi: { select: { city: { select: { trip: { select: { userId: true } } } } } },
+      favouriteItem: { select: { list: { select: { userId: true } } } },
+    },
+  });
+  if (!att) return false;
+  if (att.poi) return att.poi.city.trip.userId === userId;
+  if (att.favouriteItem) return att.favouriteItem.list.userId === userId;
+  return false;
+}
+
+/** Verify a favourite item belongs to the given user. */
+export async function verifyFavouriteItemOwnership(
+  itemId: number,
+  userId: number,
+): Promise<boolean> {
+  const item = await prisma.favouriteItem.findFirst({
+    where: { id: itemId, list: { userId } },
+    select: { id: true },
+  });
+  return item !== null;
+}
+
+/** Verify a discover profile belongs to the given user. */
+export async function verifyDiscoverProfileOwnership(
+  profileId: number,
+  userId: number,
+): Promise<boolean> {
+  const profile = await prisma.discoverProfile.findFirst({
+    where: { id: profileId, userId },
+    select: { id: true },
+  });
+  return profile !== null;
+}

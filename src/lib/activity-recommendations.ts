@@ -5,7 +5,11 @@
  * swap models and iterate on prompts without touching any components.
  */
 
+import { haversineKm } from "@/lib/geo";
+
 // ── Types ────────────────────────────────────────────────────────────────────
+
+export type CoordinateSource = "ai" | "geocoded" | "poi-matched";
 
 export type ActivityRecommendation = {
   title: string;
@@ -18,6 +22,8 @@ export type ActivityRecommendation = {
   latitude?: number;
   /** Approximate longitude if the model can provide it */
   longitude?: number;
+  /** How the coordinates were obtained */
+  coordinateSource?: CoordinateSource;
 };
 
 export type NearbyCityRecommendation = {
@@ -31,6 +37,8 @@ export type NearbyCityRecommendation = {
   latitude?: number;
   /** Approximate longitude */
   longitude?: number;
+  /** How the coordinates were obtained */
+  coordinateSource?: CoordinateSource;
 };
 
 export type NearbyActivityRecommendation = {
@@ -46,6 +54,8 @@ export type NearbyActivityRecommendation = {
   latitude?: number;
   /** Approximate longitude */
   longitude?: number;
+  /** How the coordinates were obtained */
+  coordinateSource?: CoordinateSource;
 };
 
 export type HikeRecommendation = {
@@ -63,6 +73,8 @@ export type HikeRecommendation = {
   latitude?: number;
   /** Approximate longitude of the start */
   longitude?: number;
+  /** How the coordinates were obtained */
+  coordinateSource?: CoordinateSource;
 };
 
 export type CyclingRecommendation = {
@@ -80,6 +92,8 @@ export type CyclingRecommendation = {
   latitude?: number;
   /** Approximate longitude of the start */
   longitude?: number;
+  /** How the coordinates were obtained */
+  coordinateSource?: CoordinateSource;
 };
 
 /** A user-defined custom recommendation section generated from a free-form prompt */
@@ -119,7 +133,7 @@ export type GenerateOptions = {
 // ── Model config ─────────────────────────────────────────────────────────────
 // Change this to swap models. Any OpenRouter-compatible model ID works.
 
-export const ACTIVITY_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
+export const ACTIVITY_MODEL = "inclusionai/ling-3.0-flash-sante:free";
 
 // ── Prompt builder ───────────────────────────────────────────────────────────
 // Edit this function to iterate on the prompt. The UI will not change.
@@ -128,6 +142,8 @@ export function buildActivityPrompt(
   cityName: string,
   country?: string,
   options?: GenerateOptions,
+  coords?: { lat: number; lon: number } | null,
+  existingTitles?: string[],
 ): string {
   const location = country ? `${cityName}, ${country}` : cityName;
   const includeMustDo = options?.includeMustDo !== false;
@@ -213,61 +229,70 @@ Suggest cycling routes and bike trips in and around ${cityName}.
     outputFields.push(`- "cycling": array of objects with "title" (string), "description" (string), "distance" (string like "~25 km"), "duration" (string like "~1.5 hours"), "difficulty" (string — "easy", "moderate", or "challenging"), "startLocation" (string), "latitude" (number or null), "longitude" (number or null)`);
   }
 
-  return `You are a concise travel advisor. Generate recommendations for a visitor to ${location}.
+  // Build a strong location anchor at the very top of the prompt so the model
+  // cannot confuse similarly-named cities (e.g. Bale, Croatia vs Bale Mountains, Ethiopia).
+  const coordStr = coords
+    ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`
+    : null;
+  const countryLabel = country ?? (coordStr ? `the country at coordinates ${coordStr}` : "its country");
 
-You MUST produce the following sections:
+  const alreadyRecommended = existingTitles && existingTitles.length > 0
+    ? `\n## ALREADY RECOMMENDED\nThese items exist in other sections. Do NOT repeat them or variations of them:\n${existingTitles.map((t) => `- ${t}`).join("\n")}\n`
+    : "";
+
+  return `Generate recommendations for a visitor to ${location}.${coordStr ? ` City coordinates: ${coordStr}.` : ""}
+
+LOCATION: "${cityName}" is in ${countryLabel}.${coordStr ? ` Centre: ${coordStr}.` : ""} All results MUST be for this location only.
 
 ${sections.join("\n\n")}
+${alreadyRecommended}
+## RULES
+1. EVERY recommendation must be in or directly around ${location}${coordStr ? ` (near ${coordStr})` : ""} — not any other "${cityName}" in another country
+2. All GPS coordinates must be near ${coordStr ?? countryLabel} — reject any on the wrong continent
+3. Only include places/activities you are HIGHLY confident exist and haven't closed
+4. Each recommendation: 1-2 sentences, specific and actionable, not generic advice
+5. No duplicates across sections. No opening hours, prices, or booking information
+6. Do NOT invent venue names unless highly confident they exist at this location
+7. If tied to a named landmark, include it as linkedPlace
 
-## CRITICAL VERIFICATION RULES — TRIPLE CHECK
+If there is ANY doubt, remove the item.
 
-Before including ANY recommendation, run through ALL of these checks. If any fails, REMOVE the item.
+## OUTPUT
+Return ONLY a single JSON object (no reasoning, no explanation, no markdown):
+${outputFields.join("\n")}`;
+}
 
-### Pass 1 — Location accuracy
-1. Is this activity/place ACTUALLY in or directly around ${cityName}? Double-check.
-2. Am I confusing ${cityName} with another similarly-named city in a different country? The target is specifically ${country ?? "unknown"}. For example, "Paris" = Paris, France — NOT Paris, Texas.
-3. Is this landmark/activity genuinely associated with ${cityName} and not a nearby but different city?
+// ── Coordinate validation ────────────────────────────────────────────────────
 
-### Pass 2 — Existence and specificity
-4. Does this place/activity ACTUALLY exist? Only include things you are highly confident are real.
-5. If you named a specific venue, are you sure it exists at this location and hasn't closed?
-6. Is this recommendation specific enough to be actionable, or is it generic advice that applies to any city?
-
-### Pass 3 — Final review
-7. Re-read each recommendation and ask: "Would a local from ${cityName}, ${country ?? "unknown"} recognize this?"
-8. Check for near-duplicates: if two recommendations describe essentially the same thing (e.g. "Visit the Old Town" and "Explore the Historic Centre"), merge them or remove the weaker one.
-9. Are GPS coordinates reasonable for ${cityName}, ${country ?? "unknown"}? Verify latitude/longitude are in the right region.
-
-If there is ANY doubt about any item, REMOVE it. Fewer high-confidence recommendations are better than many uncertain ones.
-
-## OTHER RULES
-
-- Each recommendation should be 1-2 sentences
-- Be specific to ${location} — no generic travel advice
-- If a recommendation is strongly tied to a specific named place or landmark, include it as linkedPlace
-- Do NOT invent specific venue names (restaurants, hotels, bars) unless you are HIGHLY confident they exist at this location
-- Do NOT include opening hours, prices, or booking information
-- For nearby cities: only include real, well-known places that are genuinely close to ${cityName}
-- GPS coordinates should be approximate but reasonable — do NOT use 0,0 or coordinates from the wrong country
-- NEVER include duplicate or near-duplicate recommendations — if two items cover the same topic, keep only the more specific one
-
-## OUTPUT FORMAT
-
-Return a single JSON object with these arrays:
-${outputFields.join("\n")}
-
-${!includeMustDo ? '- "recommendations": [] (empty array, not requested)' : ""}
-${!includeNearbyCities ? '- "nearbyCities": [] (empty array, not requested)' : ""}
-${!includeNearbyActivities ? '- "nearbyActivities": [] (empty array, not requested)' : ""}
-${!includeHikes ? '- "hikes": [] (empty array, not requested)' : ""}
-${!includeCycling ? '- "cycling": [] (empty array, not requested)' : ""}
-
-Return ONLY valid JSON. No markdown code fences, no explanation text. Just the raw JSON object.`;
+/**
+ * Validate and sanitize coordinates against basic range and proximity to city.
+ * Returns undefined for both if invalid, out-of-range, or too far from city.
+ */
+function validateCoords(
+  lat: number | undefined,
+  lon: number | undefined,
+  cityCoords: { lat: number; lon: number } | null | undefined,
+  maxDistKm: number,
+): { latitude: number | undefined; longitude: number | undefined; coordinateSource?: CoordinateSource } {
+  if (lat == null || lon == null) return { latitude: undefined, longitude: undefined };
+  // Basic range check
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return { latitude: undefined, longitude: undefined };
+  // Reject (0, 0) — almost certainly a hallucination
+  if (lat === 0 && lon === 0) return { latitude: undefined, longitude: undefined };
+  // Proximity check against city center
+  if (cityCoords) {
+    const dist = haversineKm(cityCoords.lat, cityCoords.lon, lat, lon);
+    if (dist > maxDistKm) return { latitude: undefined, longitude: undefined };
+  }
+  return { latitude: lat, longitude: lon, coordinateSource: "ai" as CoordinateSource };
 }
 
 // ── Response parser ──────────────────────────────────────────────────────────
 
-export function parseActivityResponse(raw: string): {
+export function parseActivityResponse(
+  raw: string,
+  cityCoords?: { lat: number; lon: number } | null,
+): {
   recommendations: ActivityRecommendation[];
   nearbyCities: NearbyCityRecommendation[];
   nearbyActivities: NearbyActivityRecommendation[];
@@ -288,7 +313,7 @@ export function parseActivityResponse(raw: string): {
       try {
         const parsed = JSON.parse(arrayMatch[0]);
         if (Array.isArray(parsed)) {
-          return { ...empty, recommendations: parseRecommendationArray(parsed) };
+          return { ...empty, recommendations: parseRecommendationArray(parsed, cityCoords) };
         }
       } catch { /* fall through */ }
     }
@@ -309,7 +334,7 @@ export function parseActivityResponse(raw: string): {
     const cyclingArr = parsed.cycling ?? parsed.cycling_routes ?? parsed.cyclingRoutes;
 
     const recommendations = Array.isArray(recsArr)
-      ? parseRecommendationArray(recsArr)
+      ? parseRecommendationArray(recsArr, cityCoords)
       : [];
 
     const nearbyCities = Array.isArray(nearbyCitiesArr)
@@ -324,8 +349,11 @@ export function parseActivityResponse(raw: string): {
             description: String(item.description ?? ""),
             distance: typeof item.distance === "string" ? item.distance : undefined,
             country: typeof item.country === "string" ? item.country : undefined,
-            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
-            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+            ...validateCoords(
+              typeof item.latitude === "number" ? item.latitude : undefined,
+              typeof item.longitude === "number" ? item.longitude : undefined,
+              cityCoords, 500,
+            ),
           }))
       : [];
 
@@ -344,8 +372,11 @@ export function parseActivityResponse(raw: string): {
             location: String(item.location ?? ""),
             distance: typeof item.distance === "string" ? item.distance : undefined,
             category: typeof item.category === "string" ? item.category : undefined,
-            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
-            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+            ...validateCoords(
+              typeof item.latitude === "number" ? item.latitude : undefined,
+              typeof item.longitude === "number" ? item.longitude : undefined,
+              cityCoords, 150,
+            ),
           }))
       : [];
 
@@ -365,8 +396,11 @@ export function parseActivityResponse(raw: string): {
             duration: typeof item.duration === "string" ? item.duration : undefined,
             difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
             startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
-            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
-            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+            ...validateCoords(
+              typeof item.latitude === "number" ? item.latitude : undefined,
+              typeof item.longitude === "number" ? item.longitude : undefined,
+              cityCoords, 100,
+            ),
           }))
       : [];
 
@@ -386,8 +420,11 @@ export function parseActivityResponse(raw: string): {
             duration: typeof item.duration === "string" ? item.duration : undefined,
             difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
             startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
-            latitude: typeof item.latitude === "number" ? item.latitude : undefined,
-            longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+            ...validateCoords(
+              typeof item.latitude === "number" ? item.latitude : undefined,
+              typeof item.longitude === "number" ? item.longitude : undefined,
+              cityCoords, 100,
+            ),
           }))
       : [];
 
@@ -402,7 +439,10 @@ function isTemplatePlaceholder(s: string): boolean {
   return lower === "..." || lower === "…" || lower.startsWith("short ") || lower.startsWith("1-2 sentence") || lower.startsWith("name of ");
 }
 
-function parseRecommendationArray(arr: unknown[]): ActivityRecommendation[] {
+function parseRecommendationArray(
+  arr: unknown[],
+  cityCoords?: { lat: number; lon: number } | null,
+): ActivityRecommendation[] {
   return arr
     .filter(
       (item: unknown): item is Record<string, unknown> =>
@@ -415,8 +455,11 @@ function parseRecommendationArray(arr: unknown[]): ActivityRecommendation[] {
       description: String(item.description ?? ""),
       linkedPlace: typeof item.linkedPlace === "string" && item.linkedPlace !== "null" ? item.linkedPlace : undefined,
       category: typeof item.category === "string" ? item.category : undefined,
-      latitude: typeof item.latitude === "number" ? item.latitude : undefined,
-      longitude: typeof item.longitude === "number" ? item.longitude : undefined,
+      ...validateCoords(
+        typeof item.latitude === "number" ? item.latitude : undefined,
+        typeof item.longitude === "number" ? item.longitude : undefined,
+        cityCoords, 50,
+      ),
     }));
 }
 
@@ -431,69 +474,46 @@ export function buildCustomSectionPrompt(
   cityName: string,
   country: string | undefined,
   userPrompt: string,
+  coords?: { lat: number; lon: number } | null,
+  existingTitles?: string[],
 ): string {
   const location = country ? `${cityName}, ${country}` : cityName;
+  const coordStr = coords
+    ? `${coords.lat.toFixed(4)}, ${coords.lon.toFixed(4)}`
+    : null;
+  const countryLabel = country ?? (coordStr ? `the country at coordinates ${coordStr}` : "its country");
 
-  return `You are a concise travel advisor. A user planning a trip to ${location} asked:
+  const alreadyRecommended = existingTitles && existingTitles.length > 0
+    ? `\n## ALREADY RECOMMENDED\nThese items exist in other sections. Do NOT repeat them or variations of them:\n${existingTitles.map((t) => `- ${t}`).join("\n")}\n`
+    : "";
+
+  return `A user planning a trip to ${location}${coordStr ? ` (coordinates: ${coordStr})` : ""} asked:
 
 "${userPrompt}"
 
-Generate 5-12 specific recommendations that answer this request for ${location}.
+LOCATION: "${cityName}" is in ${countryLabel}. All results MUST be for this location only.
 
+Generate 5-12 specific recommendations for ${location}.
+${alreadyRecommended}
 ## RULES
+- EVERY recommendation must be in or around ${location}${coordStr ? ` (near ${coordStr})` : ""}
+- Each recommendation: specific, 1-2 sentences, no generic advice
+- Category for each: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, GROCERIES, WELLNESS, OUTDOORS, or ACCOMMODATION
+- If tied to a named landmark, include linkedPlace + GPS coordinates
+- No invented venue names, no hours/prices, no duplicates with other sections
 
-- Each recommendation must be specific to ${location} — no generic advice
-- Determine the best-fit category for each item from: CULTURE, FOOD, NATURE, ENTERTAINMENT, NIGHTLIFE, SHOPPING, GROCERIES, WELLNESS, OUTDOORS, ACCOMMODATION
-- If a recommendation is tied to a specific named place or landmark, include it as linkedPlace and provide approximate GPS coordinates
-- Each description should be 1-2 sentences
-- Do NOT invent specific venue names unless you are HIGHLY confident they exist at this location
-- Do NOT include opening hours, prices, or booking information
-- GPS coordinates should be approximate but reasonable — do NOT use 0,0 or coordinates from the wrong country
-- NEVER include duplicate or near-duplicate recommendations — if two items cover the same topic, keep only the more specific one
+Also generate a short display title (2-5 words) for the section header.
 
-## CRITICAL VERIFICATION — TRIPLE CHECK
-
-### Pass 1 — Location accuracy
-1. Is this actually in or directly around ${cityName}? Double-check.
-2. Am I confusing ${cityName} with another similarly-named city in a different country? The target is specifically ${country ?? "unknown"}.
-3. Is this genuinely associated with ${cityName} and not a nearby but different city?
-
-### Pass 2 — Existence and confidence
-4. Does this place/activity ACTUALLY exist? Only include things you are highly confident are real.
-5. If you named a specific venue, are you sure it exists at this location and hasn't closed?
-6. Is this recommendation specific enough to be actionable?
-
-### Pass 3 — Final review
-7. Would a local from ${cityName}, ${country ?? "unknown"} recognize this?
-8. Check for near-duplicates: if two items describe essentially the same thing, merge or remove the weaker one.
-9. Are GPS coordinates in the right region for ${cityName}, ${country ?? "unknown"}?
-
-If there is ANY doubt, REMOVE the item. Fewer high-confidence recommendations are better than many uncertain ones.
-
-Also generate a short display title (2-5 words) that summarizes what these recommendations are about. This title will be shown as the section header.
-
-## OUTPUT FORMAT
-
-Return a single JSON object:
-{
-  "title": "short section title, 2-5 words",
-  "items": [
-    {
-      "title": "string",
-      "description": "string",
-      "linkedPlace": "string or null",
-      "category": "CULTURE|FOOD|NATURE|ENTERTAINMENT|NIGHTLIFE|SHOPPING|GROCERIES|WELLNESS|OUTDOORS|ACCOMMODATION",
-      "latitude": number or null,
-      "longitude": number or null
-    }
-  ]
-}
-
-Return ONLY valid JSON. No markdown code fences, no explanation text. Just the raw JSON object.`;
+## OUTPUT
+Return ONLY a JSON object (no reasoning, no explanation, no markdown):
+{"title": "short title", "items": [{"title": "string", "description": "string", "linkedPlace": "string or null", "category": "string", "latitude": number or null, "longitude": number or null}]}`;
 }
 
 /** Parse the model response for a custom section into a title + items array. */
-export function parseCustomSectionResponse(raw: string): {
+export function parseCustomSectionResponse(
+  raw: string,
+  cityCoords?: { lat: number; lon: number } | null,
+): {
   title: string;
   items: ActivityRecommendation[];
 } | null {
@@ -506,7 +526,7 @@ export function parseCustomSectionResponse(raw: string): {
       try {
         const parsed = JSON.parse(arrayMatch[0]);
         if (Array.isArray(parsed)) {
-          const items = parseRecommendationArray(parsed);
+          const items = parseRecommendationArray(parsed, cityCoords);
           if (items.length > 0) return { title: "Custom", items };
         }
       } catch { /* fall through */ }
@@ -525,7 +545,7 @@ export function parseCustomSectionResponse(raw: string): {
     const itemsArr = parsed.items ?? parsed.recommendations ?? parsed.results;
     if (!Array.isArray(itemsArr)) return null;
 
-    const items = parseRecommendationArray(itemsArr);
+    const items = parseRecommendationArray(itemsArr, cityCoords);
     if (items.length === 0) return null;
 
     return { title, items };

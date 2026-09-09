@@ -1,9 +1,9 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
-import type { PoiMapProps, DayPlanOption } from "./poi-map-impl";
+import type { PoiMapProps, DayPlanOption, RecommendationMarker } from "./poi-map-impl";
 
-export type { DayPlanOption };
+export type { DayPlanOption, RecommendationMarker };
 
 const PoiMapDynamic = dynamic(
   () => import("./poi-map-impl").then((m) => ({ default: m.PoiMapImpl })),
