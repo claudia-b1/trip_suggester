@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 
 type Message = {
   role: "user" | "assistant";
@@ -111,6 +112,7 @@ const STARTER_PROMPTS = [
 
 export function DestinationAdvisor() {
   const router = useRouter();
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -232,12 +234,12 @@ export function DestinationAdvisor() {
         setPendingRec(null);
         router.push(`/trips/${trip.id}`);
       } catch {
-        // Silently fail — the user can create manually
+        toast("Failed to create trip", { variant: "error" });
       } finally {
         setCreatingTrip(false);
       }
     },
-    [pendingRec, tripStartDate, tripEndDate, router],
+    [pendingRec, tripStartDate, tripEndDate, router, toast],
   );
 
   const handleReset = useCallback(() => {

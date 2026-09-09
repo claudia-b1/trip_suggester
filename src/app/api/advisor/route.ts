@@ -12,7 +12,7 @@
 import { getActiveUserId } from "@/lib/active-user";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "minimax/minimax-m3:free";
+const MODEL = "inclusionai/ling-3.0-flash-sante:free";
 
 const SYSTEM_PROMPT = `You are a friendly travel advisor. Match the user's language (Dutch → Dutch, English → English, etc.).
 
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
         { role: "system", content: SYSTEM_PROMPT },
         ...messages,
       ],
-      max_tokens: 1500,
+      max_tokens: 8000,
       temperature: 0.5,
       stream: true,
     }),

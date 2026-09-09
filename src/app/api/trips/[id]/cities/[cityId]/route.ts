@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyTripOwnership } from "@/lib/ownership";
+import { reverseGeocodeCountry } from "@/lib/reverse-geocode";
 
 export async function PATCH(
   req: Request,
@@ -80,6 +81,33 @@ export async function PATCH(
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
+
+  // ── Resolve country from coordinates when still missing ────────────────
+  // If this update sets coordinates but no country, or the existing record
+  // has coordinates but no country, reverse-geocode to fill it in.
+  if (!data.country) {
+    const existingCity = await prisma.city.findUnique({
+      where: { id: cityIdNum },
+      select: { country: true, latitude: true, longitude: true },
+    });
+    const newCountryAlreadySet = existingCity?.country && !("country" in body && body.country === "");
+    if (!newCountryAlreadySet) {
+      const lat = (data.latitude as number | undefined) ?? existingCity?.latitude;
+      const lon = (data.longitude as number | undefined) ?? existingCity?.longitude;
+      if (lat != null && lon != null) {
+        try {
+          const geo = await reverseGeocodeCountry(lat, lon);
+          if (geo) {
+            data.country = geo.country;
+            if (!data.countryCode && geo.countryCode) data.countryCode = geo.countryCode;
+          }
+        } catch {
+          // Best-effort
+        }
+      }
+    }
+  }
+
   const city = await prisma.city.update({ where: { id: cityIdNum }, data });
   return NextResponse.json(city);
 }

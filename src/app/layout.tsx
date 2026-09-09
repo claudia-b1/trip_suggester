@@ -41,9 +41,13 @@ export default function RootLayout({
           <ConfirmProvider>
             <UserProvider>
             <FavouritesProvider>
-              <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg">
-                <div className="mx-auto flex w-full items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3">
-                  <Link href="/" className="flex items-center gap-2 text-base font-bold sm:text-lg group">
+              {/* Skip to main content — visible on focus for keyboard users */}
+              <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:rounded-md focus:bg-[hsl(var(--primary))] focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-[hsl(var(--primary-foreground))] focus:shadow-lg">
+                Skip to main content
+              </a>
+              <header className="sticky top-0 z-30 border-b border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 backdrop-blur-lg" role="banner">
+                <nav className="mx-auto flex w-full items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-6 sm:py-3" aria-label="Main navigation">
+                  <Link href="/" className="flex items-center gap-2 text-base font-bold sm:text-lg group" aria-label="Trip Planner — Home">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="h-8 w-8 shrink-0 rounded-lg shadow-sm transition-transform group-hover:scale-110">
                       <rect width="32" height="32" rx="8" fill="#4F46E5"/>
                       <path d="M8 22 Q14 16 16 20 Q18 24 24 14" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" opacity="0.4" strokeDasharray="2 2.5"/>
@@ -54,9 +58,9 @@ export default function RootLayout({
                     <span className="text-gradient">Trip Planner</span>
                   </Link>
                   <HeaderActions />
-                </div>
+                </nav>
               </header>
-              <main className="w-full flex-1 px-3 py-4 sm:px-6 sm:py-6"><PageTransition>{children}</PageTransition></main>
+              <main id="main-content" className="w-full flex-1 px-3 py-4 sm:px-6 sm:py-6" role="main"><PageTransition>{children}</PageTransition></main>
               <footer className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card))]">
                 <div className="flex w-full items-center justify-between px-3 py-3 sm:px-6 sm:py-4 text-xs text-[hsl(var(--muted-foreground))]">
                   <span>Trip Planner v0.1</span>

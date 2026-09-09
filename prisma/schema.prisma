@@ -15,9 +15,10 @@ model User {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  trips          Trip[]
-  favouriteLists FavouriteList[]
-  poiRatings     PoiRating[]
+  trips             Trip[]
+  favouriteLists    FavouriteList[]
+  poiRatings        PoiRating[]
+  discoverProfiles  DiscoverProfile[]
 }
 
 model Trip {
@@ -103,6 +104,7 @@ model Poi {
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
   activities  DayActivity[]
   poiRatings  PoiRating[]
+  attachments Attachment[]
   createdAt   DateTime      @default(now())
 
   @@index([favouriteItemId])
@@ -252,6 +254,7 @@ model FavouriteItem {
   order          Int            @default(0)
   listId         Int
   list           FavouriteList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  attachments    Attachment[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 
@@ -285,4 +288,38 @@ model PoiRating {
   updatedAt     DateTime @updatedAt
 
   @@unique([poiId, userId])
+}
+
+model Attachment {
+  id              Int            @id @default(autoincrement())
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  data            String         // base64 data URI
+  poiId           Int?
+  poi             Poi?           @relation(fields: [poiId], references: [id], onDelete: Cascade)
+  favouriteItemId Int?
+  favouriteItem   FavouriteItem? @relation(fields: [favouriteItemId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+
+  @@index([poiId])
+  @@index([favouriteItemId])
+}
+
+// ── Discover Profiles ──────────────────────────────────────────────────────
+
+model DiscoverProfile {
+  id         Int      @id @default(autoincrement())
+  name       String
+  categories String   // JSON array of selected category strings
+  counts     String   // JSON object: category -> max count
+  subcats    String   // JSON object: category -> array of subcategory IDs
+  isDefault  Boolean  @default(false)
+  order      Int      @default(0)
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
 }

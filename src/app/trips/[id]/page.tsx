@@ -7,6 +7,7 @@ import { Breadcrumbs } from "@/components/ui/breadcrumbs";
 import { DeleteTripButton } from "./delete-button";
 import { EditTripButton } from "./edit-trip-button";
 import { ArchiveTripButton } from "./archive-trip-button";
+import { ExportTripButton } from "@/components/export-trip-button";
 import { CoverImageUpload } from "./cover-image-upload";
 import { CitiesSection } from "./cities-section";
 import { TripTimeline } from "./trip-timeline";
@@ -14,6 +15,8 @@ import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 
 export const dynamic = "force-dynamic";
 
+// NOTE: This is a server component — cannot use localStorage-based formatDate
+// from use-settings. Uses toLocaleDateString() for server-side rendering.
 function formatDate(d: Date) {
   return new Date(d).toLocaleDateString();
 }
@@ -103,6 +106,21 @@ export default async function TripDetailPage({
               </div>
             </div>
             <div className="flex gap-2">
+              <ExportTripButton
+                tripId={trip.id}
+                cities={trip.cities.map((c) => ({
+                  id: c.id,
+                  name: c.nickname ?? c.name,
+                  type: c.type,
+                  startDate: c.startDate.toISOString(),
+                  subcities: c.subcities.map((s) => ({
+                    id: s.id,
+                    name: s.nickname ?? s.name,
+                    type: s.type,
+                    startDate: s.startDate.toISOString(),
+                  })),
+                }))}
+              />
               <ArchiveTripButton id={trip.id} archived={trip.archived} />
               <EditTripButton
                 trip={{
@@ -119,6 +137,7 @@ export default async function TripDetailPage({
           {/* Gantt-style city timeline */}
           {trip.cities.length > 0 && (
             <TripTimeline
+              tripId={trip.id}
               cities={trip.cities.map((c) => ({
                 id: c.id,
                 name: c.nickname ?? c.name,

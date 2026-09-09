@@ -15,11 +15,27 @@ export async function GET() {
         orderBy: { order: "asc" },
         include: {
           _count: { select: { items: true } },
-          items: { orderBy: [{ order: "asc" }, { createdAt: "desc" }] },
+          items: {
+            orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+            include: {
+              attachments: {
+                select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+                orderBy: { createdAt: "asc" },
+              },
+            },
+          },
         },
       },
       _count: { select: { items: true } },
-      items: { orderBy: [{ order: "asc" }, { createdAt: "desc" }] },
+      items: {
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+        include: {
+          attachments: {
+            select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
     },
   });
   return NextResponse.json(lists);

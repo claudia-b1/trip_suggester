@@ -37,6 +37,15 @@ export type FavouriteItemDTO = {
   order: number;
   listId: number;
   list?: { id: number; name: string };
+  attachments?: FavouriteAttachmentDTO[];
+  createdAt: string;
+};
+
+export type FavouriteAttachmentDTO = {
+  id: number;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
   createdAt: string;
 };
 

@@ -75,6 +75,8 @@ export async function fetchWikidataMini(
 export type WikidataEnrichment = {
   wikidataId: string;
   description?: string;
+  /** 1–2 sentence extract from the English Wikipedia article */
+  wikipediaSummary?: string;
   inceptionYear?: number;
   isUnescoSite: boolean;
   culturalTags: string[];
@@ -132,13 +134,19 @@ async function findQId(name: string): Promise<string | null> {
   // Try English first (most common)
   const en = await findQIdInLang(name, "en");
   if (en) return en;
-  // Try other common languages for European travel destinations
-  for (const lang of ["de", "hr", "it", "fr", "es", "nl", "pt"]) {
-    await sleep(250); // Rate-limit protection for Wikidata API
-    const qid = await findQIdInLang(name, lang);
-    if (qid) return qid;
-  }
-  return null;
+  // Try other languages in two parallel groups to reduce worst-case latency
+  // (previously sequential with 250ms sleeps = up to 4–6s; now ~1.5–2s worst case)
+  await sleep(100);
+  const group1 = await Promise.all(
+    ["de", "hr", "it", "fr"].map((lang) => findQIdInLang(name, lang)),
+  );
+  const hit1 = group1.find((qid) => qid !== null);
+  if (hit1) return hit1;
+  await sleep(100);
+  const group2 = await Promise.all(
+    ["es", "nl", "pt"].map((lang) => findQIdInLang(name, lang)),
+  );
+  return group2.find((qid) => qid !== null) ?? null;
 }
 
 // ─── SPARQL detail query ──────────────────────────────────────────────────────
@@ -149,6 +157,7 @@ type SparqlRow = {
   heritageSite?: { value: string };  // entity URI
   instanceOf?: { value: string };
   partOf?: { value: string };
+  article?: { value: string };       // English Wikipedia article URL
 };
 
 type SparqlResponse = {
@@ -161,13 +170,14 @@ type SparqlResponse = {
  * Q18537310 = "UNESCO World Heritage List"
  */
 const SPARQL_QUERY = (qId: string) => `
-SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf WHERE {
+SELECT DISTINCT ?desc ?inception ?heritageSite ?instanceOf ?partOf ?article WHERE {
   BIND(wd:${qId} AS ?item)
   OPTIONAL { ?item schema:description ?desc FILTER(LANG(?desc) = "en") }
   OPTIONAL { ?item wdt:P571 ?inception }
   OPTIONAL { ?item wdt:P1435 ?heritageSite }
   OPTIONAL { ?item wdt:P31 ?instanceOf }
   OPTIONAL { ?item wdt:P361 ?partOf }
+  OPTIONAL { ?article schema:about ?item ; schema:inLanguage "en" ; schema:isPartOf <https://en.wikipedia.org/> . }
 }
 LIMIT 10
 `.trim();
@@ -185,22 +195,62 @@ function isUnesco(heritageSite?: string): boolean {
   );
 }
 
+// ─── Wikipedia summary fetcher ────────────────────────────────────────────
+
+type WikipediaSummaryResponse = {
+  extract?: string;
+  description?: string;
+};
+
+/**
+ * Fetch a clean 1–2 sentence extract from the English Wikipedia REST API.
+ * The `articleUrl` comes from the SPARQL query's sitelink (e.g.
+ * "https://en.wikipedia.org/wiki/Colosseum").
+ * Returns null if the article has no extract or the fetch fails.
+ */
+async function fetchWikipediaSummary(articleUrl: string): Promise<string | null> {
+  try {
+    // Extract the article title from the URL
+    const match = articleUrl.match(/\/wiki\/(.+)$/);
+    if (!match) return null;
+    const title = match[1];
+
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+    });
+    if (!res.ok) return null;
+
+    const data = (await res.json()) as WikipediaSummaryResponse;
+    // The "extract" field is a clean plain-text summary (1–2 sentences)
+    return data.extract ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function enrichWithWikidata(
   name: string,
   cityName?: string,
+  knownQId?: string,
 ): Promise<WikidataEnrichment | null> {
   try {
-    // Append city name to improve entity search accuracy, but skip if
-    // the name already contains the city name (e.g. "Arena Pula" + "Pula").
-    const nameLC = name.toLowerCase();
-    const cityLC = cityName?.toLowerCase() ?? "";
-    const needsCityQualifier = cityName && !nameLC.includes(cityLC);
-    const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
-    const qId = needsCityQualifier
-      ? (await findQId(searchQuery) ?? await findQId(name))
-      : await findQId(name);
+    // If Geoapify already provided a Wikidata QID (from OSM data), use it
+    // directly — skip the expensive multi-language entity search entirely.
+    let qId: string | null = knownQId ?? null;
+    if (!qId) {
+      // Append city name to improve entity search accuracy, but skip if
+      // the name already contains the city name (e.g. "Arena Pula" + "Pula").
+      const nameLC = name.toLowerCase();
+      const cityLC = cityName?.toLowerCase() ?? "";
+      const needsCityQualifier = cityName && !nameLC.includes(cityLC);
+      const searchQuery = needsCityQualifier ? `${name} ${cityName}` : name;
+      qId = needsCityQualifier
+        ? (await findQId(searchQuery) ?? await findQId(name))
+        : await findQId(name);
+    }
     if (!qId) return null;
 
     const sparql = SPARQL_QUERY(qId);
@@ -259,7 +309,15 @@ export async function enrichWithWikidata(
       })
       .filter((t): t is string => !!t);
 
-    return { wikidataId: qId, description, inceptionYear, isUnescoSite: unescoSite, culturalTags };
+    // Fetch Wikipedia summary if the SPARQL result includes an English article
+    const articleUrl = rows.find((r) => r.article?.value)?.article?.value;
+    let wikipediaSummary: string | undefined;
+    if (articleUrl) {
+      const summary = await fetchWikipediaSummary(articleUrl);
+      if (summary) wikipediaSummary = summary;
+    }
+
+    return { wikidataId: qId, description, wikipediaSummary, inceptionYear, isUnescoSite: unescoSite, culturalTags };
   } catch {
     return null;
   }

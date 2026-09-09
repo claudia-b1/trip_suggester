@@ -18,6 +18,10 @@ import { TripNoteEditor } from "@/components/ui/trip-note-editor";
 import { ActivityRecommendations } from "./activity-recommendations";
 import { SubcityTabs } from "./subcity-tabs";
 import { syncFavouritesToCity } from "@/lib/favourite-poi-sync";
+import { reverseGeocodeCountry } from "@/lib/reverse-geocode";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { haversineKm } from "@/lib/geo";
+import { DEFAULT_FAV_RADIUS_KM } from "@/lib/constants";
 import { StopPlanningSection } from "./stop-planning-section";
 import type { StopPoiDTO } from "./stop-planning-section";
 
@@ -90,7 +94,15 @@ export default async function CityDetailPage({
     where: { id: cityIdNum },
     include: {
       trip: true,
-      pois: { orderBy: { createdAt: "asc" } },
+      pois: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          attachments: {
+            select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+            orderBy: { createdAt: "asc" },
+          },
+        },
+      },
       parentCity: { select: { id: true, name: true, nickname: true } },
       subcities: {
         orderBy: { order: "asc" },
@@ -99,6 +111,28 @@ export default async function CityDetailPage({
     },
   });
   if (!city || city.tripId !== tripId || city.trip.userId !== userId) notFound();
+
+  // ── Backfill country from coordinates for existing cities with null country ──
+  if (!city.country && city.latitude != null && city.longitude != null) {
+    try {
+      const geo = await reverseGeocodeCountry(city.latitude, city.longitude);
+      if (geo) {
+        await prisma.city.update({
+          where: { id: city.id },
+          data: {
+            country: geo.country,
+            ...(geo.countryCode && !city.countryCode && { countryCode: geo.countryCode }),
+          },
+        });
+        city.country = geo.country;
+        if (geo.countryCode && !city.countryCode) {
+          (city as typeof city & { countryCode: string }).countryCode = geo.countryCode;
+        }
+      }
+    } catch {
+      // Best-effort — don't block page load
+    }
+  }
 
   // Sibling cities for stepper — always top-level destinations only, sorted by arrival date
   const siblingCities = await prisma.city.findMany({
@@ -179,8 +213,14 @@ export default async function CityDetailPage({
     const freshPois = await prisma.poi.findMany({
       where: { cityId: city.id },
       orderBy: { createdAt: "asc" },
+      include: {
+        attachments: {
+          select: { id: true, filename: true, mimeType: true, sizeBytes: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        },
+      },
     });
-    city.pois = freshPois;
+    city.pois = freshPois as typeof city.pois;
   }
 
   let dayPlansRaw = await prisma.dayPlan.findMany({
@@ -231,7 +271,6 @@ export default async function CityDetailPage({
   // Travel stops use a wide 80 km radius so nearby favourites always appear.
   // Destinations only show favourites after a discover has been run (discoverRadiusKm is set),
   // using that radius as the cutoff.
-  const DEFAULT_FAV_RADIUS_KM = 80;
   const hasDiscoverRadius = city.discoverRadiusKm != null;
   const showFavourites = isStop || hasDiscoverRadius;
   const favRadiusKm = isStop
@@ -251,15 +290,7 @@ export default async function CityDetailPage({
   const favouriteItemsRaw = showFavourites
     ? (city.latitude != null && city.longitude != null)
       ? allCountryFavs.filter((f) => {
-          const R = 6371;
-          const dLat = ((f.latitude - city.latitude!) * Math.PI) / 180;
-          const dLon = ((f.longitude - city.longitude!) * Math.PI) / 180;
-          const a =
-            Math.sin(dLat / 2) ** 2 +
-            Math.cos((city.latitude! * Math.PI) / 180) *
-              Math.cos((f.latitude * Math.PI) / 180) *
-              Math.sin(dLon / 2) ** 2;
-          const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          const dist = haversineKm(city.latitude!, city.longitude!, f.latitude, f.longitude);
           return dist <= favRadiusKm;
         })
       : allCountryFavs
@@ -352,6 +383,14 @@ export default async function CityDetailPage({
     notes: p.notes ?? null,
     hasOriginalData: !!p.originalData,
     extraFields: p.extraFields as Record<string, unknown> | null,
+    scoreBreakdown: p.scoreBreakdown ? (() => { try { return JSON.parse(p.scoreBreakdown!) } catch { return null } })() : null,
+    attachments: (p.attachments ?? []).map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      createdAt: a.createdAt.toISOString(),
+    })),
   }));
 
   const dayPlans: DayPlanDTO[] = dayPlansRaw.map((dp) => ({
@@ -617,49 +656,57 @@ export default async function CityDetailPage({
         </>
       ) : (
         <>
-          <CityInfoSection
-            cityId={city.id}
-            cityName={city.nickname ?? city.name}
-            info={wikiInfo}
-            initialGenerated={cachedCityInfo}
-          />
+          <ErrorBoundary section="City Info">
+            <CityInfoSection
+              cityId={city.id}
+              cityName={city.nickname ?? city.name}
+              info={wikiInfo}
+              initialGenerated={cachedCityInfo}
+            />
+          </ErrorBoundary>
 
           <TripNoteEditor
             initialNote={cityNote ?? null}
             scope={{ cityId: city.id }}
           />
 
-          <ActivityRecommendations
-            cityId={city.id}
-            cityName={city.nickname ?? city.name}
-            country={city.country ?? undefined}
-            tripId={tripId}
-            tripStartDate={city.endDate.toISOString()}
-            tripEndDate={city.trip.endDate.toISOString()}
-            cityStartDate={city.startDate.toISOString()}
-            cityEndDate={city.endDate.toISOString()}
-            initialData={cachedActivities}
-            pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl }))}
-            parentCityId={city.parentCityId}
-          />
+          <ErrorBoundary section="Recommendations">
+            <ActivityRecommendations
+              cityId={city.id}
+              cityName={city.nickname ?? city.name}
+              country={city.country ?? undefined}
+              tripId={tripId}
+              tripStartDate={city.endDate.toISOString()}
+              tripEndDate={city.trip.endDate.toISOString()}
+              cityStartDate={city.startDate.toISOString()}
+              cityEndDate={city.endDate.toISOString()}
+              cityLatitude={city.latitude}
+              cityLongitude={city.longitude}
+              initialData={cachedActivities}
+              pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite }))}
+              parentCityId={city.parentCityId}
+            />
+          </ErrorBoundary>
 
-          <CityPlanningSection
-            tripId={tripId}
-            cityId={city.id}
-            pois={pois}
-            dayPlans={dayPlans}
-            cityLat={city.latitude ?? undefined}
-            cityLon={city.longitude ?? undefined}
-            cityName={city.nickname ?? city.name}
-            country={city.country ?? undefined}
-            favouriteItems={favouriteItems}
-            initialUserRatings={initialUserRatings}
-            initialNotInterested={initialNotInterested}
-            initialVisitedPoiIds={initialVisitedPoiIds}
-            dayNotes={dayNotes}
-            subcityDayPlans={subcityDayPlans}
-            initialRadiusKm={city.discoverRadiusKm ?? undefined}
-          />
+          <ErrorBoundary section="Discover & POIs">
+            <CityPlanningSection
+              tripId={tripId}
+              cityId={city.id}
+              pois={pois}
+              dayPlans={dayPlans}
+              cityLat={city.latitude ?? undefined}
+              cityLon={city.longitude ?? undefined}
+              cityName={city.nickname ?? city.name}
+              country={city.country ?? undefined}
+              favouriteItems={favouriteItems}
+              initialUserRatings={initialUserRatings}
+              initialNotInterested={initialNotInterested}
+              initialVisitedPoiIds={initialVisitedPoiIds}
+              dayNotes={dayNotes}
+              subcityDayPlans={subcityDayPlans}
+              initialRadiusKm={city.discoverRadiusKm ?? undefined}
+            />
+          </ErrorBoundary>
         </>
       )}
     </div>

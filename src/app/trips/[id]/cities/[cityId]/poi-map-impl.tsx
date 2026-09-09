@@ -37,6 +37,20 @@ type LocatedPoi = {
 
 export type DayPlanOption = { id: number; label: string };
 
+/** A recommendation item shown as a preview marker on the map (not yet committed as a POI) */
+export type RecommendationMarker = {
+  id: string;            // e.g. "rec-mustdo-0", "rec-hike-3"
+  title: string;
+  description: string;
+  category: Category;
+  latitude: number;
+  longitude: number;
+  sectionLabel: string;  // "Must-do", "Hikes", etc.
+  linkedPlace?: string;
+  /** Data needed to create a POI from this recommendation */
+  recData: { name: string; category: string; description: string; latitude: number; longitude: number };
+};
+
 export type PoiMapProps = {
   pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null; address?: string | null; openingHours?: string | null }[];
   cityId?: number;
@@ -71,6 +85,14 @@ export type PoiMapProps = {
   currentAccommodationId?: number | null;
   /** When true, uses a road-focused map style (navigation-day) suitable for travel stops */
   isStop?: boolean;
+  /** Preview markers for AI recommendations (not yet committed as POIs) */
+  previewMarkers?: RecommendationMarker[];
+  /** ID of the currently highlighted preview marker (from card hover) */
+  highlightedPreviewId?: string | null;
+  /** Callback when a preview marker is clicked — tells recommendations panel to highlight the card */
+  onPreviewMarkerClick?: (id: string) => void;
+  /** Callback when "Add as POI" is clicked on a preview popup */
+  onPreviewAddPoi?: (marker: RecommendationMarker) => void;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -654,7 +676,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop, previewMarkers = [], highlightedPreviewId, onPreviewMarkerClick, onPreviewAddPoi } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -678,6 +700,9 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [dropPin, setDropPin] = useState<{ lat: number; lng: number } | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
+  const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
+  const [hoverPreviewId, setHoverPreviewId] = useState<string | null>(null);
+  const [previewPopupPos, setPreviewPopupPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -853,6 +878,38 @@ export function PoiMapImpl(props: PoiMapProps) {
     return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFavItem, mapReady]);
+
+  // Track screen position of active preview marker popup
+  const activePreviewMarker = activePreviewId ? previewMarkers.find((m) => m.id === activePreviewId) : null;
+  useEffect(() => {
+    if (!activePreviewMarker || !mapRef.current || !mapReady) { setPreviewPopupPos(null); return; }
+    function updatePos() {
+      if (!mapRef.current || !activePreviewMarker) return;
+      const pt = mapRef.current.project([activePreviewMarker.longitude, activePreviewMarker.latitude]);
+      setPreviewPopupPos({ x: pt.x, y: pt.y });
+    }
+    updatePos();
+    const mapInstance = mapRef.current.getMap();
+    mapInstance.on("move", updatePos);
+    mapInstance.on("zoom", updatePos);
+    return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePreviewMarker, mapReady]);
+
+  // Fly to highlighted preview marker when triggered from card click.
+  // Deps include mapReady (map may not be loaded when the highlight is first
+  // set) and previewMarkers (markers may arrive after the highlight id).
+  useEffect(() => {
+    if (!highlightedPreviewId || !mapRef.current || !mapReady) return;
+    const marker = previewMarkers.find((m) => m.id === highlightedPreviewId);
+    if (!marker) return;
+    // Fly to the marker
+    mapRef.current.flyTo({ center: [marker.longitude, marker.latitude], zoom: Math.max(zoom, 15), duration: 800, offset: [0, 60] });
+    setActivePreviewId(highlightedPreviewId);
+    setActiveId(null);
+    setActiveFavId(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightedPreviewId, mapReady, previewMarkers]);
 
   /**
    * Fly to city center with zoom that fits all given points, keeping the city
@@ -1293,6 +1350,60 @@ export function PoiMapImpl(props: PoiMapProps) {
           );
         })}
 
+        {/* Recommendation preview markers — dashed outline, lower opacity */}
+        {previewMarkers.map((pm) => {
+          const isHighlighted = highlightedPreviewId === pm.id || hoverPreviewId === pm.id;
+          const isActive = activePreviewId === pm.id;
+          const catStyle = CATEGORY_STYLES[pm.category] ?? CATEGORY_STYLES.CULTURE;
+          return (
+            <Marker
+              key={`preview-${pm.id}`}
+              longitude={pm.longitude}
+              latitude={pm.latitude}
+              anchor="center"
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                const newId = activePreviewId === pm.id ? null : pm.id;
+                setActivePreviewId(newId);
+                setActiveId(null);
+                setActiveFavId(null);
+                if (newId) onPreviewMarkerClick?.(pm.id);
+              }}
+            >
+              <div
+                onMouseEnter={() => setHoverPreviewId(pm.id)}
+                onMouseLeave={() => setHoverPreviewId(null)}
+                className="relative flex flex-col items-center cursor-pointer"
+              >
+                {/* Title tooltip on hover */}
+                {(isHighlighted || isActive) && !isActive && (
+                  <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none max-w-[200px] truncate">
+                    {pm.title}
+                  </div>
+                )}
+                <div
+                  className="flex items-center justify-center rounded-full transition-all"
+                  style={{
+                    width: isActive || isHighlighted ? 30 : 24,
+                    height: isActive || isHighlighted ? 30 : 24,
+                    border: `2px dashed ${catStyle.dot}`,
+                    backgroundColor: `${catStyle.dot}18`,
+                    opacity: isActive || isHighlighted ? 1 : 0.7,
+                    transform: isActive || isHighlighted ? "scale(1.15)" : "scale(1)",
+                    boxShadow: isActive
+                      ? `0 2px 8px rgba(0,0,0,0.3), 0 0 0 2px ${catStyle.dot}40`
+                      : isHighlighted
+                        ? `0 2px 6px rgba(0,0,0,0.25), 0 0 0 1px ${catStyle.dot}30`
+                        : "0 1px 4px rgba(0,0,0,0.2)",
+                  }}
+                >
+                  <span style={{ fontSize: isActive || isHighlighted ? 13 : 11, lineHeight: 1 }}>+</span>
+                </div>
+              </div>
+            </Marker>
+          );
+        })}
+
         {props.routeGeoJson && (
           <Source id="walking-route" type="geojson" data={props.routeGeoJson}>
             <Layer
@@ -1435,6 +1546,52 @@ export function PoiMapImpl(props: PoiMapProps) {
           {/* Arrow tip */}
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
             <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid rgb(251, 207, 232)" }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
+          </div>
+        </div>
+      )}
+
+      {/* Recommendation preview popup — rendered outside MapGL */}
+      {activePreviewMarker && previewPopupPos && (
+        <div
+          className="absolute z-30 pointer-events-auto"
+          style={{ left: previewPopupPos.x, top: previewPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        >
+          <div className="relative rounded-lg border border-dashed border-[hsl(var(--primary))]/40 bg-[hsl(var(--background))] shadow-xl p-3 max-w-[260px]">
+            <button
+              type="button"
+              onClick={() => setActivePreviewId(null)}
+              className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs"
+              aria-label="Close"
+            >✕</button>
+            <div className="space-y-1.5 pr-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">{CATEGORY_ICONS[activePreviewMarker.category] ?? ""}</span>
+                <h4 className="text-sm font-semibold leading-tight">{activePreviewMarker.title}</h4>
+              </div>
+              <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{activePreviewMarker.description}</p>
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">{activePreviewMarker.sectionLabel}</span>
+                {onPreviewAddPoi && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onPreviewAddPoi(activePreviewMarker);
+                      setActivePreviewId(null);
+                    }}
+                    className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90"
+                  >
+                    + Add as POI
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+          {/* Arrow tip */}
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: `8px solid hsl(var(--primary) / 0.4)` }} />
           </div>
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
             <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />

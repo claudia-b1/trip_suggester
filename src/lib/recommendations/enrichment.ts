@@ -67,9 +67,9 @@ const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"] as const;
 
 // ─── Core enrichment functions ────────────────────────────────────────────────
 
-async function getWikidata(placeId: string, name: string, cityName?: string): Promise<WikidataEnrichment | null> {
+async function getWikidata(placeId: string, name: string, cityName?: string, knownQId?: string): Promise<WikidataEnrichment | null> {
   return withEnrichCache<WikidataEnrichment>(placeId, "wikidata", () =>
-    enrichWithWikidata(name, cityName),
+    enrichWithWikidata(name, cityName, knownQId),
   );
 }
 
@@ -94,26 +94,35 @@ async function getGoogle(
  * Wikidata and Google run in parallel. Cache is checked per-source — a partial
  * cache hit (e.g. Wikidata cached, Google not) still avoids duplicate calls.
  */
+// Categories where Wikidata enrichment is worthwhile — only major cultural
+// landmarks and natural sites tend to have Wikidata entries.
+const WIKIDATA_CATEGORIES = new Set<string>(["CULTURE", "NATURE"]);
+
 export async function enrichPlace(
   place: DiscoveredPlace,
   category: Category,
   cityName: string,
   googleMeta?: GoogleMeta | null,
 ): Promise<RecommendedPoi> {
+  const wikiPromise = WIKIDATA_CATEGORIES.has(category)
+    ? getWikidata(place.placeId, place.name, cityName, place.wikidataId)
+    : Promise.resolve(null);
   const [wiki, google] = await Promise.allSettled([
-    getWikidata(place.placeId, place.name, cityName),
+    wikiPromise,
     getGoogle(place.placeId, place.name, cityName, place.latitude, place.longitude, googleMeta),
   ]);
 
   const w = wiki.status === "fulfilled" ? wiki.value : null;
   const g = google.status === "fulfilled" ? google.value : null;
 
-  // Build description: prefer Wikidata, then Google editorial, then address
+  // Build description: prefer Wikipedia summary (rich 1–2 sentence extract),
+  // then Google editorial, then Wikidata short description.
+  // Skip Geoapify's "description" — it's almost always just the formatted address
+  // (e.g. "Edeka Klein, Himberger Straße 35, 53604 Bad Honnef"), which is useless as a description.
   const description =
-    w?.description ??
+    w?.wikipediaSummary ??
     g?.editorialSummary ??
-    place.description ??
-    place.address ??
+    w?.description ??
     "";
 
   // Rating: prefer Google (1–5), normalize source rating (1–10) as fallback

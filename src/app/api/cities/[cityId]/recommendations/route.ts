@@ -23,7 +23,7 @@ import {
 } from "@/lib/recommendations";
 import { searchPlaces, discoverUnescoCities, type DiscoveredPlace, CATEGORY_CATEGORIES, SUBCAT_CATEGORIES } from "@/lib/recommendations/geoapify";
 import { enrichPlace } from "@/lib/recommendations/enrichment";
-import { scorePoiDetailed, scoreRegularPoi, scoreNearbyPoi, type ScoreBreakdown } from "@/lib/recommendations/scoring";
+import { scorePoiDetailed, scoreRegularPoi, scoreNearbyPoi, nameSimilarity, type ScoreBreakdown } from "@/lib/recommendations/scoring";
 import { withEnrichCache } from "@/lib/recommendations/cache";
 import { haversineKm, geocodeCity, offsetLatLon } from "@/lib/recommendations/_shared";
 import { fetchGoogleMeta, type GoogleMeta } from "@/lib/recommendations/google-places";
@@ -367,7 +367,7 @@ export async function POST(
     }
   }
 
-  const PRESCAN_MULTIPLIER = 4;
+  const PRESCAN_MULTIPLIER = 3;
   const prescanIds = new Set<string>();
   for (const cat of categories) {
     const catPlaces = discoveryByCategory[cat] ?? [];
@@ -434,7 +434,7 @@ export async function POST(
   // Use place.poiCityName (actual municipality from Geoapify) as the query city
   // so nearby places in different towns are matched correctly.
   const googleMetaMap = new Map<string, GoogleMeta | null>();
-  const PRESCAN_BATCH = 12;
+  const PRESCAN_BATCH = 40;
   const allPrescanCandidates = [...regularCandidates, ...nearbyCandidatesFiltered];
 
   console.log(`[prescan] regular=${regularCandidates.length} nearby=${nearbyCandidatesFiltered.length} total=${allPrescanCandidates.length}`);
@@ -484,6 +484,15 @@ export async function POST(
     );
   }
 
+  /** Compute name similarity between a discovered place and its Google match (0–1). */
+  function computeNameMatch(
+    geoName: string,
+    meta: GoogleMeta | null | undefined,
+  ): number | undefined {
+    if (!meta?.name) return undefined;
+    return nameSimilarity(geoName, meta.name);
+  }
+
   /** Map a POI's Geoapify category tags to the first matching subcategory ID.
    *  Matches when:
    *  - POI cat equals a tag exactly ("catering.restaurant" = "catering.restaurant")
@@ -525,7 +534,7 @@ export async function POST(
   // ── 3. SCORING — two formulas: regular (city-radius) vs nearby (ring-search) ─
   //
   // Regular: scoreRegularPoi — quality gate ≥4.0 stars AND ≥15 reviews, select top N
-  // Nearby:  scoreNearbyPoi  — quality gate ≥4.0 stars AND ≥1 000 reviews, select top 30
+  // Nearby:  scoreNearbyPoi  — quality gate ≥4.0 stars AND ≥200 reviews (Wikidata overrides review min), select top 30
   //
   // Both are scored and selected separately, then combined for step 4 enrichment.
 
@@ -550,6 +559,10 @@ export async function POST(
   // 100 m threshold: same garden/museum complex can have different OSM nodes
   // tens of metres apart; 100 m catches those while keeping truly different POIs apart.
   const COORD_DEDUP_M = 100;
+  // 300 m threshold for fuzzy name dedup: "Louvre Museum" and "Musée du Louvre"
+  // at 150 m apart are the same place even though the 100 m coord-only check misses it.
+  const FUZZY_DEDUP_M = 300;
+  const FUZZY_NAME_THRESHOLD = 0.5;
   const MIN_SCORE = 20;
 
   type CandidateRow = {
@@ -573,6 +586,8 @@ export async function POST(
     scoredItems.sort((a, b) => b.score - a.score);
     const coordDupSet = new Set<string>();
     const selected: ScoredCandidate[] = [];
+    // Track selected names + coords for fuzzy name dedup within this selection
+    const selectedInfo: Array<{ name: string; lat: number; lon: number }> = [];
     for (const item of scoredItems) {
       if (selected.length >= limit) break;
       if (qualityDroppedSet.has(item.place.placeId)) continue;
@@ -589,7 +604,24 @@ export async function POST(
         (c) => haversineKm(c.lat, c.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
       );
       if (nearSeen) { coordDupSet.add(item.place.placeId); continue; }
+      // Within-call coord dedup: catch duplicates selected in this same call
+      // (seenCoords is only updated AFTER selectTopN returns, so items selected
+      // earlier in this loop are invisible to the sameCatCoords check above).
+      // E.g. "Dani Noc" and "Dan i Noč" — same place, different Geoapify entries,
+      // different names after tokenisation, but only 11m apart.
+      const nearSelected = selectedInfo.some(
+        (s) => haversineKm(s.lat, s.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
+      );
+      if (nearSelected) { coordDupSet.add(item.place.placeId); continue; }
+      // Fuzzy name dedup: catch semantically identical places with different names
+      // (e.g. "Louvre Museum" vs "Musée du Louvre") within 300 m
+      const fuzzyDup = selectedInfo.some((s) => {
+        const dist = haversineKm(s.lat, s.lon, item.place.latitude, item.place.longitude) * 1000;
+        return dist < FUZZY_DEDUP_M && nameSimilarity(s.name, item.place.name) >= FUZZY_NAME_THRESHOLD;
+      });
+      if (fuzzyDup) { coordDupSet.add(item.place.placeId); continue; }
       selected.push(item);
+      selectedInfo.push({ name: item.place.name, lat: item.place.latitude, lon: item.place.longitude });
     }
     return { selected, coordDupSet };
   }
@@ -628,11 +660,15 @@ export async function POST(
         isUnescoSite:     place.isUnescoSite,
         hasPhoto:         !!place.photoUrl || !!meta?.photoName,
         googleCoordScore: computeCoordScore(place.latitude, place.longitude, meta),
+        nameMatchScore:   computeNameMatch(place.name, meta),
         tags:             place.categories,
         primaryTags,
         preferences,
         poiCategory:      cat,
         priceLevel:       meta?.priceLevel ?? place.priceLevel,
+        hasOpeningHours:  !!(meta?.openingHours ?? place.openingHours),
+        hasPhone:         !!(meta?.phoneNumber ?? place.tel),
+        hasWebsite:       !!(meta?.website ?? place.website),
       });
       return { place, score: breakdown.total, breakdown, meta: meta ?? null, distKm };
     });
@@ -744,23 +780,30 @@ export async function POST(
           ? haversineKm(center.lat, center.lon, place.latitude, place.longitude)
           : 30;
         const breakdown = scoreNearbyPoi({
-          rating:           meta?.rating,
-          reviewCount:      meta?.userRatingCount,
-          hasWikidataId:    !!place.wikidataId,
-          isUnescoSite:     place.isUnescoSite,
-          hasPhoto:         !!place.photoUrl || !!meta?.photoName,
-          googleCoordScore: computeCoordScore(place.latitude, place.longitude, meta),
+          rating:             meta?.rating,
+          reviewCount:        meta?.userRatingCount,
+          hasWikidataId:      !!place.wikidataId,
+          isUnescoSite:       place.isUnescoSite,
+          hasPhoto:           !!place.photoUrl || !!meta?.photoName,
+          googleCoordScore:   computeCoordScore(place.latitude, place.longitude, meta),
+          distanceFromCityKm: distKm,
+          nameMatchScore:     computeNameMatch(place.name, meta),
         });
         return { place, score: breakdown.total, breakdown, meta: meta ?? null, distKm };
       });
 
-      // Quality gate: must have a Google match with rating ≥ 4.0 AND ≥ 1 000 reviews.
+      // Quality gate: must have a Google match with rating ≥ 4.0 AND ≥ 200 reviews.
+      // Wikidata presence overrides the review count minimum — a place with a
+      // Wikipedia article is noteworthy regardless of Google review count.
       const nearbyQualityDropped = new Set(
         scoredNearby
-          .filter(({ meta }) =>
+          .filter(({ place, meta }) =>
             meta == null ||
             meta.rating == null || meta.rating < 4.0 ||
-            meta.userRatingCount == null || meta.userRatingCount < 1000,
+            (
+              (meta.userRatingCount == null || meta.userRatingCount < 200) &&
+              !place.wikidataId
+            ),
           )
           .map((s) => s.place.placeId),
       );
@@ -813,7 +856,7 @@ export async function POST(
 
   // ── 4. ENRICHMENT — Wikidata + Google photo for top-N only (cached) ────────────
   // Pass pre-scanned GoogleMeta so enrichPlace skips the Text Search API call
-  const BATCH_SIZE = 8;
+  const BATCH_SIZE = 25;
   const enrichedResults: PromiseSettledResult<import("@/lib/recommendations/_shared").RecommendedPoi>[] = [];
   for (let i = 0; i < topPlaces.length; i += BATCH_SIZE) {
     const batch = topPlaces.slice(i, i + BATCH_SIZE);
@@ -877,6 +920,79 @@ export async function POST(
     finalPois.push(...regularEntries, ...nearbyEntries);
   }
 
+  // ── 4c. CLUSTER DETECTION — group 3+ same-category POIs within 200 m ────────
+  // When a food court or museum complex produces multiple nearby results,
+  // keep only the best-scored one and annotate it with "+N more nearby".
+  const CLUSTER_RADIUS_M = 200;
+  const CLUSTER_MIN_SIZE = 3;
+  const clusterInfo = new Map<string, { count: number; names: string[] }>(); // placeId → info
+  const suppressedByCluster = new Set<string>();
+
+  // Group by category first
+  const byCat = new Map<string, typeof finalPois>();
+  for (const entry of finalPois) {
+    const arr = byCat.get(entry.category) ?? [];
+    arr.push(entry);
+    byCat.set(entry.category, arr);
+  }
+
+  for (const [, catEntries] of byCat) {
+    // Build adjacency: which POIs are within CLUSTER_RADIUS_M of each other?
+    const n = catEntries.length;
+    const neighbors: number[][] = Array.from({ length: n }, () => []);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const d = haversineKm(
+          catEntries[i].poi.latitude, catEntries[i].poi.longitude,
+          catEntries[j].poi.latitude, catEntries[j].poi.longitude,
+        ) * 1000;
+        if (d < CLUSTER_RADIUS_M) {
+          neighbors[i].push(j);
+          neighbors[j].push(i);
+        }
+      }
+    }
+
+    // Find connected components via BFS
+    const visited = new Set<number>();
+    for (let i = 0; i < n; i++) {
+      if (visited.has(i) || neighbors[i].length === 0) continue;
+      const component: number[] = [];
+      const queue = [i];
+      while (queue.length > 0) {
+        const cur = queue.pop()!;
+        if (visited.has(cur)) continue;
+        visited.add(cur);
+        component.push(cur);
+        for (const nb of neighbors[cur]) {
+          if (!visited.has(nb)) queue.push(nb);
+        }
+      }
+
+      if (component.length >= CLUSTER_MIN_SIZE) {
+        // Keep the highest-scored member, suppress the rest
+        component.sort((a, b) => catEntries[b].finalScore - catEntries[a].finalScore);
+        const bestIdx = component[0];
+        const bestPlaceId = catEntries[bestIdx].poi.placeId ?? "";
+        const suppressed = component.slice(1);
+        const suppressedNames = suppressed.map((idx) => catEntries[idx].poi.name);
+        for (const idx of suppressed) {
+          suppressedByCluster.add(catEntries[idx].poi.placeId ?? "");
+        }
+        clusterInfo.set(bestPlaceId, {
+          count: suppressed.length,
+          names: suppressedNames,
+        });
+      }
+    }
+  }
+
+  // Remove suppressed POIs from finalPois
+  const clusteredFinalPois = finalPois.filter(
+    (e) => !suppressedByCluster.has(e.poi.placeId ?? ""),
+  );
+  console.log(`[clustering] suppressed=${suppressedByCluster.size} clusters=${clusterInfo.size}`);
+
   // Map placeId → subcategory for final POI insert
   const poiSubcategoryMap = new Map<string, string | null>();
   for (const row of allCandidateRows) {
@@ -906,8 +1022,14 @@ export async function POST(
 
   // ── 6. PERSIST POIS — write selected POIs to database ───────────────────────
   const created = await prisma.$transaction(
-    finalPois.map(({ poi: p, finalScore, breakdown }) =>
-      prisma.poi.create({
+    clusteredFinalPois.map(({ poi: p, finalScore, breakdown }) => {
+      // Merge cluster info into extraFields if this POI is a cluster representative
+      const cluster = clusterInfo.get(p.placeId ?? "");
+      const extraFields = cluster
+        ? { nearbyClusterCount: cluster.count, nearbyClusterNames: cluster.names }
+        : undefined;
+
+      return prisma.poi.create({
         data: {
           name:                     p.name,
           category:                 p.category,
@@ -932,10 +1054,11 @@ export async function POST(
           scoreBreakdown:           JSON.stringify(breakdown),
           userRatingCount:          p.userRatingCount ?? null,
           subcategory:              poiSubcategoryMap.get(p.placeId ?? "") ?? null,
+          extraFields,
           cityId:                   cityIdNum,
         },
-      }),
-    ),
+      });
+    }),
   );
 
   return NextResponse.json(

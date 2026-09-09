@@ -14,11 +14,10 @@ const ALL_GEOAPIFY_CATEGORIES = [
   "catering.fast_food",
   "catering.food_court",
   "catering.ice_cream",
-  "commercial.food_and_drink.bakery",
 ].join(",");
 
 // Tags matched against Geoapify category leaf names for the category-match score
-const PRIMARY_TAGS = ["restaurant", "cafe", "bakery", "food_court", "fast_food"];
+const PRIMARY_TAGS = ["restaurant", "cafe", "food_court", "fast_food"];
 
 type GeoapifyFeature = {
   properties: {
@@ -66,9 +65,6 @@ async function fetchFood(cityName: string, subcats: string[], cuisineFilter?: st
       return cuisine.includes("vegetarian") || cuisine.includes("vegan");
     });
   }
-  if (specials.has("fine_dining") && !specials.has("vegetarian")) {
-    features = features.filter((f) => (f.properties.rating ?? 0) >= 4);
-  }
   if (cuisineFilter) {
     const cfl = cuisineFilter.toLowerCase();
     features = features.filter((f) => {
@@ -78,7 +74,7 @@ async function fetchFood(cityName: string, subcats: string[], cuisineFilter?: st
   }
 
   // PRIMARY_TAGS for scoring — derived from active api values
-  const PRIMARY_TAGS = ["restaurant", "cafe", "bakery", "food_court", "fast_food"];
+  const PRIMARY_TAGS = ["restaurant", "cafe", "food_court", "fast_food"];
 
   type Candidate = ScoredItem<{ p: GeoapifyFeature["properties"]; distanceKm: number }>;
 
@@ -105,13 +101,12 @@ async function fetchFood(cityName: string, subcats: string[], cuisineFilter?: st
       : `A popular ${kind.replace(/_/g, " ")} in ${cityName}.`;
 
     const DURATION: Record<string, number> = {
-      restaurant: 75, cafe: 45, fast_food: 20, food_court: 45, bakery: 20, ice_cream: 15,
+      restaurant: 75, cafe: 45, fast_food: 20, food_court: 45, ice_cream: 15,
     };
-    const isMorningKind = kind === "cafe" || kind === "bakery" || kind === "ice_cream";
+    const isMorningKind = kind === "cafe" || kind === "ice_cream";
     const tipMap: Record<string, string> = {
       restaurant: "Book ahead for dinner — popular spots fill up fast.",
       cafe: "Great spot for a slow morning with coffee and a book.",
-      bakery: "Arrive early for the freshest pastries.",
       fast_food: "Quick and filling — ideal between sightseeing stops.",
       food_court: "Lots of variety, perfect for groups with mixed tastes.",
       ice_cream: "A sweet treat after a long day of exploring.",
