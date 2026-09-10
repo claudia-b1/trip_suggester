@@ -372,24 +372,42 @@ function PopupContent({
           {CATEGORY_ICONS[poi.category]} {poi.category}
         </span>
       </div>
-      {/* Drag handle for timeline — only shown when day plans exist */}
+      {/* Drag handle for timeline (desktop) / Add to timeline button (mobile) */}
       {dayPlans.length > 0 && (
-        <div
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.effectAllowed = "copy";
-            e.dataTransfer.setData("application/x-poi-id", String(poi.id));
-          }}
-          className="flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
-          title="Drag to timeline"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-            <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
-            <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
-            <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
-          </svg>
-          <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
-        </div>
+        <>
+          {/* Desktop: draggable handle */}
+          <div
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+            }}
+            className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
+            title="Drag to timeline"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
+              <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
+              <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
+            </svg>
+            <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
+          </div>
+          {/* Mobile: tap to add to timeline */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+              }));
+            }}
+            className="lg:hidden flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/40 px-2 py-1.5 hover:bg-[hsl(var(--muted))] transition-colors"
+            title="Add to timeline"
+          >
+            <span className="text-xs">📅</span>
+            <span className="text-[10px] font-medium text-[hsl(var(--primary))]">Add to timeline</span>
+          </button>
+        </>
       )}
       {poi.description && (
         <p className="text-xs text-gray-600 leading-snug">
