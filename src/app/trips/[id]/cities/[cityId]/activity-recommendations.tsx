@@ -891,7 +891,7 @@ export function ActivityRecommendations({
       </CardHeader>
 
       {open && (
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 overflow-hidden">
           {!hasContent && !isLoading && (
             <div className="py-4 space-y-4">
               <p className="text-sm text-[hsl(var(--muted-foreground))] text-center">
@@ -1928,7 +1928,7 @@ function RecommendationCard({
             className="flex items-center gap-1.5 text-left w-full group"
           >
             <span className="text-xs shrink-0">{catIcon}</span>
-            <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors">{rec.title}</h4>
+            <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors truncate">{rec.title}</h4>
             {poiLink?.isUnescoSite && (
               <span className="shrink-0 rounded-full bg-indigo-700 px-1.5 py-0.5 text-[9px] font-bold text-white">UNESCO</span>
             )}
@@ -2074,7 +2074,7 @@ function NearbyActivityCard({
       data-rec-id={recId}
       onMouseEnter={() => recId && window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "hover" } }))}
       onMouseLeave={() => recId && window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "unhover" } }))}
-      className={`rounded-lg border bg-[hsl(var(--card))] p-3 space-y-1.5 transition-all shadow-sm ${dimmed ? "opacity-40 grayscale" : "hover:bg-[hsl(var(--muted))]/50"} ${selected ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5" : "border-[hsl(var(--border))]"}`}
+      className={`rounded-lg border bg-[hsl(var(--card))] overflow-hidden p-3 space-y-1.5 transition-all shadow-sm ${dimmed ? "opacity-40 grayscale" : "hover:bg-[hsl(var(--muted))]/50"} ${selected ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5" : "border-[hsl(var(--border))]"}`}
       style={{ borderLeftWidth: 3, borderLeftColor: catStyle?.dot ?? "hsl(var(--border))" }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -2186,11 +2186,11 @@ function NearbyCityCard({
   adding?: boolean;
 }) {
   return (
-    <div className="rounded-lg border border-[hsl(var(--border))] bg-gradient-to-br from-[hsl(var(--card))] to-[hsl(var(--muted))]/30 p-4 space-y-1.5 transition-all hover:shadow-sm shadow-sm">
+    <div className="rounded-lg border border-[hsl(var(--border))] bg-gradient-to-br from-[hsl(var(--card))] to-[hsl(var(--muted))]/30 overflow-hidden p-4 space-y-1.5 transition-all hover:shadow-sm shadow-sm">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-sm font-semibold flex items-center gap-1.5">
-          <span className="text-xs">{"🏘️"}</span>
-          {city.name}
+        <h4 className="text-sm font-semibold flex items-center gap-1.5 min-w-0">
+          <span className="text-xs shrink-0">{"🏘️"}</span>
+          <span className="truncate">{city.name}</span>
         </h4>
         {city.distance && (
           <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
@@ -2265,7 +2265,7 @@ function RouteCard({
       data-rec-id={recId}
       onMouseEnter={() => recId && window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "hover" } }))}
       onMouseLeave={() => recId && window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "unhover" } }))}
-      className={`rounded-lg border bg-[hsl(var(--card))] p-3 space-y-1.5 transition-all shadow-sm ${dimmed ? "opacity-40 grayscale" : "hover:bg-[hsl(var(--muted))]/50"} ${selected ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5" : "border-[hsl(var(--border))]"}`}
+      className={`rounded-lg border bg-[hsl(var(--card))] overflow-hidden p-3 space-y-1.5 transition-all shadow-sm ${dimmed ? "opacity-40 grayscale" : "hover:bg-[hsl(var(--muted))]/50"} ${selected ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/5" : "border-[hsl(var(--border))]"}`}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -2274,7 +2274,7 @@ function RouteCard({
           )}
           <button type="button" onClick={() => selectMode ? onToggleSelect?.() : setExpanded((v) => !v)} className="flex items-center gap-1.5 text-left group min-w-0 flex-1">
             <span className="text-xs shrink-0">{icon}</span>
-            <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors">{route.title}</h4>
+            <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors truncate">{route.title}</h4>
             {!selectMode && (
               <svg xmlns="http://www.w3.org/2000/svg" className={`ml-auto h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground))] transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
             )}

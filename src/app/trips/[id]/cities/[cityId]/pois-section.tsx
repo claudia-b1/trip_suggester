@@ -721,6 +721,7 @@ export function PoisSection({
   const [includedSubcategories, setIncludedSubcategories] = useState<Set<string>>(() => new Set());
   const [showFavouritesOnly, setShowFavouritesOnly] = useState(false);
   const [showUnescoOnly, setShowUnescoOnly] = useState(false);
+  const [subFiltersExpanded, setSubFiltersExpanded] = useState(false);
 
   function toggleSubcategory(id: string) {
     setIncludedSubcategories((prev) => {
@@ -1209,65 +1210,93 @@ export function PoisSection({
               }
 
               return (
-                <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Subcategory filters">
-                  <span className="text-xs text-[hsl(var(--muted-foreground))]">Subcategory:</span>
-                  {/* "All" pill — active when no filter is applied */}
+                <div>
+                  {/* Toggle button — visible only on mobile (< lg) */}
                   <button
                     type="button"
-                    onClick={() => setIncludedSubcategories(new Set())}
-                    aria-pressed={noneSelected}
-                    className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
-                      noneSelected
-                        ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
-                        : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                    }`}
+                    onClick={() => setSubFiltersExpanded((v) => !v)}
+                    className="lg:hidden flex items-center gap-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] mb-1.5 transition-colors"
                   >
-                    All
-                  </button>
-                  {groups.map((g) => {
-                    if (g.type === "single") {
-                      const { id, label, emoji } = g.def;
-                      const active = includedSubcategories.has(id);
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          onClick={() => toggleSubcategory(id)}
-                          aria-pressed={active}
-                          className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
-                            active
-                              ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
-                              : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
-                          }`}
-                        >
-                          {emoji} {label}
-                        </button>
-                      );
-                    }
-                    // Grouped: render members with a subtle visual bracket
-                    return (
-                      <span key={g.groupId} className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--border))]/50 bg-[hsl(var(--muted))]/30 px-0.5 py-0.5">
-                        {g.members.map(({ id, label, emoji }) => {
-                          const active = includedSubcategories.has(id);
-                          return (
-                            <button
-                              key={id}
-                              type="button"
-                              onClick={() => toggleSubcategory(id)}
-                              aria-pressed={active}
-                              className={`rounded-full px-2 py-0.5 text-xs font-medium transition border ${
-                                active
-                                  ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
-                                  : "border-transparent hover:bg-[hsl(var(--muted))]"
-                              }`}
-                            >
-                              {emoji} {label}
-                            </button>
-                          );
-                        })}
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className={`h-3 w-3 transition-transform ${subFiltersExpanded ? "rotate-90" : ""}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                    Subcategories ({subDefs.length})
+                    {includedSubcategories.size > 0 && (
+                      <span className="rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-1.5 py-0.5 text-[10px] font-semibold">
+                        {includedSubcategories.size}
                       </span>
-                    );
-                  })}
+                    )}
+                  </button>
+                  {/* Pills — always visible on desktop, toggle on mobile */}
+                  <div className={`flex-wrap items-center gap-1.5 ${subFiltersExpanded ? "flex" : "hidden lg:flex"}`} role="group" aria-label="Subcategory filters">
+                    <span className="text-xs text-[hsl(var(--muted-foreground))] hidden lg:inline">Subcategory:</span>
+                    {/* "All" pill — active when no filter is applied */}
+                    <button
+                      type="button"
+                      onClick={() => setIncludedSubcategories(new Set())}
+                      aria-pressed={noneSelected}
+                      className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
+                        noneSelected
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
+                          : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {groups.map((g) => {
+                      if (g.type === "single") {
+                        const { id, label, emoji } = g.def;
+                        const active = includedSubcategories.has(id);
+                        return (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => toggleSubcategory(id)}
+                            aria-pressed={active}
+                            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition border ${
+                              active
+                                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
+                                : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
+                            }`}
+                          >
+                            {emoji} {label}
+                          </button>
+                        );
+                      }
+                      // Grouped: render members with a subtle visual bracket
+                      return (
+                        <span key={g.groupId} className="inline-flex items-center gap-0.5 rounded-full border border-[hsl(var(--border))]/50 bg-[hsl(var(--muted))]/30 px-0.5 py-0.5">
+                          {g.members.map(({ id, label, emoji }) => {
+                            const active = includedSubcategories.has(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                onClick={() => toggleSubcategory(id)}
+                                aria-pressed={active}
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium transition border ${
+                                  active
+                                    ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-[hsl(var(--primary))]"
+                                    : "border-transparent hover:bg-[hsl(var(--muted))]"
+                                }`}
+                              >
+                                {emoji} {label}
+                              </button>
+                            );
+                          })}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })()}
