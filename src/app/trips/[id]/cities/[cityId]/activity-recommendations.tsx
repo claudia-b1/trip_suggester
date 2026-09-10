@@ -396,19 +396,21 @@ export function ActivityRecommendations({
   }, [cityId]);
 
   // Listen for "recommendation-focused" from map (when a preview marker is clicked on the map)
+  // action: "highlight" = just highlight the card border (no scroll)
+  // action: "scroll"    = scroll to the card and pulse it
   const [focusedRecId, setFocusedRecId] = useState<string | null>(null);
   useEffect(() => {
     function handleFocused(e: Event) {
       const detail = (e as CustomEvent).detail;
       if (!detail?.id) return;
       setFocusedRecId(detail.id);
-      // Scroll the card into view
-      const el = document.querySelector(`[data-rec-id="${detail.id}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        // Temporary pulse animation
-        el.classList.add("rec-card-pulse");
-        setTimeout(() => el.classList.remove("rec-card-pulse"), 2000);
+      if (detail.action === "scroll") {
+        const el = document.querySelector(`[data-rec-id="${detail.id}"]`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("rec-card-pulse");
+          setTimeout(() => el.classList.remove("rec-card-pulse"), 2000);
+        }
       }
       // Clear after animation
       setTimeout(() => setFocusedRecId(null), 2000);

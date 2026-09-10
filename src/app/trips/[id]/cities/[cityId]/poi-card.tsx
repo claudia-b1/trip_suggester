@@ -187,7 +187,16 @@ export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poi
     <div className="mb-2">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          // On mobile (< lg), dispatch event to switch to Timeline tab for assignment
+          if (window.matchMedia("(max-width: 1023px)").matches) {
+            window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+              detail: { poiId, poiName, poiCategory, dayPlans },
+            }));
+            return;
+          }
+          setOpen((v) => !v);
+        }}
         className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
       >
         <span className={`text-[9px] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>

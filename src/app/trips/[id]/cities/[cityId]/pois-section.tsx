@@ -90,7 +90,7 @@ import {
   CompactPoiCard,
 } from "./poi-card";
 
-type View = "list" | "map";
+type View = "list" | "map" | "timeline" | "plan";
 type ListLayout = "grid" | "compact";
 
 // ─── helpers removed — now imported from ./poi-card ───
@@ -281,6 +281,9 @@ export function PoisSection({
   const { toast } = useToast();
   const confirm = useConfirm();
   const [view, setView] = useState<View>("map");
+  // Mobile POI-to-timeline assignment flow
+  const [assigningPoi, setAssigningPoi] = useState<{ poiId: number; poiName: string; poiCategory: string } | null>(null);
+  const [preAssignView, setPreAssignView] = useState<View | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState<Category>("CULTURE");
   const [addSubcategory, setAddSubcategory] = useState("");
@@ -377,6 +380,33 @@ export function PoisSection({
     window.addEventListener("set-pois-view", handleSetView);
     return () => window.removeEventListener("set-pois-view", handleSetView);
   }, []);
+
+  // Reset mobile-only views when crossing the lg breakpoint
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const handle = () => {
+      if (mql.matches) {
+        setView((v) => v === "timeline" || v === "plan" ? "map" : v);
+        setAssigningPoi(null);
+        setPreAssignView(null);
+      }
+    };
+    mql.addEventListener("change", handle);
+    return () => mql.removeEventListener("change", handle);
+  }, []);
+
+  // Listen for "assign-poi-to-timeline" events from DayPlanAssigner on mobile
+  useEffect(() => {
+    function handleAssignPoi(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.poiId) return;
+      setAssigningPoi({ poiId: detail.poiId, poiName: detail.poiName, poiCategory: detail.poiCategory });
+      setPreAssignView(view);
+      setView("timeline");
+    }
+    window.addEventListener("assign-poi-to-timeline", handleAssignPoi);
+    return () => window.removeEventListener("assign-poi-to-timeline", handleAssignPoi);
+  }, [view]);
 
   // ── Recommendation preview markers from ActivityRecommendations ──
   const [previewMarkers, setPreviewMarkers] = useState<RecommendationMarker[]>([]);
@@ -1002,7 +1032,7 @@ export function PoisSection({
 
   return (
     <div className="space-y-2">
-    <div className={showTimeline ? "grid gap-4 lg:gap-6 grid-cols-[1fr_auto] lg:grid-cols-[19fr_4fr]" : ""}>
+    <div className={showTimeline ? "lg:grid lg:gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
       <div className="min-w-0 space-y-2">
       <Card>
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
@@ -1028,29 +1058,34 @@ export function PoisSection({
         >
           {(
             [
-              ["map", "🗺️", "Map"],
-              ["list", "📋", "List"],
+              ["map", "🗺️", "Map", false],
+              ["list", "📋", "List", false],
+              ["timeline", "📅", "Timeline", true],
+              ...(liveDayPlans.length > 0 ? [["plan", "🗓️", "Plan", true] as const] : []),
             ] as const
-          ).map(([key, icon, label]) => (
+          ).map(([key, icon, label, mobileOnly]) => (
             <button
               key={key}
               role="tab"
               aria-selected={view === key}
-              onClick={() => setView(key)}
-              className={`relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all ${
+              onClick={() => setView(key as View)}
+              className={`relative flex items-center gap-1.5 rounded-md px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium transition-all ${
+                mobileOnly ? "lg:hidden" : ""
+              } ${
                 view === key
                   ? "bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm"
                   : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
               }`}
             >
               <span className="text-xs">{icon}</span>
-              {label}
+              <span className="hidden sm:inline">{label}</span>
             </button>
           ))}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Filters — always visible */}
+        {/* Filters — hidden for timeline/plan views */}
+        {view !== "timeline" && view !== "plan" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Input
@@ -1236,8 +1271,60 @@ export function PoisSection({
               );
             })()}
           </div>
+        )}
 
-        {view === "map" ? (
+        {view === "timeline" ? (
+          <TimelineSidebar
+            dayPlans={liveDayPlans}
+            onActivityClick={(dayDate, activityId) => {
+              setScrollToActivity({ date: dayDate, activityId });
+              setView("plan");
+            }}
+            onDayDoubleClick={(dayDate) => {
+              setScrollToActivity({ date: dayDate, activityId: -1 });
+              setView("plan");
+            }}
+            onDropPoi={handleDropPoiOnTimeline}
+            subcityDayPlans={subcityDayPlans}
+            favouritedPoiIds={favouritedPoiIds}
+            assigningPoi={assigningPoi}
+            onAssignSlot={async (dayPlanId, timeSlot) => {
+              if (!assigningPoi) return;
+              const res = await fetch(`/api/day-plans/${dayPlanId}/activities`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ poiId: assigningPoi.poiId, timeSlot }),
+              });
+              if (res.ok) {
+                toast(`${assigningPoi.poiName} added to plan!`);
+                setAssigningPoi(null);
+                setView(preAssignView ?? "map");
+                setPreAssignView(null);
+                router.refresh();
+              } else {
+                toast("Failed to assign POI", { variant: "error" });
+              }
+            }}
+            onCancelAssign={() => {
+              setAssigningPoi(null);
+              setView(preAssignView ?? "map");
+              setPreAssignView(null);
+            }}
+          />
+        ) : view === "plan" ? (
+          <DailyPlan
+            cityId={cityId}
+            pois={pois}
+            dayPlans={liveDayPlans}
+            setDayPlans={setLiveDayPlans}
+            scrollToActivity={scrollToActivity}
+            onScrollComplete={() => setScrollToActivity(null)}
+            dayNotes={dayNotes}
+            subcityDayPlans={subcityDayPlans}
+            favouritedPoiIds={favouritedPoiIds}
+            hideSidebar
+          />
+        ) : view === "map" ? (
           <div className="space-y-2">
             <p className="text-xs text-[hsl(var(--muted-foreground))]">
               💡 Right-click anywhere on the map to drop a pin and add a POI at that location.
@@ -1265,7 +1352,10 @@ export function PoisSection({
                 previewMarkers={previewMarkers}
                 highlightedPreviewId={highlightedPreviewId}
                 onPreviewMarkerClick={(id) => {
-                  window.dispatchEvent(new CustomEvent("recommendation-focused", { detail: { id } }));
+                  window.dispatchEvent(new CustomEvent("recommendation-focused", { detail: { id, action: "highlight" } }));
+                }}
+                onPreviewScrollToCard={(id) => {
+                  window.dispatchEvent(new CustomEvent("recommendation-focused", { detail: { id, action: "scroll" } }));
                 }}
                 onPreviewAddPoi={(marker) => {
                   window.dispatchEvent(new CustomEvent("add-recommendation-poi", { detail: { recData: marker.recData } }));
@@ -1608,9 +1698,9 @@ export function PoisSection({
       </CardContent>
     </Card>
 
-    {/* Day Plan — always visible below map/list */}
+    {/* Day Plan — hidden on mobile (shown via Plan tab instead) */}
     {liveDayPlans.length > 0 && (
-      <Card>
+      <Card className="hidden lg:block">
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>📅 Day Plan</CardTitle>
           <button
@@ -1653,7 +1743,7 @@ export function PoisSection({
     )}
     </div>
     {showTimeline && (
-      <aside>
+      <aside className="hidden lg:block">
         <TimelineSidebar
           dayPlans={liveDayPlans}
           onActivityClick={(dayDate, activityId) => {

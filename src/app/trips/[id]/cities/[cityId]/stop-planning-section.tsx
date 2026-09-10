@@ -61,7 +61,7 @@ export type StopPoiDTO = {
   scoreBreakdown?: StopScoreBreakdownDTO | null;
 };
 
-type View = "map" | "list";
+type View = "map" | "list" | "timeline";
 
 // Only FOOD, GROCERIES, and FUEL for travel stops
 const STOP_CATEGORIES: RecommendableCategory[] = ["FOOD", "GROCERIES"];
@@ -432,6 +432,36 @@ export function StopPlanningSection({
   const [view, setView] = useState<View>("map");
   const [focusPoiId, setFocusPoiId] = useState<number | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  // Mobile POI-to-timeline assignment flow
+  const [assigningPoi, setAssigningPoi] = useState<{ poiId: number; poiName: string; poiCategory: string } | null>(null);
+  const [preAssignView, setPreAssignView] = useState<View | null>(null);
+
+  // Reset mobile-only views when crossing the lg breakpoint
+  useEffect(() => {
+    const mql = window.matchMedia("(min-width: 1024px)");
+    const handle = () => {
+      if (mql.matches) {
+        setView((v) => v === "timeline" ? "map" : v);
+        setAssigningPoi(null);
+        setPreAssignView(null);
+      }
+    };
+    mql.addEventListener("change", handle);
+    return () => mql.removeEventListener("change", handle);
+  }, []);
+
+  // Listen for "assign-poi-to-timeline" events from DayPlanAssigner on mobile
+  useEffect(() => {
+    function handleAssignPoi(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail?.poiId) return;
+      setAssigningPoi({ poiId: detail.poiId, poiName: detail.poiName, poiCategory: detail.poiCategory });
+      setPreAssignView(view);
+      setView("timeline");
+    }
+    window.addEventListener("assign-poi-to-timeline", handleAssignPoi);
+    return () => window.removeEventListener("assign-poi-to-timeline", handleAssignPoi);
+  }, [view]);
 
   // ── Focus POI highlight (scroll + pulse when clicking "View full details" from map) ──
   useEffect(() => {
@@ -1082,26 +1112,64 @@ export function StopPlanningSection({
 
             {/* View toggle */}
             <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5">
-              {(["map", "list"] as const).map((key) => (
+              {(
+                [
+                  ["map", "🗺️ Map", false],
+                  ["list", "📋 List", false],
+                  ["timeline", "📅 Timeline", true],
+                ] as const
+              ).map(([key, label, mobileOnly]) => (
                 <button
                   key={key}
                   type="button"
                   aria-selected={view === key}
                   onClick={() => setView(key)}
-                  className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  className={`rounded px-2 sm:px-3 py-1 text-xs font-medium transition-colors ${
+                    mobileOnly ? "lg:hidden" : ""
+                  } ${
                     view === key
                       ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                       : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
                   }`}
                 >
-                  {key === "map" ? "🗺️ Map" : "📋 List"}
+                  {label}
                 </button>
               ))}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-4">
+          {view === "timeline" ? (
+            <TimelineSidebar
+              dayPlans={liveDayPlans}
+              onDropPoi={handleDropPoiOnTimeline}
+              compact
+              assigningPoi={assigningPoi}
+              onAssignSlot={async (dayPlanId, timeSlot) => {
+                if (!assigningPoi) return;
+                const res = await fetch(`/api/day-plans/${dayPlanId}/activities`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ poiId: assigningPoi.poiId, timeSlot }),
+                });
+                if (res.ok) {
+                  toast(`${assigningPoi.poiName} added to plan!`);
+                  setAssigningPoi(null);
+                  setView(preAssignView ?? "map");
+                  setPreAssignView(null);
+                  router.refresh();
+                } else {
+                  toast("Failed to assign POI", { variant: "error" });
+                }
+              }}
+              onCancelAssign={() => {
+                setAssigningPoi(null);
+                setView(preAssignView ?? "map");
+                setPreAssignView(null);
+              }}
+            />
+          ) : (
+          <div className="lg:flex lg:gap-4">
             {/* Left: map/list */}
             <div className="flex-1 min-w-0">
               {pois.length > 0 && (
@@ -1332,8 +1400,8 @@ export function StopPlanningSection({
                 </div>
               )}
             </div>
-            {/* Right: timeline sidebar */}
-            <div className="w-40 lg:w-56 shrink-0">
+            {/* Right: timeline sidebar — hidden on mobile (shown via Timeline tab instead) */}
+            <div className="hidden lg:block w-56 shrink-0">
               <TimelineSidebar
                 dayPlans={liveDayPlans}
                 onDropPoi={handleDropPoiOnTimeline}
@@ -1341,6 +1409,7 @@ export function StopPlanningSection({
               />
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
       {editingPoi && (
