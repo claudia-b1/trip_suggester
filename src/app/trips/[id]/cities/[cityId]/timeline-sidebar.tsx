@@ -22,6 +22,12 @@ type SubcityDayPlanForTimeline = {
   activities: { poiName: string; poiCategory: string; timeSlot: string }[];
 };
 
+export type AssigningPoi = {
+  poiId: number;
+  poiName: string;
+  poiCategory: string;
+};
+
 export function TimelineSidebar({
   dayPlans,
   onActivityClick,
@@ -30,6 +36,9 @@ export function TimelineSidebar({
   subcityDayPlans,
   favouritedPoiIds,
   compact,
+  assigningPoi,
+  onAssignSlot,
+  onCancelAssign,
 }: {
   dayPlans: DayPlanDTO[];
   onActivityClick?: (dayDate: string, activityId: number) => void;
@@ -39,6 +48,12 @@ export function TimelineSidebar({
   favouritedPoiIds?: Set<number>;
   /** Compact mode: skip view-mode toggle, always show all days, tighter spacing */
   compact?: boolean;
+  /** When set, timeline enters assignment mode — slots become tappable targets */
+  assigningPoi?: AssigningPoi | null;
+  /** Called when user taps a slot in assignment mode */
+  onAssignSlot?: (dayPlanId: number, timeSlot: TimeSlot) => void;
+  /** Called when user cancels assignment mode */
+  onCancelAssign?: () => void;
 }) {
   // Track which slot is being dragged over for visual feedback
   const [dragOverSlot, setDragOverSlot] = useState<string | null>(null);
@@ -93,10 +108,11 @@ export function TimelineSidebar({
 
   // When dragging a POI, show all days (as drop targets); otherwise filter by view mode
   const isDragging = poiDragDetected || dragOverSlot !== null;
+  const isAssigning = !!assigningPoi;
   const allDays = dayPlans.map((dp, idx) => ({ ...dp, dayIndex: idx }));
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const visibleDays = isDragging
+  const visibleDays = isDragging || isAssigning
     ? allDays
     : viewMode === "all"
       ? allDays
@@ -133,7 +149,23 @@ export function TimelineSidebar({
       </div>
 
       {timelineOpen && <>
-      {!hasAnyActivities && (
+      {/* Assignment mode banner */}
+      {isAssigning && (
+        <div className="rounded-lg border border-indigo-300 bg-indigo-50 dark:border-indigo-700 dark:bg-indigo-950/30 px-3 py-2 space-y-1">
+          <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+            Assigning: <span className="font-semibold">{assigningPoi!.poiName}</span>
+          </p>
+          <p className="text-[10px] text-indigo-600 dark:text-indigo-400">Tap a time slot below to add it</p>
+          <button
+            type="button"
+            onClick={onCancelAssign}
+            className="text-[10px] font-medium text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+          >
+            ✕ Cancel
+          </button>
+        </div>
+      )}
+      {!hasAnyActivities && !isAssigning && (
         <p className="text-xs text-[hsl(var(--muted-foreground))] italic">No activities planned yet</p>
       )}
       {/* View mode toggle — hidden in compact mode */}
@@ -222,8 +254,8 @@ export function TimelineSidebar({
                   </span>
                 </div>
 
-                {/* Render active slots with activities, plus drop zones for all slots when dragging */}
-                {(onDropPoi && isDragging ? ALL_SLOTS : activeSlotGroups.map((g) => g.slot)).map((slot) => {
+                {/* Render active slots with activities, plus drop zones for all slots when dragging/assigning */}
+                {((onDropPoi && isDragging) || isAssigning ? ALL_SLOTS : activeSlotGroups.map((g) => g.slot)).map((slot) => {
                   const slotKey = `${dp.id}-${slot}`;
                   const isOver = dragOverSlot === slotKey;
                   const activities = dp.activities.filter((a) => a.timeSlot === slot);
@@ -235,16 +267,23 @@ export function TimelineSidebar({
                       className={`space-y-1 rounded-md px-1 py-0.5 transition-all ${
                         isOver
                           ? "bg-indigo-100/60 ring-1 ring-indigo-300 dark:bg-indigo-900/30 dark:ring-indigo-600"
-                          : ""
+                          : isAssigning
+                            ? "cursor-pointer hover:bg-indigo-50 hover:ring-1 hover:ring-indigo-200 dark:hover:bg-indigo-950/20 dark:hover:ring-indigo-700"
+                            : ""
                       }`}
                       onDragOver={(e) => handleSlotDragOver(e, slotKey)}
                       onDragLeave={handleSlotDragLeave}
                       onDrop={(e) => handleSlotDrop(e, dp.id, slot)}
+                      onClick={isAssigning ? () => onAssignSlot?.(dp.id, slot) : undefined}
                     >
                       <p className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_ICONS[slot]} {SLOT_LABELS[slot]}
                       </p>
-                      {nonAccom.length > 0 ? (
+                      {isAssigning && nonAccom.length === 0 ? (
+                        <div className="rounded border border-dashed border-indigo-300 dark:border-indigo-600 px-1.5 py-1 text-center text-[10px] text-indigo-500 dark:text-indigo-400">
+                          Tap to add here
+                        </div>
+                      ) : nonAccom.length > 0 ? (
                         <ul className="space-y-0.5">
                           {nonAccom.map((a) => (
                             <li

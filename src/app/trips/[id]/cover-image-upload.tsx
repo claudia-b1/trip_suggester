@@ -21,15 +21,27 @@ export function CoverImageUpload({
     if (!file) return;
 
     // Validate type
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
-      toast("Please select a JPEG, PNG, or WebP image", { variant: "error" });
+    if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type)) {
+      toast("Please select a JPEG, PNG, WebP, or GIF image", { variant: "error" });
       return;
     }
 
     setUploading(true);
     try {
-      // Resize image client-side to keep the payload small
-      const dataUri = await resizeImage(file, 800);
+      // For GIFs, skip canvas resize (which would strip animation) and read
+      // the file directly. Apply a size limit since there's no resize step.
+      let dataUri: string;
+      if (file.type === "image/gif") {
+        if (file.size > 5 * 1024 * 1024) {
+          toast("GIF must be under 5 MB", { variant: "error" });
+          setUploading(false);
+          return;
+        }
+        dataUri = await readAsDataUri(file);
+      } else {
+        // Resize image client-side to keep the payload small
+        dataUri = await resizeImage(file, 800);
+      }
 
       const res = await fetch(`/api/trips/${tripId}`, {
         method: "PATCH",
@@ -72,7 +84,7 @@ export function CoverImageUpload({
       <input
         ref={fileRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/gif"
         onChange={handleFileChange}
         className="hidden"
       />
@@ -100,6 +112,16 @@ export function CoverImageUpload({
       )}
     </div>
   );
+}
+
+/** Read a file as a data URI without any processing */
+function readAsDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 /** Resize an image file to max width, return as JPEG data URI */

@@ -91,6 +91,8 @@ export type PoiMapProps = {
   highlightedPreviewId?: string | null;
   /** Callback when a preview marker is clicked — tells recommendations panel to highlight the card */
   onPreviewMarkerClick?: (id: string) => void;
+  /** Callback to scroll to a recommendation card in the recommendations list */
+  onPreviewScrollToCard?: (id: string) => void;
   /** Callback when "Add as POI" is clicked on a preview popup */
   onPreviewAddPoi?: (marker: RecommendationMarker) => void;
 };
@@ -131,6 +133,32 @@ function clusterPois(pois: LocatedPoi[], zoom: number): ClusterCell[] {
     pois: cell,
     lat: cell.reduce((s, p) => s + p.latitude, 0) / cell.length,
     lng: cell.reduce((s, p) => s + p.longitude, 0) / cell.length,
+  }));
+}
+
+type PreviewCluster = {
+  key: string;
+  markers: RecommendationMarker[];
+  lat: number;
+  lng: number;
+};
+
+/** Group preview markers that overlap visually into clusters based on zoom level. */
+function clusterPreviewMarkers(markers: RecommendationMarker[], zoom: number): PreviewCluster[] {
+  // At zoom 12, ~40px ≈ 0.01° — use a grid that merges markers within visual proximity
+  const cellDeg = 8 / Math.pow(2, zoom);
+  const grid = new Map<string, RecommendationMarker[]>();
+  for (const m of markers) {
+    const key = `${Math.floor(m.latitude / cellDeg)},${Math.floor(m.longitude / cellDeg)}`;
+    const cell = grid.get(key) ?? [];
+    cell.push(m);
+    grid.set(key, cell);
+  }
+  return Array.from(grid.entries()).map(([key, cell]) => ({
+    key,
+    markers: cell,
+    lat: cell.reduce((s, m) => s + m.latitude, 0) / cell.length,
+    lng: cell.reduce((s, m) => s + m.longitude, 0) / cell.length,
   }));
 }
 
@@ -676,7 +704,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop, previewMarkers = [], highlightedPreviewId, onPreviewMarkerClick, onPreviewAddPoi } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop, previewMarkers = [], highlightedPreviewId, onPreviewMarkerClick, onPreviewScrollToCard, onPreviewAddPoi } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -701,6 +729,8 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [fullscreen, setFullscreen] = useState(false);
   const [mapReady, setMapReady] = useState(false);
   const [activePreviewId, setActivePreviewId] = useState<string | null>(null);
+  const [activePreviewClusterKey, setActivePreviewClusterKey] = useState<string | null>(null);
+  const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(null);
   const [hoverPreviewId, setHoverPreviewId] = useState<string | null>(null);
   const [previewPopupPos, setPreviewPopupPos] = useState<{ x: number; y: number } | null>(null);
 
@@ -841,6 +871,7 @@ export function PoiMapImpl(props: PoiMapProps) {
   // Floor to integer so sub-pixel zoom differences don't re-trigger clustering
   const clusterZoom = Math.floor(zoom);
   const clusters = useMemo(() => clusterPois(located, clusterZoom), [located, clusterZoom]);
+  const previewClusters = useMemo(() => clusterPreviewMarkers(previewMarkers, clusterZoom), [previewMarkers, clusterZoom]);
 
   const visibleId = hoverId ?? activeId;
   const visiblePoi = visibleId != null ? located.find((p) => p.id === visibleId) : null;
@@ -879,13 +910,17 @@ export function PoiMapImpl(props: PoiMapProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFavItem, mapReady]);
 
-  // Track screen position of active preview marker popup
+  // Track screen position of active preview cluster popup
+  const activePreviewCluster = activePreviewClusterKey ? previewClusters.find((c) => c.key === activePreviewClusterKey) : null;
+  // For single-marker highlights from cards, find the cluster containing that marker
   const activePreviewMarker = activePreviewId ? previewMarkers.find((m) => m.id === activePreviewId) : null;
+  const popupCluster = activePreviewCluster ?? (activePreviewMarker ? previewClusters.find((c) => c.markers.some((m) => m.id === activePreviewId)) : null);
   useEffect(() => {
-    if (!activePreviewMarker || !mapRef.current || !mapReady) { setPreviewPopupPos(null); return; }
+    if (!popupCluster || !mapRef.current || !mapReady) { setPreviewPopupPos(null); return; }
+    const clusterRef = popupCluster;
     function updatePos() {
-      if (!mapRef.current || !activePreviewMarker) return;
-      const pt = mapRef.current.project([activePreviewMarker.longitude, activePreviewMarker.latitude]);
+      if (!mapRef.current) return;
+      const pt = mapRef.current.project([clusterRef.lng, clusterRef.lat]);
       setPreviewPopupPos({ x: pt.x, y: pt.y });
     }
     updatePos();
@@ -894,7 +929,7 @@ export function PoiMapImpl(props: PoiMapProps) {
     mapInstance.on("zoom", updatePos);
     return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePreviewMarker, mapReady]);
+  }, [popupCluster, mapReady]);
 
   // Fly to highlighted preview marker when triggered from card click.
   // Deps include mapReady (map may not be loaded when the highlight is first
@@ -905,6 +940,12 @@ export function PoiMapImpl(props: PoiMapProps) {
     if (!marker) return;
     // Fly to the marker
     mapRef.current.flyTo({ center: [marker.longitude, marker.latitude], zoom: Math.max(zoom, 15), duration: 800, offset: [0, 60] });
+    // Open the cluster containing this marker and expand it
+    const cluster = previewClusters.find((c) => c.markers.some((m) => m.id === highlightedPreviewId));
+    if (cluster) {
+      setActivePreviewClusterKey(cluster.key);
+      setExpandedPreviewId(highlightedPreviewId);
+    }
     setActivePreviewId(highlightedPreviewId);
     setActiveId(null);
     setActiveFavId(null);
@@ -1176,6 +1217,9 @@ export function PoiMapImpl(props: PoiMapProps) {
         onClick={() => {
           setActiveId(null);
           setActiveFavId(null);
+          setActivePreviewClusterKey(null);
+          setActivePreviewId(null);
+          setExpandedPreviewId(null);
           if (!onAddAtLocation) setDropPin(null);
         }}
       >
@@ -1350,33 +1394,48 @@ export function PoiMapImpl(props: PoiMapProps) {
           );
         })}
 
-        {/* Recommendation preview markers — dashed outline, lower opacity */}
-        {previewMarkers.map((pm) => {
-          const isHighlighted = highlightedPreviewId === pm.id || hoverPreviewId === pm.id;
-          const isActive = activePreviewId === pm.id;
-          const catStyle = CATEGORY_STYLES[pm.category] ?? CATEGORY_STYLES.CULTURE;
+        {/* Recommendation preview markers — clustered when overlapping */}
+        {previewClusters.map((cluster) => {
+          const isSingle = cluster.markers.length === 1;
+          const pm = cluster.markers[0];
+          const isClusterActive = activePreviewClusterKey === cluster.key;
+          // For single markers, check highlight state
+          const isHighlighted = isSingle && (highlightedPreviewId === pm.id || hoverPreviewId === pm.id);
+          const isActive = isClusterActive || (isSingle && activePreviewId === pm.id);
+          // For clusters, use the dominant category for styling
+          const catCounts = new Map<Category, number>();
+          for (const m of cluster.markers) catCounts.set(m.category, (catCounts.get(m.category) ?? 0) + 1);
+          const dominantCat = [...catCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+          const catStyle = CATEGORY_STYLES[dominantCat] ?? CATEGORY_STYLES.CULTURE;
           return (
             <Marker
-              key={`preview-${pm.id}`}
-              longitude={pm.longitude}
-              latitude={pm.latitude}
+              key={`preview-cluster-${cluster.key}`}
+              longitude={cluster.lng}
+              latitude={cluster.lat}
               anchor="center"
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
-                const newId = activePreviewId === pm.id ? null : pm.id;
-                setActivePreviewId(newId);
-                setActiveId(null);
-                setActiveFavId(null);
-                if (newId) onPreviewMarkerClick?.(pm.id);
+                if (isClusterActive) {
+                  setActivePreviewClusterKey(null);
+                  setActivePreviewId(null);
+                  setExpandedPreviewId(null);
+                } else {
+                  setActivePreviewClusterKey(cluster.key);
+                  setActivePreviewId(isSingle ? pm.id : null);
+                  setExpandedPreviewId(isSingle ? pm.id : null);
+                  setActiveId(null);
+                  setActiveFavId(null);
+                  if (isSingle) onPreviewMarkerClick?.(pm.id);
+                }
               }}
             >
               <div
-                onMouseEnter={() => setHoverPreviewId(pm.id)}
-                onMouseLeave={() => setHoverPreviewId(null)}
+                onMouseEnter={() => isSingle && setHoverPreviewId(pm.id)}
+                onMouseLeave={() => isSingle && setHoverPreviewId(null)}
                 className="relative flex flex-col items-center cursor-pointer"
               >
-                {/* Title tooltip on hover */}
-                {(isHighlighted || isActive) && !isActive && (
+                {/* Title tooltip on hover (single marker only) */}
+                {isSingle && isHighlighted && !isActive && (
                   <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none max-w-[200px] truncate">
                     {pm.title}
                   </div>
@@ -1384,8 +1443,8 @@ export function PoiMapImpl(props: PoiMapProps) {
                 <div
                   className="flex items-center justify-center rounded-full transition-all"
                   style={{
-                    width: isActive || isHighlighted ? 30 : 24,
-                    height: isActive || isHighlighted ? 30 : 24,
+                    width: isActive || isHighlighted ? 30 : isSingle ? 24 : 28,
+                    height: isActive || isHighlighted ? 30 : isSingle ? 24 : 28,
                     border: `2px dashed ${catStyle.dot}`,
                     backgroundColor: `${catStyle.dot}18`,
                     opacity: isActive || isHighlighted ? 1 : 0.7,
@@ -1397,7 +1456,11 @@ export function PoiMapImpl(props: PoiMapProps) {
                         : "0 1px 4px rgba(0,0,0,0.2)",
                   }}
                 >
-                  <span style={{ fontSize: isActive || isHighlighted ? 13 : 11, lineHeight: 1 }}>+</span>
+                  {isSingle ? (
+                    <span style={{ fontSize: isActive || isHighlighted ? 13 : 11, lineHeight: 1 }}>+</span>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 700, lineHeight: 1, color: catStyle.dot }}>{cluster.markers.length}</span>
+                  )}
                 </div>
               </div>
             </Marker>
@@ -1554,40 +1617,119 @@ export function PoiMapImpl(props: PoiMapProps) {
       )}
 
       {/* Recommendation preview popup — rendered outside MapGL */}
-      {activePreviewMarker && previewPopupPos && (
+      {popupCluster && previewPopupPos && (
         <div
           className="absolute z-30 pointer-events-auto"
           style={{ left: previewPopupPos.x, top: previewPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
         >
-          <div className="relative rounded-lg border border-dashed border-[hsl(var(--primary))]/40 bg-[hsl(var(--background))] shadow-xl p-3 max-w-[260px]">
+          <div className="relative rounded-lg border border-dashed border-[hsl(var(--primary))]/40 bg-[hsl(var(--background))] shadow-xl p-3 max-w-[280px]">
             <button
               type="button"
-              onClick={() => setActivePreviewId(null)}
-              className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs"
+              onClick={() => { setActivePreviewClusterKey(null); setActivePreviewId(null); setExpandedPreviewId(null); }}
+              className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs z-10"
               aria-label="Close"
             >✕</button>
-            <div className="space-y-1.5 pr-4">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs">{CATEGORY_ICONS[activePreviewMarker.category] ?? ""}</span>
-                <h4 className="text-sm font-semibold leading-tight">{activePreviewMarker.title}</h4>
+            {popupCluster.markers.length === 1 ? (
+              /* Single marker — show detail directly */
+              <div className="space-y-1.5 pr-4">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs">{CATEGORY_ICONS[popupCluster.markers[0].category] ?? ""}</span>
+                  <h4 className="text-sm font-semibold leading-tight">{popupCluster.markers[0].title}</h4>
+                </div>
+                <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{popupCluster.markers[0].description}</p>
+                <div className="flex items-center gap-2 pt-1 flex-wrap">
+                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">{popupCluster.markers[0].sectionLabel}</span>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    {onPreviewScrollToCard && (
+                      <button
+                        type="button"
+                        onClick={() => onPreviewScrollToCard(popupCluster.markers[0].id)}
+                        className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+                      >
+                        Show in list
+                      </button>
+                    )}
+                    {onPreviewAddPoi && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onPreviewAddPoi(popupCluster.markers[0]);
+                          setActivePreviewClusterKey(null);
+                          setActivePreviewId(null);
+                        }}
+                        className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90"
+                      >
+                        + Add as POI
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{activePreviewMarker.description}</p>
-              <div className="flex items-center justify-between gap-2 pt-1">
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">{activePreviewMarker.sectionLabel}</span>
-                {onPreviewAddPoi && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onPreviewAddPoi(activePreviewMarker);
-                      setActivePreviewId(null);
-                    }}
-                    className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90"
-                  >
-                    + Add as POI
-                  </button>
-                )}
+            ) : (
+              /* Multiple markers — list with expandable detail */
+              <div className="space-y-1 pr-4 max-h-[300px] overflow-y-auto">
+                <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] mb-1">{popupCluster.markers.length} recommendations here</p>
+                {popupCluster.markers.map((pm) => {
+                  const isExpanded = expandedPreviewId === pm.id;
+                  const pmCatStyle = CATEGORY_STYLES[pm.category] ?? CATEGORY_STYLES.CULTURE;
+                  return (
+                    <div key={pm.id} className={`rounded-md border transition-colors ${isExpanded ? "border-[hsl(var(--primary))]/30 bg-[hsl(var(--primary))]/5" : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/50"}`}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setExpandedPreviewId(isExpanded ? null : pm.id);
+                          setActivePreviewId(pm.id);
+                          onPreviewMarkerClick?.(pm.id);
+                        }}
+                        className="flex items-center gap-1.5 w-full text-left px-2 py-1.5"
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: pmCatStyle.dot }}
+                        />
+                        <span className="text-xs font-medium leading-tight truncate flex-1">{pm.title}</span>
+                        <span className="text-[9px] text-[hsl(var(--muted-foreground))] shrink-0">{pm.sectionLabel}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground))] transition-transform ${isExpanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                      </button>
+                      {isExpanded && (
+                        <div className="px-2 pb-2 space-y-1.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs">{CATEGORY_ICONS[pm.category] ?? ""}</span>
+                            <span className="text-[10px] font-medium text-[hsl(var(--foreground))]">{CATEGORY_LABELS[pm.category] ?? pm.category}</span>
+                          </div>
+                          <p className="text-[11px] text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{pm.description}</p>
+                          <div className="flex items-center gap-1.5">
+                            {onPreviewScrollToCard && (
+                              <button
+                                type="button"
+                                onClick={() => onPreviewScrollToCard(pm.id)}
+                                className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+                              >
+                                Show in list
+                              </button>
+                            )}
+                            {onPreviewAddPoi && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onPreviewAddPoi(pm);
+                                  setActivePreviewClusterKey(null);
+                                  setActivePreviewId(null);
+                                  setExpandedPreviewId(null);
+                                }}
+                                className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 ml-auto"
+                              >
+                                + Add as POI
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </div>
           {/* Arrow tip */}
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
