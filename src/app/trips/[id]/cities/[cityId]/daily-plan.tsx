@@ -1362,29 +1362,38 @@ export function DailyPlan({
             </p>
           ) : currentDayPlan ? (
             <div id="daily-plan-day-view" className="space-y-3 rounded-md border border-[hsl(var(--border))] p-3">
-              <div className="flex items-center justify-between">
-                <h5 className="font-semibold">
-                  {formatDayWithIndex(currentDayPlan.date, currentDayIndex)}
-                </h5>
-                <div className="flex items-center gap-2">
+              <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:justify-between">
+                {/* Row 1: Title + POI count */}
+                <div className="flex items-center justify-between sm:justify-start sm:gap-2">
+                  <h5 className="font-semibold">
+                    {formatDayWithIndex(currentDayPlan.date, currentDayIndex)}
+                  </h5>
+                  <span className="text-xs text-[hsl(var(--muted-foreground))] sm:hidden" role="status">
+                    {currentDayPlan.activities.length} {currentDayPlan.activities.length === 1 ? "POI" : "POIs"}
+                  </span>
+                </div>
+                {/* Row 2 (mobile) / inline (desktop): action buttons + POI count */}
+                <div className="flex items-center gap-1.5 sm:gap-2">
                   {currentDayPlan.activities.length > 0 && (
                     <>
                       <button
                         type="button"
                         onClick={() => optimizeRoute(currentDayPlan.id)}
                         disabled={busy}
-                        className="text-xs text-green-600 hover:text-green-800 transition-colors flex items-center gap-1"
+                        className="text-xs text-green-600 hover:text-green-800 transition-colors flex items-center gap-1 px-2 py-1 rounded-md border border-green-600/30 bg-green-600/10 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                        Optimize route
+                        <span className="hidden sm:inline">Optimize route</span>
+                        <span className="sm:hidden">Optimize</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => setMapDayPlan(currentDayPlan)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1"
+                        className="text-xs text-indigo-600 hover:text-indigo-800 transition-colors flex items-center gap-1 px-2 py-1 rounded-md border border-indigo-600/30 bg-indigo-600/10 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                        Show on map
+                        <span className="hidden sm:inline">Show on map</span>
+                        <span className="sm:hidden">Map</span>
                       </button>
                       <button
                         type="button"
@@ -1394,22 +1403,23 @@ export function DailyPlan({
                           setMoveModalOpen((v) => !v);
                         }}
                         disabled={busy}
-                        className="text-xs text-purple-600 hover:text-purple-800 transition-colors flex items-center gap-1"
+                        className="text-xs text-purple-600 hover:text-purple-800 transition-colors flex items-center gap-1 px-2 py-1 rounded-md border border-purple-600/30 bg-purple-600/10 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                        Move to...
+                        <span className="hidden sm:inline">Move to...</span>
+                        <span className="sm:hidden">Move</span>
                       </button>
                       <button
                         type="button"
                         onClick={() => clearDay(currentDayPlan.id)}
                         disabled={busy}
-                        className="text-xs text-[hsl(var(--muted-foreground))] hover:text-red-600 transition-colors"
+                        className="text-xs text-[hsl(var(--muted-foreground))] hover:text-red-600 transition-colors px-2 py-1 rounded-md border border-[hsl(var(--muted-foreground))]/30 bg-[hsl(var(--muted-foreground))]/10 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0"
                       >
-                        Clear day
+                        Clear
                       </button>
                     </>
                   )}
-                  <span className="text-xs text-[hsl(var(--muted-foreground))]" role="status">
+                  <span className="hidden sm:inline text-xs text-[hsl(var(--muted-foreground))]" role="status">
                     {currentDayPlan.activities.length} {currentDayPlan.activities.length === 1 ? "POI" : "POIs"}
                   </span>
                 </div>
