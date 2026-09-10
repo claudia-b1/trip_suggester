@@ -90,7 +90,7 @@ import {
   CompactPoiCard,
 } from "./poi-card";
 
-type View = "list" | "map" | "timeline" | "plan";
+type View = "list" | "map" | "timeline";
 type ListLayout = "grid" | "compact";
 
 // ─── helpers removed — now imported from ./poi-card ───
@@ -386,7 +386,7 @@ export function PoisSection({
     const mql = window.matchMedia("(min-width: 1024px)");
     const handle = () => {
       if (mql.matches) {
-        setView((v) => v === "timeline" || v === "plan" ? "map" : v);
+        setView((v) => v === "timeline" ? "map" : v);
         setAssigningPoi(null);
         setPreAssignView(null);
       }
@@ -1035,33 +1035,34 @@ export function PoisSection({
     <div className={showTimeline ? "lg:grid lg:gap-6 lg:grid-cols-[19fr_4fr]" : ""}>
       <div className="min-w-0 space-y-2">
       <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div className="flex items-center gap-3">
-          <CardTitle>Points of interest</CardTitle>
-          {pois.length > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={clearingAll}
-              onClick={onClearAll}
-              className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-            >
-              {clearingAll ? <span className="spinner mr-1" /> : null}
-              {clearingAll ? "Clearing…" : "Clear all"}
-            </Button>
-          )}
+      <CardHeader className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CardTitle>Points of interest</CardTitle>
+            {pois.length > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={clearingAll}
+                onClick={onClearAll}
+                className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+              >
+                {clearingAll ? <span className="spinner mr-1" /> : null}
+                {clearingAll ? "Clearing…" : "Clear all"}
+              </Button>
+            )}
+          </div>
         </div>
         <div
           role="tablist"
-          className="inline-flex rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-1 gap-0.5"
+          className="flex lg:inline-flex rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-1 gap-0.5"
         >
           {(
             [
               ["map", "🗺️", "Map", false],
               ["list", "📋", "List", false],
               ["timeline", "📅", "Timeline", true],
-              ...(liveDayPlans.length > 0 ? [["plan", "🗓️", "Plan", true] as const] : []),
             ] as const
           ).map(([key, icon, label, mobileOnly]) => (
             <button
@@ -1069,7 +1070,7 @@ export function PoisSection({
               role="tab"
               aria-selected={view === key}
               onClick={() => setView(key as View)}
-              className={`relative flex items-center gap-1.5 rounded-md px-2 sm:px-3 py-1 sm:py-1.5 text-xs sm:text-sm font-medium transition-all ${
+              className={`relative flex flex-1 lg:flex-none items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all ${
                 mobileOnly ? "lg:hidden" : ""
               } ${
                 view === key
@@ -1077,15 +1078,15 @@ export function PoisSection({
                   : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
               }`}
             >
-              <span className="text-xs">{icon}</span>
-              <span className="hidden sm:inline">{label}</span>
+              <span className="text-sm">{icon}</span>
+              {label}
             </button>
           ))}
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Filters — hidden for timeline/plan views */}
-        {view !== "timeline" && view !== "plan" && (
+        {/* Filters — hidden for timeline view */}
+        {view !== "timeline" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <Input
@@ -1278,11 +1279,9 @@ export function PoisSection({
             dayPlans={liveDayPlans}
             onActivityClick={(dayDate, activityId) => {
               setScrollToActivity({ date: dayDate, activityId });
-              setView("plan");
             }}
             onDayDoubleClick={(dayDate) => {
               setScrollToActivity({ date: dayDate, activityId: -1 });
-              setView("plan");
             }}
             onDropPoi={handleDropPoiOnTimeline}
             subcityDayPlans={subcityDayPlans}
@@ -1310,19 +1309,6 @@ export function PoisSection({
               setView(preAssignView ?? "map");
               setPreAssignView(null);
             }}
-          />
-        ) : view === "plan" ? (
-          <DailyPlan
-            cityId={cityId}
-            pois={pois}
-            dayPlans={liveDayPlans}
-            setDayPlans={setLiveDayPlans}
-            scrollToActivity={scrollToActivity}
-            onScrollComplete={() => setScrollToActivity(null)}
-            dayNotes={dayNotes}
-            subcityDayPlans={subcityDayPlans}
-            favouritedPoiIds={favouritedPoiIds}
-            hideSidebar
           />
         ) : view === "map" ? (
           <div className="space-y-2">
@@ -1698,9 +1684,9 @@ export function PoisSection({
       </CardContent>
     </Card>
 
-    {/* Day Plan — hidden on mobile (shown via Plan tab instead) */}
+    {/* Day Plan — always visible below map/list/timeline */}
     {liveDayPlans.length > 0 && (
-      <Card className="hidden lg:block">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle>📅 Day Plan</CardTitle>
           <button

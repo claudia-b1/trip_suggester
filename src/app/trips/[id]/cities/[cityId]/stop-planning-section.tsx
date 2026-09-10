@@ -1097,45 +1097,44 @@ export function StopPlanningSection({
 
       {/* ── Map / List Section with Timeline Sidebar ── */}
       <Card id="pois-section">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              📍 Places
-              {pois.length > 0 && (
-                <span className="text-sm font-normal text-[hsl(var(--muted-foreground))]">
-                  ({filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly
-                    ? `${filteredPois.length}/${pois.length}`
-                    : pois.length})
-                </span>
-              )}
-            </CardTitle>
+        <CardHeader className="space-y-2 pb-3">
+          <CardTitle className="flex items-center gap-2">
+            📍 Places
+            {pois.length > 0 && (
+              <span className="text-sm font-normal text-[hsl(var(--muted-foreground))]">
+                ({filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly
+                  ? `${filteredPois.length}/${pois.length}`
+                  : pois.length})
+              </span>
+            )}
+          </CardTitle>
 
-            {/* View toggle */}
-            <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5">
-              {(
-                [
-                  ["map", "🗺️ Map", false],
-                  ["list", "📋 List", false],
-                  ["timeline", "📅 Timeline", true],
-                ] as const
-              ).map(([key, label, mobileOnly]) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-selected={view === key}
-                  onClick={() => setView(key)}
-                  className={`rounded px-2 sm:px-3 py-1 text-xs font-medium transition-colors ${
-                    mobileOnly ? "lg:hidden" : ""
-                  } ${
-                    view === key
-                      ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
-                      : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+          {/* View toggle — full-width below title */}
+          <div className="flex lg:inline-flex rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-1 gap-0.5">
+            {(
+              [
+                ["map", "🗺️", "Map", false],
+                ["list", "📋", "List", false],
+                ["timeline", "📅", "Timeline", true],
+              ] as const
+            ).map(([key, icon, label, mobileOnly]) => (
+              <button
+                key={key}
+                type="button"
+                aria-selected={view === key}
+                onClick={() => setView(key)}
+                className={`flex flex-1 lg:flex-none items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  mobileOnly ? "lg:hidden" : ""
+                } ${
+                  view === key
+                    ? "bg-[hsl(var(--background))] text-[hsl(var(--foreground))] shadow-sm"
+                    : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                }`}
+              >
+                <span className="text-sm">{icon}</span>
+                {label}
+              </button>
+            ))}
           </div>
         </CardHeader>
         <CardContent>
