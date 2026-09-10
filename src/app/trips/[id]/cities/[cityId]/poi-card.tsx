@@ -808,7 +808,7 @@ export function CompactPoiCard({
 
       {/* Compact header — always visible */}
       <div className="flex w-full items-center gap-0">
-        {/* Drag handle (desktop) / Add to timeline tap target (mobile) */}
+        {/* Drag handle (desktop only) */}
         <span
           draggable
           onDragStart={(e) => {
@@ -816,18 +816,27 @@ export function CompactPoiCard({
             e.dataTransfer.effectAllowed = "copy";
             e.dataTransfer.setData("application/x-poi-id", String(poi.id));
           }}
-          onClick={() => {
-            if (window.matchMedia("(max-width: 1023px)").matches && dayPlans.length > 0) {
-              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
-                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
-              }));
-            }
-          }}
           title="Drag to timeline"
-          className="flex items-center px-1 py-2.5 text-[hsl(var(--muted-foreground))]/40 hover:text-[hsl(var(--muted-foreground))] cursor-grab lg:cursor-grab cursor-pointer active:cursor-grabbing transition-colors self-stretch"
+          className="hidden lg:flex items-center px-1 py-2.5 text-[hsl(var(--muted-foreground))]/40 hover:text-[hsl(var(--muted-foreground))] cursor-grab active:cursor-grabbing transition-colors self-stretch"
         >
           <DragGripIcon className="h-4 w-4" />
         </span>
+        {/* Add to timeline button (mobile only) */}
+        {dayPlans.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+              }));
+            }}
+            title="Add to timeline"
+            className="lg:hidden flex items-center px-1.5 py-2.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors self-stretch"
+          >
+            <span className="text-xs">📅</span>
+          </button>
+        )}
       <div
         onClick={(e) => { if ((e.target as HTMLElement).closest('button')) return; setOpen((v) => !v); }}
         className="flex flex-1 items-center gap-3 p-2.5 pl-1 text-left min-w-0 cursor-pointer"
