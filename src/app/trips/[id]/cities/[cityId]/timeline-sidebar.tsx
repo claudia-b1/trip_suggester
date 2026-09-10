@@ -279,18 +279,14 @@ export function TimelineSidebar({
                       <p className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_ICONS[slot]} {SLOT_LABELS[slot]}
                       </p>
-                      {isAssigning && nonAccom.length === 0 ? (
-                        <div className="rounded border border-dashed border-indigo-300 dark:border-indigo-600 px-1.5 py-1 text-center text-[10px] text-indigo-500 dark:text-indigo-400">
-                          Tap to add here
-                        </div>
-                      ) : nonAccom.length > 0 ? (
+                      {nonAccom.length > 0 && (
                         <ul className="space-y-0.5">
                           {nonAccom.map((a) => (
                             <li
                               key={a.id}
-                              onClick={() => onActivityClick?.(dp.date, a.id)}
+                              onClick={(e) => { if (!isAssigning) onActivityClick?.(dp.date, a.id); }}
                               className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-[hsl(var(--muted))] ${
-                                onActivityClick ? "cursor-pointer" : "cursor-default"
+                                onActivityClick && !isAssigning ? "cursor-pointer" : "cursor-default"
                               }`}
                             >
                               <span
@@ -304,6 +300,11 @@ export function TimelineSidebar({
                             </li>
                           ))}
                         </ul>
+                      )}
+                      {isAssigning ? (
+                        <div className="rounded border border-dashed border-indigo-300 dark:border-indigo-600 px-1.5 py-1 text-center text-[10px] text-indigo-500 dark:text-indigo-400">
+                          Tap to add here
+                        </div>
                       ) : isOver ? (
                         <div className="rounded border border-dashed border-indigo-300 px-1.5 py-1 text-center text-[10px] text-indigo-500">
                           Drop here

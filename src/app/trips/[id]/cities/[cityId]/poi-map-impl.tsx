@@ -754,11 +754,16 @@ export function PoiMapImpl(props: PoiMapProps) {
 
   useEffect(() => {
     function onFullscreenChange() {
-      setFullscreen(!!document.fullscreenElement);
+      const isNativeFs = !!(document.fullscreenElement ?? (document as unknown as Record<string, unknown>).webkitFullscreenElement);
+      setFullscreen(isNativeFs);
       setTimeout(() => mapRef.current?.resize(), 100);
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+    };
   }, []);
 
   // Long-press on touch devices → drop pin (equivalent to right-click on desktop)
@@ -1144,7 +1149,7 @@ export function PoiMapImpl(props: PoiMapProps) {
   const nearbyCircleData = null;
 
   return (
-    <div ref={containerRef} className="poi-map-outer relative rounded-xl border border-[hsl(var(--border))]">
+    <div ref={containerRef} className={`poi-map-outer relative ${fullscreen ? "fixed inset-0 z-50 rounded-none border-none bg-[hsl(var(--background))]" : "rounded-xl border border-[hsl(var(--border))]"}`}>
       <div className="absolute left-2 top-2 z-10 flex flex-col gap-1.5">
         <button
           type="button"
@@ -1179,10 +1184,32 @@ export function PoiMapImpl(props: PoiMapProps) {
         <button
           type="button"
           onClick={() => {
-            if (!document.fullscreenElement) {
-              containerRef.current?.requestFullscreen();
+            const el = containerRef.current;
+            if (!el) return;
+            const nativeFs = document.fullscreenElement ?? (document as unknown as Record<string, unknown>).webkitFullscreenElement;
+            if (!fullscreen && !nativeFs) {
+              // Try native fullscreen first (works on Android, desktop)
+              const reqFs = el.requestFullscreen ?? (el as unknown as Record<string, unknown>).webkitRequestFullscreen;
+              if (typeof reqFs === "function") {
+                (reqFs as () => Promise<void>).call(el).catch(() => {
+                  // Native fullscreen failed (e.g. iOS Safari) — use CSS fallback
+                  setFullscreen(true);
+                  setTimeout(() => mapRef.current?.resize(), 50);
+                });
+              } else {
+                // No native fullscreen API — CSS fallback
+                setFullscreen(true);
+                setTimeout(() => mapRef.current?.resize(), 50);
+              }
             } else {
-              document.exitFullscreen();
+              // Exit fullscreen
+              if (nativeFs) {
+                const exitFs = document.exitFullscreen ?? (document as unknown as Record<string, unknown>).webkitExitFullscreen;
+                if (typeof exitFs === "function") (exitFs as () => Promise<void>).call(document);
+              } else {
+                setFullscreen(false);
+                setTimeout(() => mapRef.current?.resize(), 50);
+              }
             }
           }}
           className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
