@@ -12,7 +12,6 @@ import MapGL, {
 } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, isCategory, type Category } from "@/lib/categories";
-import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
 import { ACCOMMODATION_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
@@ -297,55 +296,9 @@ function PopupContent({
   const router = useRouter();
   const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot>("MORNING");
-  const [assigning, setAssigning] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [hoverStar, setHoverStar] = useState<number | null>(null);
-  // Multi-day mode for accommodation
-  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
   const isAccommodation = poi.category === "ACCOMMODATION";
-
-  async function assign() {
-    if (!selectedDay) return;
-    setAssigning(true);
-    const res = await fetch(`/api/day-plans/${selectedDay}/activities`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ poiId: poi.id, timeSlot: selectedSlot }),
-    });
-    setAssigning(false);
-    if (!res.ok) {
-      toast("Failed to assign POI", { variant: "error" });
-      return;
-    }
-    toast(`${poi.name} added to plan!`);
-    router.refresh();
-    onClose();
-  }
-
-  async function assignMultiDay() {
-    if (selectedDays.size === 0) return;
-    setAssigning(true);
-    const res = await fetch("/api/day-plans/batch-assign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        poiId: poi.id,
-        dayPlanIds: [...selectedDays],
-        timeSlot: "EVENING",
-      }),
-    });
-    setAssigning(false);
-    if (res.ok) {
-      const data = await res.json();
-      toast(`${poi.name} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
-      router.refresh();
-      onClose();
-    } else {
-      toast("Failed to assign", { variant: "error" });
-    }
-  }
 
   const currentRating = userRatings?.[poi.id];
   const displayStars = hoverStar ?? currentRating ?? 0;
@@ -489,86 +442,6 @@ function PopupContent({
           </svg>
           {isFavourited ? "Saved to favourites" : "Add to favourites"}
         </button>
-      )}
-      {dayPlans.length > 0 && !dragOnly && (
-        <details className="group" onClick={(e) => e.stopPropagation()}>
-          <summary className="cursor-pointer select-none text-xs font-medium text-indigo-600 hover:underline list-none flex items-center gap-1">
-            <span className="group-open:rotate-90 transition-transform inline-block">▶</span>
-            Add to Day Plan
-          </summary>
-          <div className="mt-2 space-y-1.5">
-            {isAccommodation ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold text-indigo-600 uppercase tracking-wider">🏠 Select days</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedDays(new Set(dayPlans.map((d) => d.id)))}
-                    className="text-[10px] text-indigo-500 hover:text-indigo-700"
-                  >Select all</button>
-                </div>
-                <div className="max-h-[140px] overflow-y-auto space-y-0.5">
-                  {dayPlans.map((d) => (
-                    <label key={d.id} className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs cursor-pointer hover:bg-indigo-100/30">
-                      <input
-                        type="checkbox"
-                        checked={selectedDays.has(d.id)}
-                        onChange={() => setSelectedDays((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(d.id)) next.delete(d.id); else next.add(d.id);
-                          return next;
-                        })}
-                        disabled={assigning}
-                        className="rounded border-indigo-300"
-                      />
-                      {d.label}
-                    </label>
-                  ))}
-                </div>
-                {selectedDays.size > 0 && (
-                  <button
-                    type="button"
-                    onClick={assignMultiDay}
-                    disabled={assigning}
-                    className="w-full rounded bg-indigo-500 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50"
-                  >
-                    {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                <select
-                  value={selectedDay ?? ""}
-                  onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
-                >
-                  <option value="">Pick a day…</option>
-                  {dayPlans.map((d) => (
-                    <option key={d.id} value={d.id}>{d.label}</option>
-                  ))}
-                </select>
-                <select
-                  value={selectedSlot}
-                  onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
-                  className="w-full rounded border border-gray-300 px-2 py-1 text-xs"
-                >
-                  {TIME_SLOTS.map((s) => (
-                    <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); assign(); }}
-                  disabled={!selectedDay || assigning}
-                  className="w-full rounded bg-indigo-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40 hover:bg-indigo-700"
-                >
-                  {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
-                </button>
-              </>
-            )}
-          </div>
-        </details>
       )}
       {poi.category === "ACCOMMODATION" && onSetAccommodation && (
         <button
