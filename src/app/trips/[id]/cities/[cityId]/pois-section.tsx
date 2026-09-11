@@ -84,7 +84,6 @@ import {
   DragGripIcon,
   TrashIcon,
   HeartIcon,
-  DayPlanAssigner,
   StarRating,
   PoiCard,
   CompactPoiCard,
@@ -395,7 +394,7 @@ export function PoisSection({
     return () => mql.removeEventListener("change", handle);
   }, []);
 
-  // Listen for "assign-poi-to-timeline" events from DayPlanAssigner on mobile
+  // Listen for "assign-poi-to-timeline" events from TimelineAssignButton / POI cards
   useEffect(() => {
     function handleAssignPoi(e: Event) {
       const detail = (e as CustomEvent).detail;
