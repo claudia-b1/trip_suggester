@@ -372,17 +372,23 @@ function PopupContent({
           {CATEGORY_ICONS[poi.category]} {poi.category}
         </span>
       </div>
-      {/* Drag handle for timeline (desktop) / Add to timeline button (mobile) */}
+      {/* Drag to timeline (desktop) / Add to timeline (mobile) */}
       {dayPlans.length > 0 && (
         <>
-          {/* Desktop: draggable handle */}
+          {/* Desktop: draggable + clickable */}
           <div
             draggable
             onDragStart={(e) => {
               e.dataTransfer.effectAllowed = "copy";
               e.dataTransfer.setData("application/x-poi-id", String(poi.id));
             }}
-            className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+              }));
+            }}
+            className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/40 transition-colors"
             title="Drag to timeline"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
@@ -401,7 +407,7 @@ function PopupContent({
                 detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
               }));
             }}
-            className="lg:hidden flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/40 px-2 py-1.5 hover:bg-[hsl(var(--muted))] transition-colors"
+            className="lg:hidden flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/30 px-2 py-1.5 hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/50 transition-colors"
             title="Add to timeline"
           >
             <span className="text-xs">📅</span>
