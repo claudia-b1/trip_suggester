@@ -582,8 +582,6 @@ export async function POST(
   // 100 m threshold: same garden/museum complex can have different OSM nodes
   // tens of metres apart; 100 m catches those while keeping truly different POIs apart.
   const COORD_DEDUP_M = 100;
-  // 300 m threshold for fuzzy name dedup: "Louvre Museum" and "Musée du Louvre"
-  // at 150 m apart are the same place even though the 100 m coord-only check misses it.
   const FUZZY_DEDUP_M = 300;
   const FUZZY_NAME_THRESHOLD = 0.5;
   const MIN_SCORE = 20;
@@ -623,6 +621,7 @@ export async function POST(
       // Keep the higher-scored one (items are sorted by score, so first wins).
       const gMeta = googleMetaMap.get(item.place.placeId);
       if (gMeta?.googlePlaceId && seenGooglePlaceIds.has(gMeta.googlePlaceId)) {
+        console.log(`[google-dedup] "${item.place.name}" shares googlePlaceId ${gMeta.googlePlaceId} — skipping`);
         coordDupSet.add(item.place.placeId);
         continue;
       }
