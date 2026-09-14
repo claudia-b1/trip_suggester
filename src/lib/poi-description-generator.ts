@@ -179,6 +179,25 @@ async function generateBatch(
     }),
   );
 
+  // Fetch Google Places metadata from enrichment cache for extra context
+  // (Google name, editorial summary) — helps the LLM identify generic names
+  // like "Toni" → "Pizzeria & Restaurant Toni"
+  const googleMetaMap = new Map<string, { name?: string; editorial?: string }>();
+  const placeIds = pois.map((p) => p.placeId);
+  const metaCacheEntries = await prisma.poiEnrichCache.findMany({
+    where: { placeId: { in: placeIds }, source: "google-meta" },
+    select: { placeId: true, payload: true },
+  });
+  for (const entry of metaCacheEntries) {
+    try {
+      const data = JSON.parse(entry.payload) as { name?: string; editorialSummary?: string };
+      googleMetaMap.set(entry.placeId, {
+        name: data.name,
+        editorial: data.editorialSummary,
+      });
+    } catch { /* ignore malformed */ }
+  }
+
   const location = countryName ? `${cityName}, ${countryName}` : cityName;
 
   // Build the prompt
@@ -189,6 +208,12 @@ async function generateBatch(
     if (typeof cuisine === "string") parts.push(`cuisine=${cuisine}`);
     const placeCategory = poi.extraFields?.placeCategory;
     if (typeof placeCategory === "string") parts.push(`type=${placeCategory}`);
+    // Add Google Places context when available
+    const gMeta = googleMetaMap.get(poi.placeId);
+    if (gMeta?.name && gMeta.name.toLowerCase() !== poi.name.toLowerCase()) {
+      parts.push(`also known as "${gMeta.name}"`);
+    }
+    if (gMeta?.editorial) parts.push(`info="${gMeta.editorial}"`);
     if (poi.rating != null) parts.push(`rating=${poi.rating}`);
     if (poi.userRatingCount != null) parts.push(`reviews=${poi.userRatingCount}`);
     if (snippets[i]) parts.push(`\n   Web info: ${snippets[i]}`);
