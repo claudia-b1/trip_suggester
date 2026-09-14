@@ -108,9 +108,12 @@ export async function generatePoiDescriptions(
     const batch = uncachedPois.slice(i, i + BATCH_SIZE);
     try {
       const results = await generateBatch(batch, cityName, countryName, apiKey);
+      const respondedIds = new Set<number>();
+
       for (const result of results) {
         const poi = batch.find((p) => p.id === result.id);
         if (!poi) continue;
+        respondedIds.add(poi.id);
 
         // Write to cache
         await prisma.poiDescriptionCache.upsert({
@@ -132,6 +135,18 @@ export async function generatePoiDescriptions(
             data: { llmDescription: result.description },
           });
           generated++;
+        }
+      }
+
+      // Cache null for POIs the LLM omitted entirely (low confidence) so
+      // they aren't retried on every run.
+      for (const poi of batch) {
+        if (!respondedIds.has(poi.id)) {
+          await prisma.poiDescriptionCache.upsert({
+            where: { placeId: poi.placeId },
+            create: { placeId: poi.placeId, description: null },
+            update: {}, // already cached — don't overwrite
+          });
         }
       }
     } catch (err) {
