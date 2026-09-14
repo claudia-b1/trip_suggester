@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -9,6 +9,7 @@ import { resizeImageFile } from "@/lib/resize-image";
 import type { DayPlanOption } from "./poi-map";
 import type { PoiDTO, ScoreBreakdownDTO, AttachmentDTO } from "./pois-section";
 import { AttachmentsSection } from "@/components/ui/attachments-section";
+import { ScorePopover } from "@/components/ui/score-popover";
 
 // ─── Utility functions ──────────────────────────────────────────────────────
 
@@ -114,18 +115,18 @@ export function HeartIcon({ filled, className }: { filled: boolean; className?: 
   );
 }
 
-// ─── DayPlanAssigner ──────────────────────────────────────────────────────────
+// ─── TimelineAssignButton ─────────────────────────────────────────────────────
+// Unified button: "Drag to timeline" (desktop) / "Add to timeline" (mobile).
+// For ACCOMMODATION POIs, clicking opens a multi-day popover instead of
+// navigating to the timeline.
 
-export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poiId: number; poiName: string; poiCategory: Category; dayPlans: DayPlanOption[] }) {
+export function TimelineAssignButton({ poi, dayPlans }: { poi: { id: number; name: string; category: Category }; dayPlans: DayPlanOption[] }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot>("MORNING");
-  const [assigning, setAssigning] = useState(false);
-  // Multi-day mode for accommodation
+  const [popoverOpen, setPopoverOpen] = useState(false);
   const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
-  const isAccommodation = poiCategory === "ACCOMMODATION";
+  const [assigning, setAssigning] = useState(false);
+  const isAccommodation = poi.category === "ACCOMMODATION";
 
   if (dayPlans.length === 0) return null;
 
@@ -141,24 +142,6 @@ export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poi
     setSelectedDays(new Set(dayPlans.map((d) => d.id)));
   }
 
-  async function assign() {
-    if (!selectedDay) return;
-    setAssigning(true);
-    const res = await fetch(`/api/day-plans/${selectedDay}/activities`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ poiId, timeSlot: selectedSlot }),
-    });
-    setAssigning(false);
-    if (!res.ok) {
-      toast("Failed to assign POI", { variant: "error" });
-      return;
-    }
-    toast(`${poiName} added to plan!`);
-    setOpen(false);
-    router.refresh();
-  }
-
   async function assignMulti() {
     if (selectedDays.size === 0) return;
     setAssigning(true);
@@ -166,7 +149,7 @@ export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poi
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        poiId,
+        poiId: poi.id,
         dayPlanIds: [...selectedDays],
         timeSlot: "EVENING",
       }),
@@ -174,8 +157,8 @@ export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poi
     setAssigning(false);
     if (res.ok) {
       const data = await res.json();
-      toast(`${poiName} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
-      setOpen(false);
+      toast(`${poi.name} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
+      setPopoverOpen(false);
       setSelectedDays(new Set());
       router.refresh();
     } else {
@@ -183,96 +166,94 @@ export function DayPlanAssigner({ poiId, poiName, poiCategory, dayPlans }: { poi
     }
   }
 
+  function handleTimelineAssign() {
+    window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+      detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+    }));
+  }
+
   return (
-    <div className="mb-2">
+    <div className="relative mb-2">
+      {/* Desktop: draggable button */}
+      <div
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.effectAllowed = "copy";
+          e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+        }}
+        onClick={() => isAccommodation ? setPopoverOpen((v) => !v) : handleTimelineAssign()}
+        className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-3 py-2 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/40 transition-colors"
+        title={isAccommodation ? "Assign to days" : "Drag to timeline"}
+      >
+        <DragGripIcon className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" />
+        <span className="text-xs font-medium text-[hsl(var(--muted-foreground))]">
+          {isAccommodation ? "🏠 Assign to days" : "Drag to timeline"}
+        </span>
+      </div>
+      {/* Mobile: clickable button */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
+        onClick={() => isAccommodation ? setPopoverOpen((v) => !v) : handleTimelineAssign()}
+        className="lg:hidden flex w-full items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/30 px-3 py-2 hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/50 transition-colors"
+        title={isAccommodation ? "Assign to days" : "Add to timeline"}
       >
-        <span className={`text-[9px] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-        📅 Add to day plan
+        <span className="text-sm">{isAccommodation ? "🏠" : "📅"}</span>
+        <span className="text-xs font-medium text-[hsl(var(--primary))]">
+          {isAccommodation ? "Assign to days" : "Add to timeline"}
+        </span>
       </button>
-      {open && (
-        <div className="mt-1.5 space-y-1.5">
-          {isAccommodation ? (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                  🏠 Select days
-                </span>
-                <button
-                  type="button"
-                  onClick={selectAllDays}
-                  className="text-[10px] text-indigo-500 hover:text-indigo-700"
-                >
-                  Select all
-                </button>
-              </div>
-              <div className="max-h-[160px] overflow-y-auto space-y-0.5">
-                {dayPlans.map((d) => (
-                  <label
-                    key={d.id}
-                    className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedDays.has(d.id)}
-                      onChange={() => toggleDay(d.id)}
-                      disabled={assigning}
-                      className="rounded border-indigo-300"
-                    />
-                    <span>{d.label}</span>
-                  </label>
-                ))}
-              </div>
-              {selectedDays.size > 0 && (
-                <button
-                  type="button"
-                  onClick={assignMulti}
-                  disabled={assigning}
-                  className="w-full rounded bg-indigo-500 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
-                >
-                  {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
-                </button>
-              )}
-            </>
-          ) : (
-            <>
-              <select
-                value={selectedDay ?? ""}
-                onChange={(e) => setSelectedDay(Number(e.target.value) || null)}
-                className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
-              >
-                <option value="">Pick a day…</option>
-                {dayPlans.map((d) => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
-              <select
-                value={selectedSlot}
-                onChange={(e) => setSelectedSlot(e.target.value as TimeSlot)}
-                className="w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
-              >
-                {TIME_SLOTS.map((s) => (
-                  <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={assign}
-                disabled={!selectedDay || assigning}
-                className="w-full rounded bg-[hsl(var(--primary))] px-2 py-1 text-xs font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-40 hover:opacity-90"
-              >
-                {assigning ? "Adding…" : `Add to ${selectedSlot.toLowerCase()}`}
+
+      {/* Accommodation multi-day popover */}
+      {isAccommodation && popoverOpen && (
+        <div className="mt-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 p-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+              🏠 Select days
+            </span>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={selectAllDays} className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300">
+                Select all
               </button>
-            </>
+              <button type="button" onClick={() => { setPopoverOpen(false); setSelectedDays(new Set()); }} className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+                ✕
+              </button>
+            </div>
+          </div>
+          <div className="max-h-[160px] overflow-y-auto space-y-0.5">
+            {dayPlans.map((d) => (
+              <label
+                key={d.id}
+                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedDays.has(d.id)}
+                  onChange={() => toggleDay(d.id)}
+                  disabled={assigning}
+                  className="rounded border-indigo-300"
+                />
+                <span>{d.label}</span>
+              </label>
+            ))}
+          </div>
+          {selectedDays.size > 0 && (
+            <button
+              type="button"
+              onClick={assignMulti}
+              disabled={assigning}
+              className="w-full rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+            >
+              {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
+            </button>
           )}
         </div>
       )}
     </div>
   );
 }
+
+/** @deprecated Use TimelineAssignButton instead */
+export const DayPlanAssigner = TimelineAssignButton;
 
 // ─── StarRating ───────────────────────────────────────────────────────────────
 
@@ -389,10 +370,19 @@ export function PoiCard({
   const [hoverStar, setHoverStar] = useState<number | null>(null);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [isClamped, setIsClamped] = useState(false);
 
   const hasCoords = poi.latitude != null && poi.longitude != null;
   const isDeleting = deletingId === poi.id;
-  const longDesc = (poi.description?.length ?? 0) > 110;
+  const displayDescription = poi.llmDescription || poi.description;
+
+  // Detect whether the description text is actually overflowing the line-clamp
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el) { setIsClamped(false); return; }
+    setIsClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [displayDescription, expanded]);
   const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
   const hasDetails = poi.openingHours || poi.phoneNumber || poi.inceptionYear || poi.fee;
   const photoSrc = poiPhotoSrc(poi);
@@ -578,31 +568,28 @@ export function PoiCard({
         {/* Name + edit button */}
         <div className="flex items-start justify-between gap-1 mb-1.5">
           <h3 className="font-semibold text-sm leading-snug line-clamp-2">{poi.name}</h3>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
-            className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
-            title="Edit place"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <ScorePopover breakdown={poi.scoreBreakdown} />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
+              className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+              title="Edit place"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Badges row: score explainers + price level + cluster indicator */}
+        {/* Info row: price level + cluster indicator */}
         {(() => {
-          const badges = getScoreBadges(poi.scoreBreakdown);
           const cluster = getClusterCount(poi.extraFields);
-          const hasAnything = badges.length > 0 || poi.priceLevel != null || cluster > 0;
+          const hasAnything = poi.priceLevel != null || cluster > 0;
           if (!hasAnything) return null;
           return (
             <div className="mb-2 flex flex-wrap items-center gap-1">
-              {badges.map((b) => (
-                <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                  {b.emoji} {b.label}
-                </span>
-              ))}
               {poi.priceLevel != null && (
                 <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
                   {PRICE_LABELS[poi.priceLevel] ?? ""}
@@ -618,10 +605,10 @@ export function PoiCard({
         })()}
 
         {/* Description */}
-        {poi.description && (
+        {displayDescription && (
           <div className="mb-2 flex-1 text-xs text-[hsl(var(--muted-foreground))]">
-            <p className={expanded ? "" : "line-clamp-2"}>{poi.description}</p>
-            {longDesc && (
+            <p ref={descRef} className={expanded ? "" : "line-clamp-2"}>{displayDescription}</p>
+            {(isClamped || expanded) && (
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
@@ -670,39 +657,11 @@ export function PoiCard({
           </div>
         )}
 
-        {/* Add to Day Plan */}
-        <DayPlanAssigner poiId={poi.id} poiName={poi.name} poiCategory={poi.category} dayPlans={dayPlans} />
+        {/* Add to timeline / Assign to days */}
+        <TimelineAssignButton poi={poi} dayPlans={dayPlans} />
 
         {/* Footer links */}
         <div className="mt-auto flex items-center gap-3 flex-wrap border-t border-[hsl(var(--border))] pt-2">
-          {/* Drag handle (desktop) / Add to timeline button (mobile) */}
-          <span
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-poi-id", String(poi.id));
-            }}
-            title="Drag to timeline"
-            className="hidden lg:flex items-center gap-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] cursor-grab active:cursor-grabbing transition-colors"
-          >
-            <DragGripIcon className="h-3.5 w-3.5" />
-            <span className="text-[10px] font-medium">Drag</span>
-          </span>
-          {dayPlans.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
-                  detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
-                }));
-              }}
-              title="Add to timeline"
-              className="lg:hidden flex items-center gap-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
-            >
-              <span className="text-[10px]">📅</span>
-              <span className="text-[10px] font-medium">Add to timeline</span>
-            </button>
-          )}
           {hasCoords && (
             <button
               type="button"
@@ -808,34 +767,41 @@ export function CompactPoiCard({
 
       {/* Compact header — always visible */}
       <div className="flex w-full items-center gap-0">
-        {/* Drag handle (desktop only) */}
-        <span
-          draggable
-          onDragStart={(e) => {
-            e.stopPropagation();
-            e.dataTransfer.effectAllowed = "copy";
-            e.dataTransfer.setData("application/x-poi-id", String(poi.id));
-          }}
-          title="Drag to timeline"
-          className="hidden lg:flex items-center px-1 py-2.5 text-[hsl(var(--muted-foreground))]/40 hover:text-[hsl(var(--muted-foreground))] cursor-grab active:cursor-grabbing transition-colors self-stretch"
-        >
-          <DragGripIcon className="h-4 w-4" />
-        </span>
-        {/* Add to timeline button (mobile only) */}
+        {/* Drag handle (desktop) / Add to timeline (mobile) */}
         {dayPlans.length > 0 && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
-                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
-              }));
-            }}
-            title="Add to timeline"
-            className="lg:hidden flex items-center px-1.5 py-2.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors self-stretch"
-          >
-            <span className="text-xs">📅</span>
-          </button>
+          <>
+            <span
+              draggable
+              onDragStart={(e) => {
+                e.stopPropagation();
+                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                  detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+                }));
+              }}
+              title="Drag to timeline"
+              className="hidden lg:flex items-center px-1 py-2.5 text-[hsl(var(--muted-foreground))]/40 hover:text-[hsl(var(--muted-foreground))] cursor-grab active:cursor-grabbing transition-colors self-stretch"
+            >
+              <DragGripIcon className="h-4 w-4" />
+            </span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                  detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+                }));
+              }}
+              title="Add to timeline"
+              className="lg:hidden flex items-center px-1.5 py-2.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors self-stretch"
+            >
+              <span className="text-xs">📅</span>
+            </button>
+          </>
         )}
       <div
         onClick={(e) => { if ((e.target as HTMLElement).closest('button')) return; setOpen((v) => !v); }}
@@ -925,6 +891,9 @@ export function CompactPoiCard({
           )}
         </span>
 
+        {/* Score info */}
+        <ScorePopover breakdown={poi.scoreBreakdown} className="flex-shrink-0" />
+
         {/* Edit pencil */}
         <button
           type="button"
@@ -957,27 +926,19 @@ export function CompactPoiCard({
       {/* Expanded details */}
       {open && (
         <div className="border-t border-[hsl(var(--border))] px-3 py-2.5 space-y-2 text-sm">
-          {poi.description && (
-            <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.description}</p>
+          {(poi.llmDescription || poi.description) && (
+            <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.llmDescription || poi.description}</p>
           )}
 
-          {/* Score explainer badges + cluster indicator */}
+          {/* Cluster indicator */}
           {(() => {
-            const badges = getScoreBadges(poi.scoreBreakdown);
             const cluster = getClusterCount(poi.extraFields);
-            if (badges.length === 0 && cluster === 0) return null;
+            if (cluster === 0) return null;
             return (
               <div className="flex flex-wrap items-center gap-1">
-                {badges.map((b) => (
-                  <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                    {b.emoji} {b.label}
-                  </span>
-                ))}
-                {cluster > 0 && (
-                  <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
-                    +{cluster} more nearby
-                  </span>
-                )}
+                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                  +{cluster} more nearby
+                </span>
               </div>
             );
           })()}
@@ -1017,7 +978,7 @@ export function CompactPoiCard({
             </div>
           )}
 
-          <DayPlanAssigner poiId={poi.id} poiName={poi.name} poiCategory={poi.category} dayPlans={dayPlans} />
+          <TimelineAssignButton poi={poi} dayPlans={dayPlans} />
 
           <div className="flex items-center gap-3 flex-wrap pt-1">
             {hasCoords && (

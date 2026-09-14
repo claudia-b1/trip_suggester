@@ -323,6 +323,15 @@ export function RecommendationsPanel({
         }`,
       );
       router.refresh();
+      // Trigger background LLM description generation (fire-and-forget)
+      if (body.created > 0) {
+        fetch(`/api/cities/${cityId}/generate-descriptions`, { method: "POST" })
+          .then(() => {
+            // Refresh after descriptions are generated so UI picks them up
+            setTimeout(() => router.refresh(), 1000);
+          })
+          .catch(() => {/* best-effort — smart fallbacks are already in place */});
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
         // Cancelled by user — state already cleaned up in cancelDiscover()

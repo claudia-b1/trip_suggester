@@ -1,10 +1,20 @@
 {
   "name": "Trip Planner",
   "short_name": "Trips",
+  "start_url": "/",
   "icons": [
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
   ],
   "theme_color": "#4F46E5",
   "background_color": "#ffffff",
-  "display": "standalone"
+  "display": "standalone",
+  "share_target": {
+    "action": "/share",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  }
 }

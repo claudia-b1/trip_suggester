@@ -99,6 +99,7 @@ model Poi {
   notes                    String?       // user notes
   originalData             String?       // JSON snapshot of discovered values, saved on first user edit
   extraFields              Json?         // arbitrary extra data (synced from FavouriteItem.extraFields)
+  llmDescription           String?       // LLM-generated description (background upgrade of fallback)
   favouriteItemId          Int?          // link to source FavouriteItem for auto-sync
   cityId                   Int
   city        City          @relation(fields: [cityId], references: [id], onDelete: Cascade)
@@ -189,6 +190,14 @@ model PoiCache {
   cachedAt  DateTime @default(now())
 
   @@unique([cityName, category, source])
+}
+
+// LLM-generated POI description cache — keyed by placeId so re-Discover reuses results
+model PoiDescriptionCache {
+  id          Int      @id @default(autoincrement())
+  placeId     String   @unique       // Geoapify place ID
+  description String?                // null = LLM declined (low confidence)
+  generatedAt DateTime @default(now())
 }
 
 // ── Trip Notes / Journal ────────────────────────────────────────────────────

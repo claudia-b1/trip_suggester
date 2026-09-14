@@ -157,11 +157,15 @@ export async function POST(
         ? { lat: city.latitude, lon: city.longitude }
         : await geocodeCity(city.name).catch(() => null);
 
-  // Build centerOverride for searchPlaces (only when explicitly provided)
+  // Build centerOverride for searchPlaces — prefer explicit body override,
+  // then stored city coordinates, so searchPlaces doesn't re-geocode the city
+  // name (which can resolve to the wrong place for ambiguous names like "Bale").
   const searchCenterOverride: { lat: number; lon: number } | undefined =
     bodyCenterLat != null && bodyCenterLon != null
       ? { lat: bodyCenterLat, lon: bodyCenterLon }
-      : undefined;
+      : city.latitude != null && city.longitude != null
+        ? { lat: city.latitude, lon: city.longitude }
+        : undefined;
 
   // ── 1. DISCOVERY — fetch raw candidates per category (always live) ──────────
   //
@@ -236,7 +240,7 @@ export async function POST(
     await Promise.allSettled(
       nearbyCategories.map(async (cat) => {
         // ① One centre search (full radius) — always live, no cache
-        const centrePlaces = await searchPlaces(city.name, cat, [], 200, nearbyRadiusM, true);
+        const centrePlaces = await searchPlaces(city.name, cat, [], 200, nearbyRadiusM, true, searchCenterOverride);
 
         // ② Six ring searches (offset centres, smaller radius) — always live, no cache
         const ringResults = await Promise.allSettled(
@@ -1021,13 +1025,26 @@ export async function POST(
   });
 
   // ── 6. PERSIST POIS — write selected POIs to database ───────────────────────
+  // Build lookup from placeId → discovery metadata (cuisine, placeCategory)
+  // so the LLM description generator has richer context via extraFields.
+  const discoveryMeta = new Map<string, { cuisine?: string; placeCategory?: string }>();
+  for (const { place } of topPlaces) {
+    discoveryMeta.set(place.placeId, {
+      cuisine: place.cuisine,
+      placeCategory: place.placeCategory,
+    });
+  }
+
   const created = await prisma.$transaction(
     clusteredFinalPois.map(({ poi: p, finalScore, breakdown }) => {
-      // Merge cluster info into extraFields if this POI is a cluster representative
+      // Merge cluster info + discovery metadata into extraFields
       const cluster = clusterInfo.get(p.placeId ?? "");
-      const extraFields = cluster
-        ? { nearbyClusterCount: cluster.count, nearbyClusterNames: cluster.names }
-        : undefined;
+      const discovery = discoveryMeta.get(p.placeId ?? "");
+      const extraFields: Record<string, unknown> = {
+        ...(cluster ? { nearbyClusterCount: cluster.count, nearbyClusterNames: cluster.names } : {}),
+        ...(discovery?.cuisine ? { cuisine: discovery.cuisine } : {}),
+        ...(discovery?.placeCategory ? { placeCategory: discovery.placeCategory } : {}),
+      };
 
       return prisma.poi.create({
         data: {
@@ -1054,7 +1071,7 @@ export async function POST(
           scoreBreakdown:           JSON.stringify(breakdown),
           userRatingCount:          p.userRatingCount ?? null,
           subcategory:              poiSubcategoryMap.get(p.placeId ?? "") ?? null,
-          extraFields,
+          extraFields: Object.keys(extraFields).length > 0 ? extraFields as import("@prisma/client").Prisma.InputJsonValue : undefined,
           cityId:                   cityIdNum,
         },
       });

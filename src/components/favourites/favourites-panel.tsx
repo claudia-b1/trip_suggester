@@ -54,6 +54,10 @@ export function FavouritesPanel() {
   // Batch select state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  // Paste Google Maps link state
+  const [showPasteLink, setShowPasteLink] = useState(false);
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [pasteLoading, setPasteLoading] = useState(false);
 
   // Lists hidden by pending undoable deletes (optimistic removal)
   const [hiddenListIds, setHiddenListIds] = useState<Set<number>>(new Set());
@@ -409,6 +413,47 @@ export function FavouritesPanel() {
     close(); // close panel so modal is visible
   }
 
+  async function handlePasteResolve() {
+    const url = pasteUrl.trim();
+    if (!url) return;
+    setPasteLoading(true);
+    try {
+      const res = await fetch("/api/share/resolve-google-maps", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        toast(err?.error ?? "Could not resolve link", { variant: "error" });
+        return;
+      }
+      const data = await res.json();
+      setShowPasteLink(false);
+      setPasteUrl("");
+      close();
+      showAddModal({
+        name: data.name || undefined,
+        country: data.country || undefined,
+        city: data.city || undefined,
+        address: data.address || undefined,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        description: data.editorialSummary || data.description || undefined,
+        photoUrl: data.photoUrl || undefined,
+        website: data.website || undefined,
+        phoneNumber: data.phoneNumber || undefined,
+        openingHours: data.openingHours || undefined,
+        priceLevel: data.priceLevel ?? undefined,
+        sourcePlaceId: data.sourcePlaceId || undefined,
+      });
+    } catch {
+      toast("Failed to resolve link", { variant: "error" });
+    } finally {
+      setPasteLoading(false);
+    }
+  }
+
   function renderList(list: FavouriteListDTO, indent = false, listIndex = 0) {
     const isExpanded = expandedLists.has(list.id);
     const totalItems =
@@ -626,6 +671,17 @@ export function FavouritesPanel() {
                   </>
                 )}
                 <button
+                  onClick={() => setShowPasteLink((v) => !v)}
+                  className={`rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                    showPasteLink
+                      ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                      : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  }`}
+                  title="Add from Google Maps link"
+                >
+                  📋 Paste link
+                </button>
+                <button
                   onClick={close}
                   className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))]"
                 >
@@ -633,6 +689,39 @@ export function FavouritesPanel() {
                 </button>
               </div>
             </div>
+
+            {/* Paste Google Maps link input */}
+            {showPasteLink && (
+              <div className="border-b border-[hsl(var(--border))] px-4 py-3">
+                <label className="mb-1.5 block text-xs font-medium text-[hsl(var(--foreground))]">
+                  Paste a Google Maps link
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={pasteUrl}
+                    onChange={(e) => setPasteUrl(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handlePasteResolve(); }}
+                    placeholder="https://maps.app.goo.gl/..."
+                    className="flex-1 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handlePasteResolve}
+                    disabled={!pasteUrl.trim() || pasteLoading}
+                    className="rounded-md bg-[hsl(var(--primary))] px-3 py-1.5 text-xs font-medium text-[hsl(var(--primary-foreground))] transition-colors hover:opacity-90 disabled:opacity-50"
+                  >
+                    {pasteLoading ? "..." : "Go"}
+                  </button>
+                  <button
+                    onClick={() => { setShowPasteLink(false); setPasteUrl(""); }}
+                    className="rounded-md px-2 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Search + filters — hidden in map mode (map has its own) */}
             <div className={`space-y-2 border-b border-[hsl(var(--border))] px-4 py-3 ${viewMode === "map" ? "hidden" : ""}`}>

@@ -384,6 +384,7 @@ export default async function CityDetailPage({
     hasOriginalData: !!p.originalData,
     extraFields: p.extraFields as Record<string, unknown> | null,
     scoreBreakdown: p.scoreBreakdown ? (() => { try { return JSON.parse(p.scoreBreakdown!) } catch { return null } })() : null,
+    llmDescription: p.llmDescription ?? null,
     attachments: (p.attachments ?? []).map((a) => ({
       id: a.id,
       filename: a.filename,
