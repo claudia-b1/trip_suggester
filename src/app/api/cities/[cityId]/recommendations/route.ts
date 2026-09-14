@@ -560,11 +560,28 @@ export async function POST(
   const seenCoords: Array<{ lat: number; lon: number; category: string }> = existingPois
     .filter((p) => p.latitude != null && p.longitude != null && p.category)
     .map((p) => ({ lat: p.latitude!, lon: p.longitude!, category: p.category! }));
+
+  // Google Place ID dedup: two different Geoapify entries can match the same
+  // Google Place (e.g. "Uvala Palud" and "Palù" → same Google Place). Seed
+  // from existing POIs' enrichment cache and track during selection.
+  const seenGooglePlaceIds = new Set<string>();
+  const existingPlaceIdsList = existingPois.map((p) => p.placeId).filter((id): id is string => !!id);
+  if (existingPlaceIdsList.length > 0) {
+    const existingMeta = await prisma.poiEnrichCache.findMany({
+      where: { placeId: { in: existingPlaceIdsList }, source: "google-meta" },
+      select: { payload: true },
+    });
+    for (const row of existingMeta) {
+      try {
+        const data = JSON.parse(row.payload) as { googlePlaceId?: string };
+        if (data.googlePlaceId) seenGooglePlaceIds.add(data.googlePlaceId);
+      } catch { /* ignore malformed cache entries */ }
+    }
+  }
+
   // 100 m threshold: same garden/museum complex can have different OSM nodes
   // tens of metres apart; 100 m catches those while keeping truly different POIs apart.
   const COORD_DEDUP_M = 100;
-  // 300 m threshold for fuzzy name dedup: "Louvre Museum" and "Musée du Louvre"
-  // at 150 m apart are the same place even though the 100 m coord-only check misses it.
   const FUZZY_DEDUP_M = 300;
   const FUZZY_NAME_THRESHOLD = 0.5;
   const MIN_SCORE = 20;
@@ -599,6 +616,15 @@ export async function POST(
       const norm = item.place.name.toLowerCase().trim();
       if (existingPlaceIds.has(item.place.placeId) || existingNames.has(norm)) continue;
       if (seenIds.has(item.place.placeId) || seenNames.has(norm)) continue;
+      // Google Place ID dedup: two different Geoapify entries can resolve to the
+      // same Google Place (e.g. "Uvala Palud" / "Palù" → same beach on Google).
+      // Keep the higher-scored one (items are sorted by score, so first wins).
+      const gMeta = googleMetaMap.get(item.place.placeId);
+      if (gMeta?.googlePlaceId && seenGooglePlaceIds.has(gMeta.googlePlaceId)) {
+        console.log(`[google-dedup] "${item.place.name}" shares googlePlaceId ${gMeta.googlePlaceId} — skipping`);
+        coordDupSet.add(item.place.placeId);
+        continue;
+      }
       // Coord dedup: only against same-category POIs (a supermarket next to a
       // campsite are different POIs even at 50m apart)
       const sameCatCoords = forCategory
@@ -626,6 +652,9 @@ export async function POST(
       if (fuzzyDup) { coordDupSet.add(item.place.placeId); continue; }
       selected.push(item);
       selectedInfo.push({ name: item.place.name, lat: item.place.latitude, lon: item.place.longitude });
+      // Track Google Place ID within this selection so later items in the same
+      // batch that resolve to the same Google Place are caught.
+      if (gMeta?.googlePlaceId) seenGooglePlaceIds.add(gMeta.googlePlaceId);
     }
     return { selected, coordDupSet };
   }
@@ -767,6 +796,7 @@ export async function POST(
       seenIds.add(place.placeId);
       seenNames.add(place.name.toLowerCase().trim());
       seenCoords.push({ lat: place.latitude, lon: place.longitude, category: cat });
+      if (meta?.googlePlaceId) seenGooglePlaceIds.add(meta.googlePlaceId);
       topPlaces.push({ place, category: cat, googleMeta: meta ?? null });
     }
 
@@ -853,6 +883,7 @@ export async function POST(
         seenIds.add(place.placeId);
         seenNames.add(place.name.toLowerCase().trim());
         seenCoords.push({ lat: place.latitude, lon: place.longitude, category: cat });
+        if (meta?.googlePlaceId) seenGooglePlaceIds.add(meta.googlePlaceId);
         topPlaces.push({ place, category: cat, googleMeta: meta ?? null });
       }
     }
