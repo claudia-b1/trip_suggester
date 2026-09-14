@@ -481,9 +481,10 @@ function FavouriteMarkerIcon({ category, subcategory, active }: { category: Cate
   const size = active ? 34 : 28;
   const emoji = getMarkerEmoji(category, subcategory);
   return (
-    <div className="relative" style={{ width: size, height: size }}>
+    <div className="relative flex items-center justify-center" style={{ width: size, height: size }}>
+      {/* Category border + pink glow */}
       <div
-        className="flex items-center justify-center rounded-full shadow-md transition-transform"
+        className="flex items-center justify-center rounded-full transition-transform"
         style={{
           width: size,
           height: size,
@@ -491,8 +492,8 @@ function FavouriteMarkerIcon({ category, subcategory, active }: { category: Cate
           border: `${active ? 3 : 2.5}px solid ${color}`,
           transform: active ? "scale(1.15)" : "scale(1)",
           boxShadow: active
-            ? `0 3px 8px rgba(0,0,0,0.35), 0 0 0 2px ${color}40`
-            : "0 2px 6px rgba(0,0,0,0.3)",
+            ? `0 3px 8px rgba(0,0,0,0.35), 0 0 0 2px rgba(236,72,153,0.4), 0 0 10px 4px rgba(236,72,153,0.3)`
+            : "0 0 10px 4px rgba(236,72,153,0.45), 0 2px 6px rgba(0,0,0,0.25)",
         }}
       >
         <span style={{ fontSize: active ? 17 : 14, lineHeight: 1 }}>{emoji}</span>
@@ -500,7 +501,7 @@ function FavouriteMarkerIcon({ category, subcategory, active }: { category: Cate
       {/* Heart badge — bottom-right */}
       <div
         className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
-        style={{ bottom: 0, right: -3, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
+        style={{ bottom: -2, right: -4, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)", zIndex: 1 }}
       >
         <svg width="9" height="9" viewBox="0 0 24 24" fill="white" stroke="none">
           <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
@@ -634,6 +635,27 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(null);
   const [hoverPreviewId, setHoverPreviewId] = useState<string | null>(null);
   const [previewPopupPos, setPreviewPopupPos] = useState<{ x: number; y: number } | null>(null);
+
+  // ── User location (in-memory only, never cached/saved) ──────────────────
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocationError, setUserLocationError] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!navigator.geolocation) { setUserLocationError(true); return; }
+    // Request location on mount — watch for updates while on this page
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setUserLocationError(false);
+      },
+      () => { setUserLocationError(true); },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
+    );
+    return () => {
+      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     function onFullscreenChange() {
@@ -774,9 +796,20 @@ export function PoiMapImpl(props: PoiMapProps) {
   }, [pois, favouriteItems, isPoiFavourited],
   );
 
+  // Split located POIs: favourites are always shown individually (never clustered)
+  const [locatedFavs, locatedNonFavs] = useMemo(() => {
+    const favs: LocatedPoi[] = [];
+    const rest: LocatedPoi[] = [];
+    for (const p of located) {
+      if (favouritedPoiIds.has(p.id)) favs.push(p);
+      else rest.push(p);
+    }
+    return [favs, rest] as const;
+  }, [located, favouritedPoiIds]);
+
   // Floor to integer so sub-pixel zoom differences don't re-trigger clustering
   const clusterZoom = Math.floor(zoom);
-  const clusters = useMemo(() => clusterPois(located, clusterZoom), [located, clusterZoom]);
+  const clusters = useMemo(() => clusterPois(locatedNonFavs, clusterZoom), [locatedNonFavs, clusterZoom]);
   const previewClusters = useMemo(() => clusterPreviewMarkers(previewMarkers, clusterZoom), [previewMarkers, clusterZoom]);
 
   const visibleId = hoverId ?? activeId;
@@ -1052,6 +1085,18 @@ export function PoiMapImpl(props: PoiMapProps) {
             ⊡ Fit (no accom.)
           </button>
         )}
+        {userLocation && (
+          <button
+            type="button"
+            onClick={() => {
+              mapRef.current?.flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 15, duration: 1000 });
+            }}
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+            title="Center on my location"
+          >
+            📍 My location
+          </button>
+        )}
         <button
           type="button"
           onClick={() =>
@@ -1154,6 +1199,18 @@ export function PoiMapImpl(props: PoiMapProps) {
         <NavigationControl position="top-right" />
         <ScaleControl position="top-right" unit="metric" />
         {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
+
+        {/* User location blue dot */}
+        {userLocation && (
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+            <div className="relative flex items-center justify-center" style={{ width: 22, height: 22 }}>
+              {/* Pulsing ring */}
+              <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 22, height: 22 }} />
+              {/* Blue dot */}
+              <div className="relative rounded-full bg-blue-500 border-2 border-white shadow-md" style={{ width: 14, height: 14 }} />
+            </div>
+          </Marker>
+        )}
 
         {/* City radius circle — grey dashed */}
         {circleData && (
@@ -1282,17 +1339,69 @@ export function PoiMapImpl(props: PoiMapProps) {
                     </span>
                   )}
                 </div>
-                {/* Favourite heart badge — bottom-right of the icon */}
-                {favouritedPoiIds.has(poi.id) && (
-                  <div
-                    className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
-                    style={{ bottom: 0, right: -3, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)" }}
-                  >
-                    <svg width="9" height="9" viewBox="0 0 24 24" fill="white" stroke="none">
-                      <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
-                    </svg>
+              </div>
+            </Marker>
+          );
+        })}
+
+        {/* Favourited POIs — always shown individually, never clustered */}
+        {locatedFavs.map((poi) => {
+          const isActive = visibleId === poi.id;
+          const isHovered = hoverId === poi.id;
+          const color = CATEGORY_STYLES[poi.category].dot;
+          return (
+            <Marker
+              key={`fav-poi-${poi.id}`}
+              longitude={poi.longitude}
+              latitude={poi.latitude}
+              anchor="bottom"
+              onClick={(e) => {
+                e.originalEvent.stopPropagation();
+                setActiveId((prev) => prev === poi.id ? null : poi.id);
+              }}
+            >
+              <div
+                className="relative flex flex-col items-center cursor-pointer"
+                onMouseEnter={() => setHoverId(poi.id)}
+                onMouseLeave={() => setHoverId(null)}
+              >
+                {isHovered && (
+                  <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none">
+                    {poi.name}
                   </div>
                 )}
+                <div
+                  className={`flex items-center justify-center rounded-full transition-transform ${mapReady ? "marker-enter" : ""}`}
+                  style={{
+                    backgroundColor: poiNumbers?.[poi.id] != null ? color : "white",
+                    border: `${isActive ? 3 : 2.5}px solid ${color}`,
+                    width: isActive ? 34 : 28,
+                    height: isActive ? 34 : 28,
+                    transform: isActive ? "scale(1.15)" : "scale(1)",
+                    boxShadow: isActive
+                      ? `0 3px 8px rgba(0,0,0,0.35), 0 0 0 2px rgba(236,72,153,0.4), 0 0 10px 4px rgba(236,72,153,0.3)`
+                      : "0 0 10px 4px rgba(236,72,153,0.45), 0 2px 6px rgba(0,0,0,0.25)",
+                  }}
+                >
+                  {poiNumbers?.[poi.id] != null ? (
+                    <span className="font-bold text-white" style={{ fontSize: isActive ? 15 : 12, lineHeight: 1 }}>
+                      {poiNumbers[poi.id]}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: isActive ? 17 : 14, lineHeight: 1 }}>
+                      {getMarkerEmoji(poi.category, poi.subcategory)}
+                    </span>
+                  )}
+                </div>
+                {/* Heart badge */}
+                <div
+                  className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
+                  style={{ bottom: 0, right: -3, width: 15, height: 15, boxShadow: "0 1px 3px rgba(0,0,0,0.3)", zIndex: 1 }}
+                >
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="white" stroke="none">
+                    <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+                  </svg>
+                </div>
               </div>
             </Marker>
           );
@@ -1300,7 +1409,7 @@ export function PoiMapImpl(props: PoiMapProps) {
 
         {/* Popup is rendered outside MapGL — see below */}
 
-        {/* Favourite item markers — category emoji + heart badge */}
+        {/* Standalone favourite items (not linked to any POI) — category emoji + heart badge */}
         {visibleFavourites.map((fav) => {
           const favCat = isCategory(fav.category) ? fav.category : "CULTURE" as Category;
           return (
