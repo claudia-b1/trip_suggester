@@ -52,16 +52,33 @@ function extractPlaceInfo(urlStr: string): ExtractedPlace {
   try {
     const url = new URL(urlStr);
     const path = decodeURIComponent(url.pathname);
+    const fullUrl = decodeURIComponent(urlStr);
     const result: ExtractedPlace = {};
 
-    // Extract coordinates from @lat,lng in path
+    // Extract place name from /place/NAME/ segment (do this first)
+    const placeMatch = path.match(/\/place\/([^/@]+)/);
+    if (placeMatch) {
+      result.name = placeMatch[1].replace(/\+/g, " ").trim();
+    }
+
+    // Prefer exact place coordinates from !3d<lat>!4d<lng> in data segment.
+    // These are the actual place coordinates (vs @lat,lng which is the map
+    // viewport center and may differ from the place location).
+    const dataMatch = fullUrl.match(/!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d*)/);
+    if (dataMatch) {
+      result.lat = parseFloat(dataMatch[1]);
+      result.lng = parseFloat(dataMatch[2]);
+      return result;
+    }
+
+    // Fall back to @lat,lng viewport center from path
     const coordMatch = path.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
     if (coordMatch) {
       result.lat = parseFloat(coordMatch[1]);
       result.lng = parseFloat(coordMatch[2]);
     }
 
-    // Extract coords from ?q=lat,lng query param
+    // Fall back to ?q=lat,lng query param
     if (result.lat == null) {
       const q = url.searchParams.get("q");
       if (q) {
@@ -73,12 +90,6 @@ function extractPlaceInfo(urlStr: string): ExtractedPlace {
       }
     }
 
-    // Extract place name from /place/NAME/ segment
-    const placeMatch = path.match(/\/place\/([^/@]+)/);
-    if (placeMatch) {
-      result.name = placeMatch[1].replace(/\+/g, " ").trim();
-    }
-
     return result;
   } catch {
     return {};
@@ -88,6 +99,10 @@ function extractPlaceInfo(urlStr: string): ExtractedPlace {
 /**
  * Follow redirects manually with SSRF protection.
  * Only follows redirects to allowed Google domains.
+ *
+ * Stops as soon as we reach a Google Maps URL (has /maps/ in the path),
+ * because continuing will hit consent.google.com redirect loops that
+ * never resolve without browser cookies.
  */
 async function followRedirectsSafely(
   url: string,
@@ -103,7 +118,7 @@ async function followRedirectsSafely(
 
     const res = await fetch(currentUrl, {
       redirect: "manual",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(8000),
     });
 
     const location = res.headers.get("location");
@@ -118,6 +133,25 @@ async function followRedirectsSafely(
 
     if (!isAllowedHost(nextParsed.hostname)) {
       throw new Error(`Blocked: redirect to disallowed host ${nextParsed.hostname}`);
+    }
+
+    // If the redirect target is a Google Maps URL, use it directly.
+    // Don't follow further — Google will redirect to consent.google.com
+    // (GDPR cookie consent) which loops infinitely without browser cookies.
+    if (nextParsed.pathname.includes("/maps/")) {
+      return nextUrl;
+    }
+
+    // If we hit a consent page, extract the "continue" parameter which
+    // contains the actual Google Maps URL we want.
+    if (nextParsed.hostname === "consent.google.com" || nextParsed.hostname === "consent.google.de") {
+      const continueUrl = nextParsed.searchParams.get("continue");
+      if (continueUrl) {
+        const continueParsed = new URL(continueUrl);
+        if (isAllowedHost(continueParsed.hostname)) {
+          return continueUrl;
+        }
+      }
     }
 
     currentUrl = nextUrl;
@@ -200,6 +234,19 @@ export async function POST(req: Request) {
 
     // 3. Extract place name and coordinates from URL
     const extracted = extractPlaceInfo(resolvedUrl);
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+
+    // 3b. Fallback: if we have a place name but no coordinates, try Google
+    // Places Text Search to find the place. This handles edge cases where
+    // the URL format doesn't contain extractable coordinates.
+    if (extracted.lat == null && extracted.name && apiKey) {
+      const meta = await fetchGoogleMeta(extracted.name, "unknown", 0, 0);
+      if (meta?.latitude != null && meta?.longitude != null) {
+        extracted.lat = meta.latitude;
+        extracted.lng = meta.longitude;
+      }
+    }
+
     if (extracted.lat == null || extracted.lng == null) {
       return NextResponse.json(
         { error: "Could not extract location from URL. Try sharing the full URL instead of a short link." },
@@ -207,15 +254,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const lat = extracted.lat;
-    const lng = extracted.lng;
+    let lat = extracted.lat;
+    let lng = extracted.lng;
 
     // 4. Reverse geocode to get city/country
     const baseUrl = new URL(req.url).origin;
     const geo = await reverseGeocode(lat, lng, baseUrl);
 
     // 5. Enrich via Google Places API (server-side)
-    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
     let name = extracted.name || "";
     let rating: number | undefined;
     let userRatingCount: number | undefined;
@@ -236,8 +282,12 @@ export async function POST(req: Request) {
       );
       if (meta) {
         sourcePlaceId = meta.googlePlaceId;
-        // Prefer Google's name (properly cased/accented)
+        // Prefer Google's authoritative name and coordinates
         name = meta.name || name;
+        if (meta.latitude != null && meta.longitude != null) {
+          lat = meta.latitude;
+          lng = meta.longitude;
+        }
         rating = meta.rating;
         userRatingCount = meta.userRatingCount;
         priceLevel = meta.priceLevel;

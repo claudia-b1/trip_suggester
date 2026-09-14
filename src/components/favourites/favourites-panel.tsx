@@ -58,6 +58,7 @@ export function FavouritesPanel() {
   const [showPasteLink, setShowPasteLink] = useState(false);
   const [pasteUrl, setPasteUrl] = useState("");
   const [pasteLoading, setPasteLoading] = useState(false);
+  const [pasteError, setPasteError] = useState("");
 
   // Lists hidden by pending undoable deletes (optimistic removal)
   const [hiddenListIds, setHiddenListIds] = useState<Set<number>>(new Set());
@@ -417,6 +418,7 @@ export function FavouritesPanel() {
     const url = pasteUrl.trim();
     if (!url) return;
     setPasteLoading(true);
+    setPasteError("");
     try {
       const res = await fetch("/api/share/resolve-google-maps", {
         method: "POST",
@@ -425,12 +427,13 @@ export function FavouritesPanel() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        toast(err?.error ?? "Could not resolve link", { variant: "error" });
+        setPasteError(err?.error ?? "Could not resolve link");
         return;
       }
       const data = await res.json();
       setShowPasteLink(false);
       setPasteUrl("");
+      setPasteError("");
       close();
       showAddModal({
         name: data.name || undefined,
@@ -448,7 +451,7 @@ export function FavouritesPanel() {
         sourcePlaceId: data.sourcePlaceId || undefined,
       });
     } catch {
-      toast("Failed to resolve link", { variant: "error" });
+      setPasteError("Network error — could not resolve link");
     } finally {
       setPasteLoading(false);
     }
@@ -700,7 +703,7 @@ export function FavouritesPanel() {
                   <input
                     type="url"
                     value={pasteUrl}
-                    onChange={(e) => setPasteUrl(e.target.value)}
+                    onChange={(e) => { setPasteUrl(e.target.value); setPasteError(""); }}
                     onKeyDown={(e) => { if (e.key === "Enter") handlePasteResolve(); }}
                     placeholder="https://maps.app.goo.gl/..."
                     className="flex-1 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]"
@@ -714,12 +717,15 @@ export function FavouritesPanel() {
                     {pasteLoading ? "..." : "Go"}
                   </button>
                   <button
-                    onClick={() => { setShowPasteLink(false); setPasteUrl(""); }}
+                    onClick={() => { setShowPasteLink(false); setPasteUrl(""); setPasteError(""); }}
                     className="rounded-md px-2 py-1.5 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
                   >
                     ✕
                   </button>
                 </div>
+                {pasteError && (
+                  <p className="mt-1.5 text-xs text-red-500 dark:text-red-400">{pasteError}</p>
+                )}
               </div>
             )}
 
