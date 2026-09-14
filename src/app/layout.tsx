@@ -62,7 +62,7 @@ export default function RootLayout({
               </header>
               <main id="main-content" className="w-full flex-1 px-3 py-4 sm:px-6 sm:py-6" role="main"><PageTransition>{children}</PageTransition></main>
               <footer className="border-t border-[hsl(var(--border))] bg-[hsl(var(--card))]">
-                <div className="flex w-full items-center justify-between px-3 py-3 sm:px-6 sm:py-4 text-xs text-[hsl(var(--muted-foreground))]">
+                <div className="flex w-full flex-col items-center gap-1 px-3 py-3 sm:flex-row sm:justify-between sm:px-6 sm:py-4 text-xs text-[hsl(var(--muted-foreground))]">
                   <span>Trip Planner v0.1</span>
                   <span>Powered by Geoapify · Wikidata · Google Places</span>
                 </div>
