@@ -1070,7 +1070,7 @@ export function PoisSection({
               role="tab"
               aria-selected={view === key}
               onClick={() => setView(key as View)}
-              className={`relative flex flex-1 lg:flex-none items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition-all ${
+              className={`relative flex flex-1 lg:flex-none items-center justify-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-3 py-2 text-sm font-medium transition-all ${
                 mobileOnly ? "lg:hidden" : ""
               } ${
                 view === key

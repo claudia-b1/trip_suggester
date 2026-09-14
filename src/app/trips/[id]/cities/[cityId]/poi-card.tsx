@@ -300,7 +300,7 @@ export function StarRating({
         type="button"
         title={isNotInterested ? "Remove 'not interested'" : "Mark as not interested"}
         onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poiId); }}
-        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+        className={`rounded-full px-2 py-1 sm:px-1.5 sm:py-0.5 text-[11px] sm:text-[10px] font-medium transition-colors ${
           isNotInterested
             ? "bg-red-100 text-red-600 border border-red-200"
             : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] border border-[hsl(var(--border))] hover:border-red-300 hover:text-red-500"
@@ -314,7 +314,7 @@ export function StarRating({
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
           disabled={isDeleting}
           aria-label="Delete POI"
-          className="rounded p-1 text-[hsl(var(--muted-foreground))] hover:bg-red-50 hover:text-red-600 disabled:opacity-30 transition-colors"
+          className="rounded p-2 sm:p-1 text-[hsl(var(--muted-foreground))] hover:bg-red-50 hover:text-red-600 disabled:opacity-30 transition-colors"
         >
           {isDeleting ? <span className="text-xs">…</span> : <TrashIcon />}
         </button>
@@ -495,7 +495,7 @@ export function PoiCard({
 
           {/* Bottom overlay: visited/assigned · user stars · ✕ · delete */}
           <div
-            className="absolute bottom-0 left-0 right-0 flex items-center gap-1 px-1.5 py-1.5 bg-gradient-to-t from-black/55 to-transparent"
+            className="absolute bottom-0 left-0 right-0 flex items-center gap-2 sm:gap-1 px-1.5 py-1.5 min-h-[44px] sm:min-h-0 bg-gradient-to-t from-black/55 to-transparent"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Visited dot */}
@@ -503,7 +503,7 @@ export function PoiCard({
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
               title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
-              className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[8px] transition-colors ${
+              className={`flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] sm:text-[8px] transition-colors ${
                 isVisited ? "bg-indigo-500 text-white" : "bg-white/30 text-white/70 hover:bg-indigo-400 hover:text-white"
               }`}
             >
@@ -511,10 +511,10 @@ export function PoiCard({
             </button>
             {/* Assigned dot */}
             {isAssigned && (
-              <span title="In day plan" className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-green-500 text-white text-[8px]">✓</span>
+              <span title="In day plan" className="flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full bg-green-500 text-white text-[9px] sm:text-[8px]">✓</span>
             )}
             {/* User stars */}
-            <div className="flex items-center gap-0.5 flex-1">
+            <div className="flex items-center gap-1 sm:gap-0.5 flex-1">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
                   key={star}
@@ -530,20 +530,20 @@ export function PoiCard({
               ))}
             </div>
             {/* Favourite + Not interested + delete */}
-            <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-1 flex-shrink-0">
               <button
                 type="button"
                 title={isFavourited ? "Already in favourites" : "Add to favourites"}
                 onClick={(e) => { e.stopPropagation(); onFavourite(poi); }}
-                className={`transition-colors ${isFavourited ? "text-red-500" : "text-white/70 hover:text-red-400"}`}
+                className={`p-1.5 sm:p-0 -m-1.5 sm:m-0 transition-colors ${isFavourited ? "text-red-500" : "text-white/70 hover:text-red-400"}`}
               >
-                <HeartIcon filled={isFavourited} className="h-3.5 w-3.5" />
+                <HeartIcon filled={isFavourited} className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
               </button>
               <button
                 type="button"
                 title={isNotInterested ? "Remove 'not interested'" : "Mark as not interested"}
                 onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poi.id); }}
-                className={`rounded px-1 py-0.5 text-[10px] font-medium transition-colors ${
+                className={`rounded px-1.5 py-1 sm:px-1 sm:py-0.5 text-[11px] sm:text-[10px] font-medium transition-colors ${
                   isNotInterested ? "bg-red-500/80 text-white" : "text-white/70 hover:text-red-300"
                 }`}
               >
@@ -554,7 +554,7 @@ export function PoiCard({
                 onClick={(e) => { e.stopPropagation(); onDelete(poi); }}
                 disabled={isDeleting}
                 aria-label="Delete POI"
-                className="text-white/60 hover:text-red-300 disabled:opacity-30 transition-colors"
+                className="p-1.5 sm:p-0 -m-1.5 sm:m-0 text-white/60 hover:text-red-300 disabled:opacity-30 transition-colors"
               >
                 {isDeleting ? <span className="text-[10px]">…</span> : <TrashIcon />}
               </button>
@@ -751,13 +751,13 @@ export function CompactPoiCard({
       {/* Status indicators — left side (offset to right of drag handle) */}
       <div className="absolute left-7 top-2.5 z-10 flex items-center gap-1">
         {isAssigned && (
-          <span title="Assigned to daily plan" className="flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm text-[9px]">✓</span>
+          <span title="Assigned to daily plan" className="flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm text-[10px] sm:text-[9px]">✓</span>
         )}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
           title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
-          className={`flex h-4 w-4 items-center justify-center rounded-full shadow-sm text-[9px] transition-colors ${
+          className={`flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full shadow-sm text-[10px] sm:text-[9px] transition-colors ${
             isVisited ? "bg-indigo-500 text-white" : "bg-white/80 text-gray-400 border border-gray-200 hover:border-indigo-300 hover:text-indigo-500"
           }`}
         >

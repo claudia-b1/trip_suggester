@@ -1235,7 +1235,8 @@ export function DailyPlan({
       {/* Header & plan controls */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          Drag POIs between slots/days, or click a POI then a slot to assign.
+          <span className="hidden sm:inline">Drag POIs between slots/days, or click a POI then a slot to assign.</span>
+          <span className="sm:hidden">Tap a POI below, then tap a time slot to assign it.</span>
         </p>
         {totalActivities > 0 && (
           <Button
@@ -1616,7 +1617,7 @@ export function DailyPlan({
                             ? "border-indigo-300 text-indigo-500"
                             : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"
                         }`}>
-                          {isPoiOver ? "Drop here" : "Drag a POI here"}
+                          {isPoiOver ? "Drop here" : <><span className="hidden sm:inline">Drag a POI here</span><span className="sm:hidden">Tap + Assign here</span></>}
                         </div>
                       )}
                       <ul className="space-y-1">
