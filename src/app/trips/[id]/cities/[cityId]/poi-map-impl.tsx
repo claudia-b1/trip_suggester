@@ -1343,7 +1343,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={poi.longitude}
               latitude={poi.latitude}
               anchor="bottom"
-              style={{ zIndex: 10 }}
+              style={{ zIndex: 2 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveId((prev) => prev === poi.id ? null : poi.id);
@@ -1407,7 +1407,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={fav.longitude}
               latitude={fav.latitude}
               anchor="center"
-              style={{ zIndex: 10 }}
+              style={{ zIndex: 2 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveFavId((prev) => prev === fav.id ? null : fav.id);
@@ -1423,7 +1423,7 @@ export function PoiMapImpl(props: PoiMapProps) {
 
         {/* User location blue dot — rendered last with highest z-index so it's always on top */}
         {userLocation && (
-          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 20 }}>
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 3 }}>
             <div className="relative flex items-center justify-center" style={{ width: 30, height: 30 }}>
               {/* Pulsing ring */}
               <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 30, height: 30 }} />
