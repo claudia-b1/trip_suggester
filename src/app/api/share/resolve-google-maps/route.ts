@@ -78,14 +78,20 @@ function extractPlaceInfo(urlStr: string): ExtractedPlace {
       result.lng = parseFloat(coordMatch[2]);
     }
 
-    // Fall back to ?q=lat,lng query param
-    if (result.lat == null) {
+    // Fall back to ?q= query param — may contain "lat,lng" or a place name+address
+    if (result.lat == null || !result.name) {
       const q = url.searchParams.get("q");
       if (q) {
         const qMatch = q.match(/^(-?\d+\.?\d*),(-?\d+\.?\d*)$/);
-        if (qMatch) {
+        if (qMatch && result.lat == null) {
           result.lat = parseFloat(qMatch[1]);
           result.lng = parseFloat(qMatch[2]);
+        } else if (!result.name) {
+          // q contains a place name (possibly with address), e.g.
+          // "O'Panuozzo Neapolitan Pizzeria, Mariastraat 35, 3511 LN Utrecht"
+          // Take the first segment before a comma as the place name.
+          const namePart = q.split(",")[0].trim();
+          if (namePart) result.name = namePart;
         }
       }
     }
@@ -138,7 +144,10 @@ async function followRedirectsSafely(
     // If the redirect target is a Google Maps URL, use it directly.
     // Don't follow further — Google will redirect to consent.google.com
     // (GDPR cookie consent) which loops infinitely without browser cookies.
-    if (nextParsed.pathname.includes("/maps/")) {
+    // Detect both formats:
+    //   - www.google.com/maps/place/...  (path contains /maps/)
+    //   - maps.google.com?q=...          (hostname starts with maps.)
+    if (nextParsed.pathname.includes("/maps/") || nextParsed.hostname.startsWith("maps.")) {
       return nextUrl;
     }
 
