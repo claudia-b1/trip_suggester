@@ -1200,18 +1200,6 @@ export function PoiMapImpl(props: PoiMapProps) {
         <ScaleControl position="top-right" unit="metric" />
         {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
 
-        {/* User location blue dot */}
-        {userLocation && (
-          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
-            <div className="relative flex items-center justify-center" style={{ width: 22, height: 22 }}>
-              {/* Pulsing ring */}
-              <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 22, height: 22 }} />
-              {/* Blue dot */}
-              <div className="relative rounded-full bg-blue-500 border-2 border-white shadow-md" style={{ width: 14, height: 14 }} />
-            </div>
-          </Marker>
-        )}
-
         {/* City radius circle — grey dashed */}
         {circleData && (
           <Source id="radius-circle" type="geojson" data={circleData}>
@@ -1355,6 +1343,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={poi.longitude}
               latitude={poi.latitude}
               anchor="bottom"
+              style={{ zIndex: 10 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveId((prev) => prev === poi.id ? null : poi.id);
@@ -1418,6 +1407,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={fav.longitude}
               latitude={fav.latitude}
               anchor="center"
+              style={{ zIndex: 10 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveFavId((prev) => prev === fav.id ? null : fav.id);
@@ -1430,6 +1420,18 @@ export function PoiMapImpl(props: PoiMapProps) {
             </Marker>
           );
         })}
+
+        {/* User location blue dot — rendered last with highest z-index so it's always on top */}
+        {userLocation && (
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 20 }}>
+            <div className="relative flex items-center justify-center" style={{ width: 30, height: 30 }}>
+              {/* Pulsing ring */}
+              <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 30, height: 30 }} />
+              {/* Blue dot */}
+              <div className="relative rounded-full bg-blue-500 border-2 border-white shadow-md" style={{ width: 18, height: 18 }} />
+            </div>
+          </Marker>
+        )}
 
         {/* Recommendation preview markers — clustered when overlapping */}
         {previewClusters.map((cluster) => {
