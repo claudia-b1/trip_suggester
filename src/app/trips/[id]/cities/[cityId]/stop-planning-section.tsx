@@ -39,6 +39,7 @@ export type StopPoiDTO = {
   category: Category;
   subcategory: string | null;
   description: string | null;
+  llmDescription?: string | null;
   latitude: number | null;
   longitude: number | null;
   rating: number | null;
@@ -258,8 +259,8 @@ function StopPoiCard({
           )}
         </div>
 
-        {poi.description && (
-          <p className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-2">{poi.description}</p>
+        {(poi.llmDescription || poi.description) && (
+          <p className="text-xs text-[hsl(var(--muted-foreground))] line-clamp-2">{poi.llmDescription || poi.description}</p>
         )}
 
         {poi.openingHours && (

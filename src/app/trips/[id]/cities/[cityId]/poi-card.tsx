@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -9,6 +9,7 @@ import { resizeImageFile } from "@/lib/resize-image";
 import type { DayPlanOption } from "./poi-map";
 import type { PoiDTO, ScoreBreakdownDTO, AttachmentDTO } from "./pois-section";
 import { AttachmentsSection } from "@/components/ui/attachments-section";
+import { ScorePopover } from "@/components/ui/score-popover";
 
 // ─── Utility functions ──────────────────────────────────────────────────────
 
@@ -369,10 +370,19 @@ export function PoiCard({
   const [hoverStar, setHoverStar] = useState<number | null>(null);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [isClamped, setIsClamped] = useState(false);
 
   const hasCoords = poi.latitude != null && poi.longitude != null;
   const isDeleting = deletingId === poi.id;
-  const longDesc = (poi.description?.length ?? 0) > 110;
+  const displayDescription = poi.llmDescription || poi.description;
+
+  // Detect whether the description text is actually overflowing the line-clamp
+  useEffect(() => {
+    const el = descRef.current;
+    if (!el) { setIsClamped(false); return; }
+    setIsClamped(el.scrollHeight > el.clientHeight + 1);
+  }, [displayDescription, expanded]);
   const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
   const hasDetails = poi.openingHours || poi.phoneNumber || poi.inceptionYear || poi.fee;
   const photoSrc = poiPhotoSrc(poi);
@@ -558,31 +568,28 @@ export function PoiCard({
         {/* Name + edit button */}
         <div className="flex items-start justify-between gap-1 mb-1.5">
           <h3 className="font-semibold text-sm leading-snug line-clamp-2">{poi.name}</h3>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
-            className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] flex-shrink-0"
-            title="Edit place"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-            </svg>
-          </button>
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            <ScorePopover breakdown={poi.scoreBreakdown} />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(poi); }}
+              className="rounded-full p-1.5 sm:p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
+              title="Edit place"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
-        {/* Badges row: score explainers + price level + cluster indicator */}
+        {/* Info row: price level + cluster indicator */}
         {(() => {
-          const badges = getScoreBadges(poi.scoreBreakdown);
           const cluster = getClusterCount(poi.extraFields);
-          const hasAnything = badges.length > 0 || poi.priceLevel != null || cluster > 0;
+          const hasAnything = poi.priceLevel != null || cluster > 0;
           if (!hasAnything) return null;
           return (
             <div className="mb-2 flex flex-wrap items-center gap-1">
-              {badges.map((b) => (
-                <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                  {b.emoji} {b.label}
-                </span>
-              ))}
               {poi.priceLevel != null && (
                 <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
                   {PRICE_LABELS[poi.priceLevel] ?? ""}
@@ -598,10 +605,10 @@ export function PoiCard({
         })()}
 
         {/* Description */}
-        {poi.description && (
+        {displayDescription && (
           <div className="mb-2 flex-1 text-xs text-[hsl(var(--muted-foreground))]">
-            <p className={expanded ? "" : "line-clamp-2"}>{poi.description}</p>
-            {longDesc && (
+            <p ref={descRef} className={expanded ? "" : "line-clamp-2"}>{displayDescription}</p>
+            {(isClamped || expanded) && (
               <button
                 type="button"
                 onClick={() => setExpanded((v) => !v)}
@@ -884,6 +891,9 @@ export function CompactPoiCard({
           )}
         </span>
 
+        {/* Score info */}
+        <ScorePopover breakdown={poi.scoreBreakdown} className="flex-shrink-0" />
+
         {/* Edit pencil */}
         <button
           type="button"
@@ -916,27 +926,19 @@ export function CompactPoiCard({
       {/* Expanded details */}
       {open && (
         <div className="border-t border-[hsl(var(--border))] px-3 py-2.5 space-y-2 text-sm">
-          {poi.description && (
-            <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.description}</p>
+          {(poi.llmDescription || poi.description) && (
+            <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed">{poi.llmDescription || poi.description}</p>
           )}
 
-          {/* Score explainer badges + cluster indicator */}
+          {/* Cluster indicator */}
           {(() => {
-            const badges = getScoreBadges(poi.scoreBreakdown);
             const cluster = getClusterCount(poi.extraFields);
-            if (badges.length === 0 && cluster === 0) return null;
+            if (cluster === 0) return null;
             return (
               <div className="flex flex-wrap items-center gap-1">
-                {badges.map((b) => (
-                  <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
-                    {b.emoji} {b.label}
-                  </span>
-                ))}
-                {cluster > 0 && (
-                  <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
-                    +{cluster} more nearby
-                  </span>
-                )}
+                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                  +{cluster} more nearby
+                </span>
               </div>
             );
           })()}

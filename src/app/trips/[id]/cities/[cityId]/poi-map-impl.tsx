@@ -25,6 +25,7 @@ type LocatedPoi = {
   category: Category;
   subcategory?: string | null;
   description: string | null;
+  llmDescription?: string | null;
   latitude: number;
   longitude: number;
   rating?: number | null;
@@ -51,7 +52,7 @@ export type RecommendationMarker = {
 };
 
 export type PoiMapProps = {
-  pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null; address?: string | null; openingHours?: string | null }[];
+  pois: { id: number; name: string; category: Category; subcategory?: string | null; description: string | null; llmDescription?: string | null; latitude: number | null; longitude: number | null; rating?: number | null; photoUrl?: string | null; userRatingCount?: number | null; placeId?: string | null; address?: string | null; openingHours?: string | null }[];
   cityId?: number;
   cityLat?: number;
   cityLon?: number;
@@ -368,18 +369,21 @@ function PopupContent({
           </button>
         </>
       )}
-      {poi.description && (
-        <p className="text-xs text-gray-600 leading-snug">
-          {expanded || poi.description.length <= 100
-            ? poi.description
-            : poi.description.slice(0, 100) + "…"}
-          {poi.description.length > 100 && (
-            <button type="button" onClick={() => setExpanded((v) => !v)} className="ml-1 text-indigo-600 hover:underline">
-              {expanded ? "less" : "more"}
-            </button>
-          )}
-        </p>
-      )}
+      {(poi.llmDescription || poi.description) && (() => {
+        const desc = poi.llmDescription || poi.description!;
+        return (
+          <p className="text-xs text-gray-600 dark:text-gray-400 leading-snug">
+            {expanded || desc.length <= 100
+              ? desc
+              : desc.slice(0, 100) + "…"}
+            {desc.length > 100 && (
+              <button type="button" onClick={() => setExpanded((v) => !v)} className="ml-1 text-indigo-600 hover:underline">
+                {expanded ? "less" : "more"}
+              </button>
+            )}
+          </p>
+        );
+      })()}
       {/* Address + opening hours for accommodation POIs */}
       {poi.category === "ACCOMMODATION" && (poi.address || poi.openingHours) && (
         <div className="space-y-0.5">

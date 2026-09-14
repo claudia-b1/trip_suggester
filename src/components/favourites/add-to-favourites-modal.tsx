@@ -411,7 +411,7 @@ export function AddToFavouritesModal() {
   const isVisible = !!addModalPrefill || !!editModalItem;
 
   const [name, setName] = useState("");
-  const [category, setCategory] = useState<Category>("CULTURE");
+  const [category, setCategory] = useState<Category | "">("");
   const [subcategory, setSubcategory] = useState("");
   const [country, setCountry] = useState("");
   const [city, setCity] = useState("");
@@ -487,7 +487,7 @@ export function AddToFavouritesModal() {
   useEffect(() => {
     if (editModalItem) {
       setName(editModalItem.name);
-      setCategory(isCategory(editModalItem.category) ? editModalItem.category : "CULTURE");
+      setCategory(isCategory(editModalItem.category) ? editModalItem.category : "");
       setSubcategory(editModalItem.subcategory ?? "");
       setCountry(editModalItem.country);
       setCity(editModalItem.city);
@@ -514,21 +514,21 @@ export function AddToFavouritesModal() {
       coordsFromGeocode.current = false;
     } else if (addModalPrefill) {
       setName(addModalPrefill.name ?? "");
-      setCategory(addModalPrefill.category ?? "CULTURE");
+      setCategory(addModalPrefill.category ?? "");
       setSubcategory(addModalPrefill.subcategory ?? "");
       setCountry(addModalPrefill.country ?? "");
       setCity(addModalPrefill.city ?? "");
-      setAddress("");
+      setAddress(addModalPrefill.address ?? "");
       setLatitude(addModalPrefill.latitude ?? null);
       setLongitude(addModalPrefill.longitude ?? null);
       setCoords(addModalPrefill.latitude && addModalPrefill.longitude ? `${addModalPrefill.latitude}, ${addModalPrefill.longitude}` : "");
       setLocMode(addModalPrefill.latitude != null ? "coords" : "address");
       setDescription(addModalPrefill.description ?? "");
       setWebsite(addModalPrefill.website ?? "");
-      setPhoneNumber("");
-      setOpeningHours("");
-      setPriceLevel(null);
-      setFee("");
+      setPhoneNumber(addModalPrefill.phoneNumber ?? "");
+      setOpeningHours(addModalPrefill.openingHours ?? "");
+      setPriceLevel(addModalPrefill.priceLevel ?? null);
+      setFee(addModalPrefill.fee ?? "");
       setPhotoUrl(addModalPrefill.photoUrl ?? "");
       setNotes("");
       setExtraFields(addModalPrefill.extraFields ?? {});
@@ -971,8 +971,9 @@ export function AddToFavouritesModal() {
           {/* Category + Subcategory */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">Category</label>
-              <select value={category} onChange={(e) => { setCategory(e.target.value as Category); setSubcategory(""); setExtraFields({}); }} className={inputCls}>
+              <label className="mb-1 block text-xs font-medium text-[hsl(var(--foreground))]">Category *</label>
+              <select value={category} onChange={(e) => { setCategory(e.target.value as Category | ""); setSubcategory(""); setExtraFields({}); }} className={inputCls}>
+                <option value="">— Choose category —</option>
                 {CATEGORIES.map((cat) => (
                   <option key={cat} value={cat}>{CATEGORY_LABELS[cat]}</option>
                 ))}
@@ -1312,7 +1313,7 @@ export function AddToFavouritesModal() {
             </button>
             <button
               type="submit"
-              disabled={saving || validating || geocoding || !name.trim() || !country.trim() || !city.trim() || !hasLocation || (!isEditMode && !showCreateList && !listId)}
+              disabled={saving || validating || geocoding || !name.trim() || !category || !country.trim() || !city.trim() || !hasLocation || (!isEditMode && !showCreateList && !listId)}
               className="rounded-md bg-[hsl(var(--primary))] px-4 py-2 text-sm font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-50"
             >
               {saving ? "Saving..." : validating ? "Validating..." : geocoding ? "Resolving..." : isEditMode ? "Save Changes" : "Save to Favourites"}

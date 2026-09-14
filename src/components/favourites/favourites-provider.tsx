@@ -66,11 +66,16 @@ export type NewFavouriteItemPrefill = {
   subcategory?: string;
   country?: string;
   city?: string;
+  address?: string;
   latitude?: number;
   longitude?: number;
   description?: string;
   photoUrl?: string;
   website?: string;
+  phoneNumber?: string;
+  openingHours?: string;
+  priceLevel?: number;
+  fee?: string;
   sourcePlaceId?: string;
   extraFields?: Record<string, unknown>;
   /** Pre-select this list in the modal */

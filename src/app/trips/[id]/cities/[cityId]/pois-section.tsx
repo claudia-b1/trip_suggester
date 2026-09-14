@@ -64,6 +64,7 @@ export type PoiDTO = {
   hasOriginalData?: boolean;
   extraFields?: Record<string, unknown> | null;
   scoreBreakdown?: ScoreBreakdownDTO | null;
+  llmDescription?: string | null;
   attachments?: AttachmentDTO[];
 };
 
@@ -79,7 +80,6 @@ import {
   googleMapsUrl,
   poiPhotoSrc,
   formatReviewCount,
-  getScoreBadges,
   getClusterCount,
   DragGripIcon,
   TrashIcon,

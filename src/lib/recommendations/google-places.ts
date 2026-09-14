@@ -105,7 +105,7 @@ const PRICE_MAP: Record<string, number> = {
  * The media endpoint with no skipHttpRedirect returns a 302 redirect;
  * we follow it and return the final URL (a googleusercontent.com link).
  */
-async function resolvePhotoUri(photoName: string, apiKey: string): Promise<string | undefined> {
+export async function resolvePhotoUri(photoName: string, apiKey: string): Promise<string | undefined> {
   try {
     const url =
       `${PHOTO_BASE}/${photoName}/media` +
@@ -193,7 +193,10 @@ export async function fetchGoogleMeta(
     if (streetName) queryParts.push(streetName);
     queryParts.push(cityName);
 
-    const meta = await doSearch(queryParts.join(" "));
+    const query = queryParts.join(" ");
+    console.log(`[google-meta] query="${query}" lat=${lat} lon=${lon}`);
+    const meta = await doSearch(query);
+    console.log(`[google-meta] result for "${name}": ${meta ? `${meta.name} (${meta.rating}★, ${meta.userRatingCount} reviews)` : "NULL"}`);
 
     // If we got a result with a big coord mismatch (>500m), try an address-based
     // query as fallback. This helps chain stores (e.g. "Edeka Klein") where

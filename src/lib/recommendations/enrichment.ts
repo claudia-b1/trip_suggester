@@ -13,6 +13,7 @@ import { enrichWithGoogle, type GoogleEnrichment, type GoogleMeta } from "./goog
 import type { DiscoveredPlace } from "./geoapify";
 import type { RecommendedPoi } from "./_shared";
 import type { Category } from "@/lib/categories";
+import { buildFallbackDescription } from "@/lib/smart-fallback-description";
 
 // ─── Best-time heuristics per place category label ─────────────────────────
 
@@ -119,11 +120,19 @@ export async function enrichPlace(
   // then Google editorial, then Wikidata short description.
   // Skip Geoapify's "description" — it's almost always just the formatted address
   // (e.g. "Edeka Klein, Himberger Straße 35, 53604 Bad Honnef"), which is useless as a description.
+  // Last resort: smart fallback built from metadata so no POI ever has a blank description.
   const description =
     w?.wikipediaSummary ??
     g?.editorialSummary ??
     w?.description ??
-    "";
+    buildFallbackDescription({
+      category,
+      placeCategory: place.placeCategory,
+      cuisine: place.cuisine,
+      rating: g?.rating ?? (place.sourceRating != null ? Math.round((place.sourceRating / 10) * 5 * 10) / 10 : null),
+      userRatingCount: g?.userRatingCount,
+      cityName,
+    });
 
   // Rating: prefer Google (1–5), normalize source rating (1–10) as fallback
   const rating =
