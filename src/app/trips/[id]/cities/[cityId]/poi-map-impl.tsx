@@ -1363,8 +1363,8 @@ export function PoiMapImpl(props: PoiMapProps) {
             >
               <div
                 className="relative flex flex-col items-center cursor-pointer"
-                onMouseEnter={() => setHoverId(poi.id)}
-                onMouseLeave={() => setHoverId(null)}
+                onMouseEnter={() => { cancelHoverClose(); setHoverId(poi.id); if (activeId !== null && activeId !== poi.id) setActiveId(null); }}
+                onMouseLeave={() => scheduleHoverClose()}
               >
                 {isHovered && (
                   <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none">
