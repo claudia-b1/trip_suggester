@@ -612,7 +612,7 @@ export function PoiMapImpl(props: PoiMapProps) {
   const mapRef = useRef<MapRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeId, setActiveId] = useState<number | null>(focusPoiId ?? null);
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [activeFavId, setActiveFavId] = useState<number | null>(null);
   const [favPopupPos, setFavPopupPos] = useState<{ x: number; y: number } | null>(null);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);

@@ -136,12 +136,12 @@ export function ActivityRecommendations({
   const [selectedRecIds, setSelectedRecIds] = useState<Set<string>>(new Set());
   const [batchAdding, setBatchAdding] = useState(false);
 
-  // Subsection collapse state (all open by default)
-  const [mustDoOpen, setMustDoOpen] = useState(true);
-  const [nearbyActivitiesOpen, setNearbyActivitiesOpen] = useState(true);
-  const [nearbyCitiesOpen, setNearbyCitiesOpen] = useState(true);
-  const [hikesOpen, setHikesOpen] = useState(true);
-  const [cyclingOpen, setCyclingOpen] = useState(true);
+  // Subsection collapse state (all collapsed by default)
+  const [mustDoOpen, setMustDoOpen] = useState(false);
+  const [nearbyActivitiesOpen, setNearbyActivitiesOpen] = useState(false);
+  const [nearbyCitiesOpen, setNearbyCitiesOpen] = useState(false);
+  const [hikesOpen, setHikesOpen] = useState(false);
+  const [cyclingOpen, setCyclingOpen] = useState(false);
 
   // Sync with server-provided initial data
   /** Compute distance in km from the city centre to a recommendation item.
@@ -278,10 +278,6 @@ export function ActivityRecommendations({
   useEffect(() => {
     if (initialData) {
       setData(initialData);
-      // Auto-open any existing custom sections
-      if (initialData.customSections?.length) {
-        setCustomSectionOpenIds(new Set(initialData.customSections.map((s) => s.id)));
-      }
     }
   }, [initialData]);
 
