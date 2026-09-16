@@ -130,7 +130,7 @@ export function TimelineSidebar({
         <button
           type="button"
           onClick={() => setTimelineOpen((v) => !v)}
-          className="flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+          className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -155,11 +155,11 @@ export function TimelineSidebar({
           <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
             Assigning: <span className="font-semibold">{assigningPoi!.poiName}</span>
           </p>
-          <p className="text-[10px] text-indigo-600 dark:text-indigo-400">Tap a time slot below to add it</p>
+          <p className="text-xs text-indigo-600 dark:text-indigo-400">Tap a time slot below to add it</p>
           <button
             type="button"
             onClick={onCancelAssign}
-            className="text-[10px] font-medium text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+            className="text-xs font-medium text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
           >
             ✕ Cancel
           </button>
@@ -174,7 +174,7 @@ export function TimelineSidebar({
         <button
           type="button"
           onClick={() => setViewMode("all")}
-          className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+          className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
             viewMode === "all"
               ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] font-medium"
               : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
@@ -186,7 +186,7 @@ export function TimelineSidebar({
         <button
           type="button"
           onClick={() => setViewMode("today")}
-          className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+          className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
             viewMode === "today"
               ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))] font-medium"
               : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
@@ -199,7 +199,7 @@ export function TimelineSidebar({
           <button
             type="button"
             onClick={() => setViewMode("active")}
-            className="text-[10px] px-1 py-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
+            className="text-xs px-1 py-0.5 text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors"
             title="Show only days with activities"
           >
             ✕
@@ -249,7 +249,7 @@ export function TimelineSidebar({
                   <p className="text-xs font-semibold text-[hsl(var(--foreground))]">
                     {formatDay(dp.date, dp.dayIndex)}
                   </p>
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded-full px-1.5 py-0.5">
+                  <span className="text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded-full px-1.5 py-0.5">
                     {regularCount} place{regularCount !== 1 ? "s" : ""}
                   </span>
                 </div>
@@ -276,7 +276,7 @@ export function TimelineSidebar({
                       onDrop={(e) => handleSlotDrop(e, dp.id, slot)}
                       onClick={isAssigning ? () => onAssignSlot?.(dp.id, slot) : undefined}
                     >
-                      <p className="text-[10px] font-medium uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+                      <p className="text-xs font-medium uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_ICONS[slot]} {SLOT_LABELS[slot]}
                       </p>
                       {nonAccom.length > 0 && (
@@ -295,18 +295,18 @@ export function TimelineSidebar({
                               />
                               <span className="truncate text-[hsl(var(--foreground))]">{a.poiName}</span>
                               {favouritedPoiIds?.has(a.poiId) && (
-                                <span className="shrink-0 text-pink-500 text-[10px]" title="Favourited">♥</span>
+                                <span className="shrink-0 text-pink-500 text-xs" title="Favourited">♥</span>
                               )}
                             </li>
                           ))}
                         </ul>
                       )}
                       {isAssigning ? (
-                        <div className="rounded border border-dashed border-indigo-300 dark:border-indigo-600 px-1.5 py-1 text-center text-[10px] text-indigo-500 dark:text-indigo-400">
+                        <div className="rounded border border-dashed border-indigo-300 dark:border-indigo-600 px-1.5 py-1 text-center text-xs text-indigo-500 dark:text-indigo-400">
                           Tap to add here
                         </div>
                       ) : isOver ? (
-                        <div className="rounded border border-dashed border-indigo-300 px-1.5 py-1 text-center text-[10px] text-indigo-500">
+                        <div className="rounded border border-dashed border-indigo-300 px-1.5 py-1 text-center text-xs text-indigo-500">
                           Drop here
                         </div>
                       ) : null}
@@ -324,7 +324,7 @@ export function TimelineSidebar({
                   if (matching.length === 0) return null;
                   return matching.map((sdp) => (
                     <div key={`sub-${sdp.cityName}-${sdp.date}`} className="space-y-0.5">
-                      <p className="text-[10px] font-medium text-[hsl(var(--primary))]/70 truncate">
+                      <p className="text-xs font-medium text-[hsl(var(--primary))]/70 truncate">
                         ↳ {sdp.cityName}
                       </p>
                       <ul className="space-y-0.5">
@@ -345,7 +345,7 @@ export function TimelineSidebar({
                 {/* Accommodation as "Night" section */}
                 {accommodationActivities.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-[10px] font-medium uppercase tracking-wide text-indigo-400">
+                    <p className="text-xs font-medium uppercase tracking-wide text-indigo-400">
                       {NIGHT_ICON} Night
                     </p>
                     <ul className="space-y-0.5">
@@ -357,10 +357,10 @@ export function TimelineSidebar({
                             onActivityClick ? "cursor-pointer" : "cursor-default"
                           }`}
                         >
-                          <span className="text-[10px]">🏠</span>
+                          <span className="text-xs">🏠</span>
                           <span className="truncate text-indigo-400">{a.poiName}</span>
                           {favouritedPoiIds?.has(a.poiId) && (
-                            <span className="shrink-0 text-pink-500 text-[10px]" title="Favourited">♥</span>
+                            <span className="shrink-0 text-pink-500 text-xs" title="Favourited">♥</span>
                           )}
                         </li>
                       ))}

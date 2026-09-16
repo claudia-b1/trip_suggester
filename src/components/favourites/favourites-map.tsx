@@ -251,7 +251,7 @@ export function FavouritesMap({
               setSubcategoryFilter(null);
               setExtraFieldFilters([]);
             }}
-            className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+            className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
               !categoryFilter
                 ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]"
                 : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -270,7 +270,7 @@ export function FavouritesMap({
                   setSubcategoryFilter(null);
                   setExtraFieldFilters([]);
                 }}
-                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                   active
                     ? `${styles.badge} border-transparent`
                     : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -290,7 +290,7 @@ export function FavouritesMap({
                 setSubcategoryFilter(null);
                 setExtraFieldFilters([]);
               }}
-              className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+              className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                 !subcategoryFilter
                   ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                   : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -305,7 +305,7 @@ export function FavouritesMap({
                   setSubcategoryFilter(subcategoryFilter === sub.id ? null : sub.id);
                   setExtraFieldFilters([]);
                 }}
-                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                   subcategoryFilter === sub.id
                     ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                     : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -323,7 +323,7 @@ export function FavouritesMap({
             <select
               value={listFilter ?? ""}
               onChange={(e) => setListFilter(e.target.value ? Number(e.target.value) : null)}
-              className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-[10px] text-[hsl(var(--foreground))]"
+              className="rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-xs text-[hsl(var(--foreground))]"
             >
               <option value="">All lists</option>
               {flatLists.map((l) => (
@@ -333,7 +333,7 @@ export function FavouritesMap({
               ))}
             </select>
           )}
-          <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))]">
+          <span className="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
             {filteredItems.length} place{filteredItems.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -346,7 +346,7 @@ export function FavouritesMap({
               <div className="flex flex-wrap gap-1">
                 {dropdownDefs.map((def) => {
                   const isActive = !!extraFieldFilters.find((f) => f.key === def.key);
-                  const cls = `rounded-md border px-2 py-0.5 text-[10px] transition-all ${
+                  const cls = `rounded-md border px-2 py-0.5 text-xs transition-all ${
                     isActive
                       ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
                       : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
@@ -382,7 +382,7 @@ export function FavouritesMap({
                   const isActive = extraFieldFilters.some((f) => f.key === def.key);
                   return (
                     <button key={def.key} onClick={() => toggleBooleanFilter(def.key)}
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                      className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                         isActive
                           ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400"
                           : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -396,7 +396,7 @@ export function FavouritesMap({
             )}
             {extraFieldFilters.length > 0 && (
               <button onClick={() => setExtraFieldFilters([])}
-                className="text-[10px] font-medium text-red-400 hover:text-red-500">
+                className="text-xs font-medium text-red-400 hover:text-red-500">
                 ✕ Clear {extraFieldFilters.length} filter{extraFieldFilters.length > 1 ? "s" : ""}
               </button>
             )}
@@ -410,7 +410,7 @@ export function FavouritesMap({
           <button
             type="button"
             onClick={fitBounds}
-            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-[10px] font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
             title="Fit all points"
           >
             Fit all
@@ -418,14 +418,14 @@ export function FavouritesMap({
           <button
             type="button"
             onClick={() => setMapStyle((s) => (s === "streets" ? "satellite" : "streets"))}
-            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-[10px] font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
           >
             {mapStyle === "streets" ? "Satellite" : "Streets"}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-[10px] font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2 py-1 text-xs font-medium shadow-sm hover:bg-[hsl(var(--background))] backdrop-blur-sm"
           >
             List view
           </button>
@@ -446,7 +446,7 @@ export function FavouritesMap({
           <NavigationControl position="top-right" />
 
           {/* Category legend */}
-          <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-lg border border-[hsl(var(--border))] bg-white/90 p-1.5 shadow text-[10px] space-y-0.5 backdrop-blur-sm dark:bg-gray-900/90">
+          <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded-lg border border-[hsl(var(--border))] bg-white/90 p-1.5 shadow text-xs space-y-0.5 backdrop-blur-sm dark:bg-gray-900/90">
             {CATEGORIES.map((c) => {
               // Only show categories that have items
               const count = filteredItems.filter((f) => f.item.category === c).length;
@@ -497,13 +497,13 @@ export function FavouritesMap({
                   <div className="absolute bottom-full mb-1.5 rounded-lg bg-gray-900/95 px-2.5 py-1.5 shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity max-w-[200px] z-20">
                     <p className="text-xs font-semibold text-white leading-tight whitespace-nowrap overflow-hidden text-ellipsis">{item.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <span className="text-[10px] text-gray-300">{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
+                      <span className="text-xs text-gray-300">{CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}</span>
                       {hasRating && (
-                        <span className="text-[10px] text-amber-400">{"★".repeat(item.personalRating!)}</span>
+                        <span className="text-xs text-amber-400">{"★".repeat(item.personalRating!)}</span>
                       )}
                     </div>
                     {item.city && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">{item.city}, {item.country}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{item.city}, {item.country}</p>
                     )}
                   </div>
                   {/* Marker: category emoji inside colored circle */}
@@ -615,16 +615,16 @@ function googleMapsUrl(name: string, lat: number, lng: number) {
 function ExtraFieldValue({ label, value, type }: { label: string; value: unknown; type: string }) {
   if (value === undefined || value === null || value === "" || value === "-" || value === false) return null;
   if (type === "boolean" && value === true) {
-    return <span className="rounded-full bg-violet-50 dark:bg-violet-950 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400">✓ {label}</span>;
+    return <span className="rounded-full bg-violet-50 dark:bg-violet-950 px-1.5 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">✓ {label}</span>;
   }
   if (type === "stars" && typeof value === "number") {
-    return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {"★".repeat(value)}{"☆".repeat(5 - value)}</span>;
+    return <span className="text-xs text-[hsl(var(--muted-foreground))]">{label}: {"★".repeat(value)}{"☆".repeat(5 - value)}</span>;
   }
   if (type === "proximity") {
     const proxyLabels: Record<string, string> = { "2km": "< 2 km", "500m": "< 500 m", "200m": "< 200 m", "direct": "Direct" };
-    return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {proxyLabels[String(value)] ?? String(value)}</span>;
+    return <span className="text-xs text-[hsl(var(--muted-foreground))]">{label}: {proxyLabels[String(value)] ?? String(value)}</span>;
   }
-  return <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{label}: {String(value)}</span>;
+  return <span className="text-xs text-[hsl(var(--muted-foreground))]">{label}: {String(value)}</span>;
 }
 
 function FavouriteMapPopup({
@@ -672,35 +672,35 @@ function FavouriteMapPopup({
       {/* Badges row: category + subcategory + visited + price */}
       <div className="flex flex-wrap items-center gap-1">
         <span
-          className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[cat].badge}`}
+          className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium ${CATEGORY_STYLES[cat].badge}`}
         >
           {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
         </span>
         {item.subcategory && (
-          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+          <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-400">
             {item.subcategory}
           </span>
         )}
         {item.visited && (
-          <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
+          <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-xs font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400">
             ✓ Visited
           </span>
         )}
         {priceLevel != null && priceLevel > 0 && (
-          <span className="rounded-full bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-400">
+          <span className="rounded-full bg-emerald-50 dark:bg-emerald-950 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
             {PRICE_LABELS[priceLevel] ?? ""}
           </span>
         )}
       </div>
 
       {/* Location */}
-      <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+      <p className="text-xs text-[hsl(var(--muted-foreground))]">
         📍 {item.city}, {item.country}
       </p>
 
       {/* Address (if different from city/country) */}
       {item.address && (
-        <p className="text-[10px] text-[hsl(var(--muted-foreground))] leading-snug">
+        <p className="text-xs text-[hsl(var(--muted-foreground))] leading-snug">
           {item.address}
         </p>
       )}
@@ -708,7 +708,7 @@ function FavouriteMapPopup({
       {/* Personal rating */}
       {item.personalRating != null && item.personalRating > 0 && (
         <div className="flex items-center gap-1">
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))]">Your rating:</span>
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">Your rating:</span>
           {Array.from({ length: 5 }, (_, i) => (
             <span key={i} className={`text-xs ${i < item.personalRating! ? "text-amber-400" : "text-gray-300 dark:text-gray-600"}`}>
               ★
@@ -719,14 +719,14 @@ function FavouriteMapPopup({
 
       {/* Description */}
       {item.description && (
-        <p className="text-[11px] text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">
+        <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">
           {item.description}
         </p>
       )}
 
       {/* Notes */}
       {item.notes && (
-        <p className="text-[11px] italic text-[hsl(var(--foreground))] bg-amber-50 dark:bg-amber-950/30 rounded px-1.5 py-1 leading-relaxed">
+        <p className="text-xs italic text-[hsl(var(--foreground))] bg-amber-50 dark:bg-amber-950/30 rounded px-1.5 py-1 leading-relaxed">
           💬 {item.notes}
         </p>
       )}
@@ -737,7 +737,7 @@ function FavouriteMapPopup({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+            className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
           >
             <span className={`transition-transform ${expanded ? "rotate-90" : ""}`} style={{ fontSize: 8 }}>▶</span>
             {expanded ? "Hide details" : "Show details"}
@@ -745,13 +745,13 @@ function FavouriteMapPopup({
           {expanded && (
             <div className="space-y-1 border-l-2 border-[hsl(var(--border))] pl-2 py-0.5">
               {item.openingHours && (
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">🕐 {item.openingHours}</p>
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">🕐 {item.openingHours}</p>
               )}
               {item.phoneNumber && (
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">📞 {item.phoneNumber}</p>
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">📞 {item.phoneNumber}</p>
               )}
               {item.fee && (
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">
                   🎫 {item.fee === "yes" ? "Admission fee" : item.fee === "no" ? "Free" : item.fee}
                 </p>
               )}
@@ -780,7 +780,7 @@ function FavouriteMapPopup({
             href={item.website}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] text-[hsl(var(--primary))] hover:underline"
+            className="text-xs text-[hsl(var(--primary))] hover:underline"
           >
             🔗 Website
           </a>
@@ -789,14 +789,14 @@ function FavouriteMapPopup({
           href={googleMapsUrl(item.name, item.latitude, item.longitude)}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-[11px] text-[hsl(var(--primary))] hover:underline"
+          className="text-xs text-[hsl(var(--primary))] hover:underline"
         >
           🗺️ Google Maps
         </a>
       </div>
 
       {/* Footer: list path */}
-      <p className="text-[10px] text-[hsl(var(--muted-foreground))] border-t border-[hsl(var(--border))] pt-1">📁 {listName}</p>
+      <p className="text-xs text-[hsl(var(--muted-foreground))] border-t border-[hsl(var(--border))] pt-1">📁 {listName}</p>
     </div>
   );
 }

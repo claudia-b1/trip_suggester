@@ -207,14 +207,14 @@ export function TimelineAssignButton({ poi, dayPlans }: { poi: { id: number; nam
       {isAccommodation && popoverOpen && (
         <div className="mt-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 p-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
               🏠 Select days
             </span>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={selectAllDays} className="text-[10px] text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300">
+              <button type="button" onClick={selectAllDays} className="text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300">
                 Select all
               </button>
-              <button type="button" onClick={() => { setPopoverOpen(false); setSelectedDays(new Set()); }} className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+              <button type="button" onClick={() => { setPopoverOpen(false); setSelectedDays(new Set()); }} className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
                 ✕
               </button>
             </div>
@@ -300,7 +300,7 @@ export function StarRating({
         type="button"
         title={isNotInterested ? "Remove 'not interested'" : "Mark as not interested"}
         onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poiId); }}
-        className={`rounded-full px-2 py-1 sm:px-1.5 sm:py-0.5 text-[11px] sm:text-[10px] font-medium transition-colors ${
+        className={`rounded-full px-2 py-1 sm:px-1.5 sm:py-0.5 text-xs sm:text-xs font-medium transition-colors ${
           isNotInterested
             ? "bg-red-100 text-red-600 border border-red-200"
             : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] border border-[hsl(var(--border))] hover:border-red-300 hover:text-red-500"
@@ -418,7 +418,7 @@ export function PoiCard({
                   key={c}
                   type="button"
                   onClick={() => { if (c !== poi.category) onChangeCategory(poi.id, c); setCatPickerOpen(false); }}
-                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
+                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-xs hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
                 >
                   <span>{CATEGORY_ICONS[c]}</span>
                   <span>{CATEGORY_LABELS[c]}</span>
@@ -428,9 +428,9 @@ export function PoiCard({
           )}
           {poi.rating != null && (
             <div className="flex flex-col items-center text-center gap-0.5">
-              <span className="text-[10px] font-semibold text-amber-600 leading-none">⭐ {poi.rating.toFixed(1)}</span>
+              <span className="text-xs font-semibold text-amber-600 leading-none">⭐ {poi.rating.toFixed(1)}</span>
               {poi.userRatingCount != null && (
-                <span className="text-[9px] leading-none text-slate-400">({formatReviewCount(poi.userRatingCount)})</span>
+                <span className="text-xs leading-none text-slate-400">({formatReviewCount(poi.userRatingCount)})</span>
               )}
             </div>
           )}
@@ -484,13 +484,13 @@ export function PoiCard({
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 opacity-20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
               </svg>
-              <span className="text-[10px] opacity-20 font-medium">Add photo</span>
+              <span className="text-xs opacity-20 font-medium">Add photo</span>
             </div>
           )}
 
           {/* UNESCO badge */}
           {poi.isUnescoSite && (
-            <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-indigo-700 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">🏛 UNESCO</span>
+            <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-indigo-700 px-1.5 py-0.5 text-xs font-bold text-white shadow">🏛 UNESCO</span>
           )}
 
           {/* Bottom overlay: visited/assigned · user stars · ✕ · delete */}
@@ -503,7 +503,7 @@ export function PoiCard({
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
               title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
-              className={`flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] sm:text-[8px] transition-colors ${
+              className={`flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full text-xs sm:text-[8px] transition-colors ${
                 isVisited ? "bg-indigo-500 text-white" : "bg-white/30 text-white/70 hover:bg-indigo-400 hover:text-white"
               }`}
             >
@@ -511,7 +511,7 @@ export function PoiCard({
             </button>
             {/* Assigned dot */}
             {isAssigned && (
-              <span title="In day plan" className="flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full bg-green-500 text-white text-[9px] sm:text-[8px]">✓</span>
+              <span title="In day plan" className="flex h-5 w-5 sm:h-4 sm:w-4 flex-shrink-0 items-center justify-center rounded-full bg-green-500 text-white text-xs sm:text-[8px]">✓</span>
             )}
             {/* User stars */}
             <div className="flex items-center gap-1 sm:gap-0.5 flex-1">
@@ -543,7 +543,7 @@ export function PoiCard({
                 type="button"
                 title={isNotInterested ? "Remove 'not interested'" : "Mark as not interested"}
                 onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poi.id); }}
-                className={`rounded px-1.5 py-1 sm:px-1 sm:py-0.5 text-[11px] sm:text-[10px] font-medium transition-colors ${
+                className={`rounded px-1.5 py-1 sm:px-1 sm:py-0.5 text-xs sm:text-xs font-medium transition-colors ${
                   isNotInterested ? "bg-red-500/80 text-white" : "text-white/70 hover:text-red-300"
                 }`}
               >
@@ -556,7 +556,7 @@ export function PoiCard({
                 aria-label="Delete POI"
                 className="p-1.5 sm:p-0 -m-1.5 sm:m-0 text-white/60 hover:text-red-300 disabled:opacity-30 transition-colors"
               >
-                {isDeleting ? <span className="text-[10px]">…</span> : <TrashIcon />}
+                {isDeleting ? <span className="text-xs">…</span> : <TrashIcon />}
               </button>
             </div>
           </div>
@@ -591,12 +591,12 @@ export function PoiCard({
           return (
             <div className="mb-2 flex flex-wrap items-center gap-1">
               {poi.priceLevel != null && (
-                <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                <span className="rounded-full bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 px-1.5 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-300">
                   {PRICE_LABELS[poi.priceLevel] ?? ""}
                 </span>
               )}
               {cluster > 0 && (
-                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
                   +{cluster} more nearby
                 </span>
               )}
@@ -628,7 +628,7 @@ export function PoiCard({
               onClick={() => setDetailsOpen((v) => !v)}
               className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
             >
-              <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
+              <span className={`text-xs transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
               ℹ Details
             </button>
           </div>
@@ -751,13 +751,13 @@ export function CompactPoiCard({
       {/* Status indicators — left side (offset to right of drag handle) */}
       <div className="absolute left-7 top-2.5 z-10 flex items-center gap-1">
         {isAssigned && (
-          <span title="Assigned to daily plan" className="flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm text-[10px] sm:text-[9px]">✓</span>
+          <span title="Assigned to daily plan" className="flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm text-xs sm:text-xs">✓</span>
         )}
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleVisited(poi.id); }}
           title={isVisited ? "Visited — click to unmark" : "Mark as visited"}
-          className={`flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full shadow-sm text-[10px] sm:text-[9px] transition-colors ${
+          className={`flex h-5 w-5 sm:h-4 sm:w-4 items-center justify-center rounded-full shadow-sm text-xs sm:text-xs transition-colors ${
             isVisited ? "bg-indigo-500 text-white" : "bg-white/80 text-gray-400 border border-gray-200 hover:border-indigo-300 hover:text-indigo-500"
           }`}
         >
@@ -860,7 +860,7 @@ export function CompactPoiCard({
             <span className="flex-shrink-0 text-xs text-emerald-600">{PRICE_LABELS[poi.priceLevel]}</span>
           )}
           {poi.isUnescoSite && (
-            <span className="flex-shrink-0 text-[10px] font-bold text-indigo-600">UNESCO</span>
+            <span className="flex-shrink-0 text-xs font-bold text-indigo-600">UNESCO</span>
           )}
         </div>
 
@@ -870,7 +870,7 @@ export function CompactPoiCard({
             type="button"
             onClick={(e) => { e.stopPropagation(); setCatPickerOpen((v) => !v); }}
             title="Change category"
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium hover:ring-1 hover:ring-[hsl(var(--primary))]/40 transition-all ${CATEGORY_STYLES[poi.category].badge}`}
+            className={`rounded-full px-2 py-0.5 text-xs font-medium hover:ring-1 hover:ring-[hsl(var(--primary))]/40 transition-all ${CATEGORY_STYLES[poi.category].badge}`}
           >
             {CATEGORY_LABELS[poi.category]}
           </button>
@@ -881,7 +881,7 @@ export function CompactPoiCard({
                   key={c}
                   type="button"
                   onClick={(e) => { e.stopPropagation(); if (c !== poi.category) onChangeCategory(poi.id, c); setCatPickerOpen(false); }}
-                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-[10px] hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
+                  className={`flex items-center gap-1 rounded px-1.5 py-1 text-xs hover:bg-[hsl(var(--muted))] transition-colors whitespace-nowrap ${c === poi.category ? "bg-[hsl(var(--primary))]/10 font-semibold" : ""}`}
                 >
                   <span>{CATEGORY_ICONS[c]}</span>
                   <span>{CATEGORY_LABELS[c]}</span>
@@ -936,7 +936,7 @@ export function CompactPoiCard({
             if (cluster === 0) return null;
             return (
               <div className="flex flex-wrap items-center gap-1">
-                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
                   +{cluster} more nearby
                 </span>
               </div>
@@ -951,7 +951,7 @@ export function CompactPoiCard({
                 onClick={(e) => { e.stopPropagation(); setDetailsOpen((v) => !v); }}
                 className="flex items-center gap-1 text-xs font-medium text-slate-600 hover:underline"
               >
-                <span className={`text-[9px] transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
+                <span className={`text-xs transition-transform ${detailsOpen ? "rotate-90" : ""}`}>▶</span>
                 ℹ Details
               </button>
             </div>

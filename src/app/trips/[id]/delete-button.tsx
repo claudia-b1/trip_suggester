@@ -39,7 +39,7 @@ export function DeleteTripButton({ id, iconOnly = false }: { id: number; iconOnl
         onClick={onDelete}
         disabled={deleting}
         title="Delete trip"
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 hover:border-red-300 disabled:opacity-50"
+        className="flex h-7 w-7 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 items-center justify-center rounded-md border border-red-200 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 hover:border-red-300 disabled:opacity-50"
       >
         {deleting ? (
           <span className="spinner h-3.5 w-3.5" />

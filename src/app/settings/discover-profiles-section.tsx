@@ -301,7 +301,7 @@ export function DiscoverProfilesSection() {
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-sm truncate">{p.name}</span>
                   {p.isDefault && (
-                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                       default
                     </span>
                   )}
@@ -312,7 +312,7 @@ export function DiscoverProfilesSection() {
                     return (
                       <span
                         key={cat}
-                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${styles?.badge ?? "bg-gray-100 text-gray-600"}`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${styles?.badge ?? "bg-gray-100 text-gray-600"}`}
                       >
                         {CATEGORY_ICONS[cat as RecommendableCategory]} {CATEGORY_LABELS[cat as RecommendableCategory]}
                         <span className="opacity-60">({p.counts[cat] ?? "?"})</span>
@@ -448,7 +448,7 @@ export function DiscoverProfilesSection() {
                       <span className="text-xs font-semibold">
                         {CATEGORY_LABELS[cat]}
                       </span>
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">
                         max:
                       </span>
                       <input
@@ -463,7 +463,7 @@ export function DiscoverProfilesSection() {
                         <button
                           type="button"
                           onClick={() => toggleExpandCat(cat)}
-                          className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                          className="ml-auto text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                         >
                           {isExpanded ? "▼" : "▶"} subcategories
                           {selectedSubs.size < catSubcats.length && (
@@ -483,13 +483,13 @@ export function DiscoverProfilesSection() {
                               key={sub.id}
                               type="button"
                               onClick={() => toggleSubcat(cat, sub.id)}
-                              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
                                 subActive
                                   ? `${styles.badge} border-transparent`
                                   : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
                               }`}
                             >
-                              <span className="text-[10px]">{sub.emoji}</span>
+                              <span className="text-xs">{sub.emoji}</span>
                               {sub.label}
                             </button>
                           );

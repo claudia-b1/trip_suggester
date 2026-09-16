@@ -41,7 +41,7 @@ export function ArchiveTripButton({
         onClick={onToggle}
         disabled={loading}
         title={loading ? (archived ? "Unarchiving…" : "Archiving…") : archived ? "Unarchive trip" : "Archive trip"}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-50"
+        className="flex h-7 w-7 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-50"
       >
         {loading ? (
           <span className="spinner h-3.5 w-3.5" />

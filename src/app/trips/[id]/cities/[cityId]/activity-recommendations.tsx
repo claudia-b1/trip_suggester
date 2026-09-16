@@ -813,12 +813,12 @@ export function ActivityRecommendations({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error || "Failed to add sub-destination");
+        throw new Error(data?.error || "Failed to add day trip");
       }
-      toast(`Added ${city.name} as sub-destination`);
+      toast(`Added ${city.name} as a day trip`);
       router.refresh();
     } catch (err) {
-      toast(err instanceof Error ? err.message : "Failed to add sub-destination", { variant: "error" });
+      toast(err instanceof Error ? err.message : "Failed to add day trip", { variant: "error" });
     } finally {
       setAddingCityName(null);
     }
@@ -916,7 +916,7 @@ export function ActivityRecommendations({
                         min={10}
                         max={500}
                       />
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                     </span>
                   )}
                 </div>
@@ -936,7 +936,7 @@ export function ActivityRecommendations({
                         min={5}
                         max={200}
                       />
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                     </span>
                   )}
                 </div>
@@ -992,7 +992,7 @@ export function ActivityRecommendations({
                       type="button"
                       disabled={isLoading}
                       onClick={() => setCustomPrompt(chip)}
-                      className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[11px] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
+                      className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-xs text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
                     >
                       {chip}
                     </button>
@@ -1086,7 +1086,7 @@ export function ActivityRecommendations({
                       if (next.has(cat)) next.delete(cat); else next.add(cat);
                       return next;
                     })}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors ${isActive ? "border-transparent text-white" : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"}`}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border transition-colors ${isActive ? "border-transparent text-white" : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"}`}
                     style={isActive ? { backgroundColor: style?.dot ?? "hsl(var(--primary))" } : undefined}
                   >
                     {CATEGORY_ICONS[cat as Category]} {CATEGORY_LABELS[cat as Category] ?? cat}
@@ -1098,7 +1098,7 @@ export function ActivityRecommendations({
                 <button
                   type="button"
                   onClick={() => { setSearchQuery(""); setFilterCategories(new Set()); }}
-                  className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline"
+                  className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline"
                 >
                   Clear
                 </button>
@@ -1107,7 +1107,7 @@ export function ActivityRecommendations({
               <button
                 type="button"
                 onClick={() => { setSelectMode((v) => !v); if (selectMode) setSelectedRecIds(new Set()); }}
-                className={`ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium border transition-colors ${selectMode ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]" : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"}`}
+                className={`ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium border transition-colors ${selectMode ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))]/10 text-[hsl(var(--primary))]" : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"}`}
               >
                 {selectMode ? "Cancel" : "Select"}
               </button>
@@ -1204,7 +1204,7 @@ export function ActivityRecommendations({
                         <button
                           type="button"
                           onClick={() => setRegenSettingsFor(null)}
-                          className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                          className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                         >
                           Close
                         </button>
@@ -1361,7 +1361,7 @@ export function ActivityRecommendations({
                         <button
                           type="button"
                           onClick={() => setRegenSettingsFor(null)}
-                          className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                          className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                         >
                           Close
                         </button>
@@ -1421,7 +1421,7 @@ export function ActivityRecommendations({
                 settingsOpen={isRegenerating}
                 settingsPanel={
                   <div className="space-y-2 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 px-3 py-2">
-                    <label className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Edit prompt and regenerate:</label>
+                    <label className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Edit prompt and regenerate:</label>
                     <input
                       type="text"
                       value={regenCustomPrompt}
@@ -1460,14 +1460,14 @@ export function ActivityRecommendations({
                             type="button"
                             onClick={() => deleteCustomSection(section.id)}
                             disabled={isLoading}
-                            className="text-[10px] text-red-500 hover:text-red-600 hover:underline disabled:opacity-50"
+                            className="text-xs text-red-500 hover:text-red-600 hover:underline disabled:opacity-50"
                           >
                             Delete section
                           </button>
                           <button
                             type="button"
                             onClick={() => { setRegenCustomId(null); setRegenCustomPrompt(""); }}
-                            className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                            className="ml-auto text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                           >
                             Close
                           </button>
@@ -1500,7 +1500,7 @@ export function ActivityRecommendations({
                     );
                   })}
                 </div>
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))] mt-2 italic">
+                <p className="text-xs text-[hsl(var(--muted-foreground))] mt-2 italic">
                   Prompt: &ldquo;{section.prompt}&rdquo;
                 </p>
               </CollapsibleSubsection>
@@ -1551,7 +1551,7 @@ export function ActivityRecommendations({
                               min={10}
                               max={500}
                             />
-                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                            <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                           </span>
                         )}
                         {opt.key === "nearbyActivities" && opt.state && (
@@ -1565,7 +1565,7 @@ export function ActivityRecommendations({
                               min={5}
                               max={200}
                             />
-                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                            <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                           </span>
                         )}
                       </div>
@@ -1614,7 +1614,7 @@ export function ActivityRecommendations({
                         type="button"
                         disabled={isLoading}
                         onClick={() => setCustomPrompt(chip)}
-                        className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-[11px] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
+                        className="rounded-full border border-[hsl(var(--border))] px-2 py-0.5 text-xs text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition disabled:opacity-50"
                       >
                         {chip}
                       </button>
@@ -1671,7 +1671,7 @@ export function ActivityRecommendations({
           )}
 
           {hasContent && (
-            <p className="text-[10px] text-center text-[hsl(var(--muted-foreground))]">
+            <p className="text-xs text-center text-[hsl(var(--muted-foreground))]">
               Generated {new Date(data!.generatedAt).toLocaleDateString()} · {data!.model}
             </p>
           )}
@@ -1711,7 +1711,7 @@ export function ActivityRecommendations({
           <div className="absolute inset-0 bg-black/50" onClick={() => setPendingSubdestCity(null)} />
           <div className="relative z-10 w-full max-w-sm rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-xl space-y-4">
             <h3 className="text-base font-semibold text-[hsl(var(--foreground))]">
-              Add {pendingSubdestCity.name} as sub-destination
+              Add {pendingSubdestCity.name} as a day trip
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -1804,7 +1804,7 @@ function CollapsibleSubsection({
           <span className="text-sm font-bold text-[hsl(var(--foreground))] group-hover:text-[hsl(var(--primary))] transition-colors">
             {title}
           </span>
-          <span className="rounded-full bg-[hsl(var(--muted))] px-1.5 py-0.5 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+          <span className="rounded-full bg-[hsl(var(--muted))] px-1.5 py-0.5 text-xs font-semibold text-[hsl(var(--muted-foreground))]">
             {filteredCount != null && filteredCount !== count ? `${filteredCount}/${count}` : count}
           </span>
         </button>
@@ -1813,7 +1813,7 @@ function CollapsibleSubsection({
             <button
               type="button"
               onClick={onCancel}
-              className="inline-flex items-center gap-1 text-[10px] font-medium text-red-500 hover:text-red-600 transition-colors"
+              className="inline-flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-600 transition-colors"
               title="Cancel regeneration"
             >
               <span className="spinner !h-3 !w-3" /> Cancel
@@ -1823,7 +1823,7 @@ function CollapsibleSubsection({
               type="button"
               onClick={onRegenerate}
               disabled={disabled || regenerating}
-              className={`inline-flex items-center gap-1 text-[10px] font-medium transition-colors disabled:opacity-40 ${
+              className={`inline-flex items-center gap-1 text-xs font-medium transition-colors disabled:opacity-40 ${
                 settingsOpen
                   ? "text-[hsl(var(--primary))]"
                   : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))]"
@@ -1913,7 +1913,7 @@ function RecommendationCard({
             className="mt-0.5 h-4 w-4 rounded border-[hsl(var(--border))] text-[hsl(var(--primary))] shrink-0"
           />
         ) : (
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/10 text-[10px] font-bold text-[hsl(var(--primary))]">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/10 text-xs font-bold text-[hsl(var(--primary))]">
             {index + 1}
           </span>
         )}
@@ -1926,7 +1926,7 @@ function RecommendationCard({
             <span className="text-xs shrink-0">{catIcon}</span>
             <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors truncate">{rec.title}</h4>
             {poiLink?.isUnescoSite && (
-              <span className="shrink-0 rounded-full bg-indigo-700 px-1.5 py-0.5 text-[9px] font-bold text-white">UNESCO</span>
+              <span className="shrink-0 rounded-full bg-indigo-700 px-1.5 py-0.5 text-xs font-bold text-white">UNESCO</span>
             )}
             {!selectMode && (
               <svg xmlns="http://www.w3.org/2000/svg" className={`ml-auto h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground))] transition-transform ${expanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -1955,7 +1955,7 @@ function RecommendationCard({
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "click" } }))}
-            className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
           >
             🗺 Show on map
           </button>
@@ -1968,18 +1968,18 @@ function RecommendationCard({
                 new CustomEvent("focus-poi-on-map", { detail: { poiId: poiLink.id } }),
               );
             }}
-            className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
           >
             {"📍"} {rec.linkedPlace}
           </button>
         )}
         {!poiLink && rec.linkedPlace && (
-          <span className="inline-flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+          <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]">
             {"📍"} {rec.linkedPlace}
           </span>
         )}
         {distanceKm != null && distanceKm >= 1 && (
-          <span className="inline-flex items-center gap-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+          <span className="inline-flex items-center gap-0.5 text-xs text-[hsl(var(--muted-foreground))]">
             📏 {formatDistance(Math.round(distanceKm))}{directionLabel ? ` ${directionLabel}` : ""}
           </span>
         )}
@@ -1990,7 +1990,7 @@ function RecommendationCard({
                 type="button"
                 onClick={() => setAddOpen(true)}
                 disabled={addingPoi}
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
               >
                 {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
                 {addingPoi ? "Adding…" : "Add as POI"}
@@ -2000,7 +2000,7 @@ function RecommendationCard({
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
@@ -2013,14 +2013,14 @@ function RecommendationCard({
                     onAddPoi(selectedCategory); setAddOpen(false);
                   }}
                   disabled={addingPoi}
-                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
                 >
                   {addingPoi ? "Adding…" : "Add"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAddOpen(false)}
-                  className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                 >
                   Cancel
                 </button>
@@ -2087,7 +2087,7 @@ function NearbyActivityCard({
           </button>
         </div>
         {activity.distance && (
-          <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
+          <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-xs font-medium text-[hsl(var(--muted-foreground))]">
             {formatDistanceString(activity.distance)}
           </span>
         )}
@@ -2110,13 +2110,13 @@ function NearbyActivityCard({
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "click" } }))}
-            className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
           >
             🗺 Show on map
           </button>
         )}
         {activity.location && (
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">
             {"📍"} {activity.location}
           </span>
         )}
@@ -2127,7 +2127,7 @@ function NearbyActivityCard({
                 type="button"
                 onClick={() => setAddOpen(true)}
                 disabled={addingPoi}
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
               >
                 {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
                 {addingPoi ? "Adding…" : "Add as POI"}
@@ -2137,7 +2137,7 @@ function NearbyActivityCard({
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
@@ -2150,14 +2150,14 @@ function NearbyActivityCard({
                     onAddPoi(selectedCategory); setAddOpen(false);
                   }}
                   disabled={addingPoi}
-                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
                 >
                   {addingPoi ? "Adding…" : "Add"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAddOpen(false)}
-                  className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                 >
                   Cancel
                 </button>
@@ -2189,7 +2189,7 @@ function NearbyCityCard({
           <span className="truncate">{city.name}</span>
         </h4>
         {city.distance && (
-          <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--muted-foreground))]">
+          <span className="shrink-0 rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-xs font-medium text-[hsl(var(--muted-foreground))]">
             {formatDistanceString(city.distance)}
           </span>
         )}
@@ -2202,16 +2202,16 @@ function NearbyCityCard({
           type="button"
           onClick={onAddAsSubdestination}
           disabled={adding}
-          className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
+          className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50"
         >
           {adding ? <span className="spinner !h-3 !w-3" /> : "+"}
-          {adding ? "Adding…" : "Add as sub-destination"}
+          {adding ? "Adding…" : "Add as day trip"}
         </button>
         <button
           type="button"
           onClick={onAddAsDestination}
           disabled={adding}
-          className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline disabled:opacity-50"
+          className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:underline disabled:opacity-50"
         >
           or add as destination
         </button>
@@ -2277,7 +2277,7 @@ function RouteCard({
           </button>
         </div>
         {route.difficulty && (
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${difficultyColor}`}>
+          <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${difficultyColor}`}>
             {route.difficulty}
           </span>
         )}
@@ -2301,23 +2301,23 @@ function RouteCard({
           <button
             type="button"
             onClick={() => window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "click" } }))}
-            className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
           >
             🗺 Show on map
           </button>
         )}
         {route.distance && (
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+          <span className="text-xs text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
             📏 {formatDistanceString(route.distance)}
           </span>
         )}
         {route.duration && (
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+          <span className="text-xs text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
             ⏱ {route.duration}
           </span>
         )}
         {route.startLocation && (
-          <span className="text-[10px] text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
+          <span className="text-xs text-[hsl(var(--muted-foreground))] flex items-center gap-0.5">
             📍 {route.startLocation}
           </span>
         )}
@@ -2328,7 +2328,7 @@ function RouteCard({
                 type="button"
                 onClick={() => setAddOpen(true)}
                 disabled={addingPoi}
-                className="inline-flex items-center gap-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
+                className="inline-flex items-center gap-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
               >
                 {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
                 {addingPoi ? "Adding…" : "Add as POI"}
@@ -2338,7 +2338,7 @@ function RouteCard({
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-[10px]"
+                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
                 >
                   {CATEGORIES.map((c) => (
                     <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
@@ -2351,14 +2351,14 @@ function RouteCard({
                     onAddPoi(selectedCategory); setAddOpen(false);
                   }}
                   disabled={addingPoi}
-                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 disabled:opacity-50"
+                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
                 >
                   {addingPoi ? "Adding…" : "Add"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setAddOpen(false)}
-                  className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                 >
                   Cancel
                 </button>

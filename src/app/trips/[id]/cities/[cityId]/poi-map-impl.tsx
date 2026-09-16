@@ -322,7 +322,7 @@ function PopupContent({
       )}
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold leading-tight">{poi.name}</span>
-        <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
+        <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
           {CATEGORY_ICONS[poi.category]} {poi.category}
         </span>
       </div>
@@ -350,7 +350,7 @@ function PopupContent({
               <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
               <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
             </svg>
-            <span className="text-[10px] font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
+            <span className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
           </div>
           {/* Mobile: tap to add to timeline */}
           <button
@@ -365,7 +365,7 @@ function PopupContent({
             title="Add to timeline"
           >
             <span className="text-xs">📅</span>
-            <span className="text-[10px] font-medium text-[hsl(var(--primary))]">Add to timeline</span>
+            <span className="text-xs font-medium text-[hsl(var(--primary))]">Add to timeline</span>
           </button>
         </>
       )}
@@ -424,7 +424,7 @@ function PopupContent({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleNotInterested(poi.id); }}
-              className={`rounded px-1 py-0.5 text-[10px] ${notInterested?.has(poi.id) ? "text-red-500" : "text-gray-400 hover:text-red-400"}`}
+              className={`rounded px-1 py-0.5 text-xs ${notInterested?.has(poi.id) ? "text-red-500" : "text-gray-400 hover:text-red-400"}`}
               title={notInterested?.has(poi.id) ? "Remove not interested" : "Not interested"}
             >✕</button>
           )}
@@ -572,7 +572,7 @@ function FavouritePopupContent({
       )}
       <div className="flex items-start justify-between gap-2">
         <span className="font-semibold leading-tight">{item.name}</span>
-        <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[cat].badge}`}>
+        <span className={`flex-shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium ${CATEGORY_STYLES[cat].badge}`}>
           {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
         </span>
       </div>
@@ -1589,7 +1589,7 @@ export function PoiMapImpl(props: PoiMapProps) {
           <div className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/80 px-4 py-2.5 text-center shadow backdrop-blur-sm">
             <p className="text-sm font-medium text-[hsl(var(--muted-foreground))]">No POIs yet</p>
             {circleData && (
-              <p className="text-[11px] text-[hsl(var(--muted-foreground))] mt-0.5">
+              <p className="text-xs text-[hsl(var(--muted-foreground))] mt-0.5">
                 <span className="text-slate-400">●</span> {radiusKm} km city radius
                 {nearbyCircleData && (
                   <> · <span className="text-orange-400">●</span> {nearbyRadiusKm} km nearby</>
@@ -1696,13 +1696,13 @@ export function PoiMapImpl(props: PoiMapProps) {
                 </div>
                 <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{popupCluster.markers[0].description}</p>
                 <div className="flex items-center gap-2 pt-1 flex-wrap">
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))] italic">{popupCluster.markers[0].sectionLabel}</span>
+                  <span className="text-xs text-[hsl(var(--muted-foreground))] italic">{popupCluster.markers[0].sectionLabel}</span>
                   <div className="flex items-center gap-1.5 ml-auto">
                     {onPreviewScrollToCard && (
                       <button
                         type="button"
                         onClick={() => onPreviewScrollToCard(popupCluster.markers[0].id)}
-                        className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+                        className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
                       >
                         Show in list
                       </button>
@@ -1715,7 +1715,7 @@ export function PoiMapImpl(props: PoiMapProps) {
                           setActivePreviewClusterKey(null);
                           setActivePreviewId(null);
                         }}
-                        className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90"
+                        className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90"
                       >
                         + Add as POI
                       </button>
@@ -1726,7 +1726,7 @@ export function PoiMapImpl(props: PoiMapProps) {
             ) : (
               /* Multiple markers — list with expandable detail */
               <div className="space-y-1 pr-4 max-h-[300px] overflow-y-auto">
-                <p className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] mb-1">{popupCluster.markers.length} recommendations here</p>
+                <p className="text-xs font-medium text-[hsl(var(--muted-foreground))] mb-1">{popupCluster.markers.length} recommendations here</p>
                 {popupCluster.markers.map((pm) => {
                   const isExpanded = expandedPreviewId === pm.id;
                   const pmCatStyle = CATEGORY_STYLES[pm.category] ?? CATEGORY_STYLES.CULTURE;
@@ -1746,22 +1746,22 @@ export function PoiMapImpl(props: PoiMapProps) {
                           style={{ backgroundColor: pmCatStyle.dot }}
                         />
                         <span className="text-xs font-medium leading-tight truncate flex-1">{pm.title}</span>
-                        <span className="text-[9px] text-[hsl(var(--muted-foreground))] shrink-0">{pm.sectionLabel}</span>
+                        <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">{pm.sectionLabel}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 shrink-0 text-[hsl(var(--muted-foreground))] transition-transform ${isExpanded ? "rotate-180" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                       </button>
                       {isExpanded && (
                         <div className="px-2 pb-2 space-y-1.5">
                           <div className="flex items-center gap-1">
                             <span className="text-xs">{CATEGORY_ICONS[pm.category] ?? ""}</span>
-                            <span className="text-[10px] font-medium text-[hsl(var(--foreground))]">{CATEGORY_LABELS[pm.category] ?? pm.category}</span>
+                            <span className="text-xs font-medium text-[hsl(var(--foreground))]">{CATEGORY_LABELS[pm.category] ?? pm.category}</span>
                           </div>
-                          <p className="text-[11px] text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{pm.description}</p>
+                          <p className="text-xs text-[hsl(var(--muted-foreground))] leading-relaxed line-clamp-3">{pm.description}</p>
                           <div className="flex items-center gap-1.5">
                             {onPreviewScrollToCard && (
                               <button
                                 type="button"
                                 onClick={() => onPreviewScrollToCard(pm.id)}
-                                className="inline-flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+                                className="inline-flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
                               >
                                 Show in list
                               </button>
@@ -1775,7 +1775,7 @@ export function PoiMapImpl(props: PoiMapProps) {
                                   setActivePreviewId(null);
                                   setExpandedPreviewId(null);
                                 }}
-                                className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-[10px] font-medium hover:opacity-90 ml-auto"
+                                className="inline-flex items-center gap-1 rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 ml-auto"
                               >
                                 + Add as POI
                               </button>

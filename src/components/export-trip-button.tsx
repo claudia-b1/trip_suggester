@@ -182,7 +182,7 @@ export function ExportTripButton({
                         {city.name}
                       </span>
                       {city.type === "stop" && (
-                        <span className="text-[10px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded px-1.5 py-0.5">
+                        <span className="text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded px-1.5 py-0.5">
                           stop
                         </span>
                       )}
@@ -205,7 +205,7 @@ export function ExportTripButton({
                               {sub.name}
                             </span>
                             {sub.type === "stop" && (
-                              <span className="text-[10px] text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded px-1.5 py-0.5">
+                              <span className="text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))] rounded px-1.5 py-0.5">
                                 stop
                               </span>
                             )}

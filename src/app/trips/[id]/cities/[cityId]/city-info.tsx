@@ -22,7 +22,7 @@ function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
     UNKNOWN: "bg-gray-100 text-gray-400",
   };
   return (
-    <span className={`text-[10px] font-semibold rounded-full px-1.5 py-0.5 ${cls[level]}`}>
+    <span className={`text-xs font-semibold rounded-full px-1.5 py-0.5 ${cls[level]}`}>
       {level === "UNKNOWN" ? "?" : level}
     </span>
   );
@@ -111,7 +111,7 @@ function GeneratedInfoPanel({
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-base">{cat.icon}</span>
                   <span className="text-sm font-semibold">{cat.name}</span>
-                  <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+                  <span className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]">
                     confidence: <ConfidenceBadge level={cat.confidence} />
                   </span>
                 </div>
@@ -139,7 +139,7 @@ function GeneratedInfoPanel({
             <div className="flex items-center gap-2 mb-2">
               <span className="text-base">{selectedCat.icon}</span>
               <span className="text-sm font-semibold">{selectedCat.name}</span>
-              <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+              <span className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]">
                 confidence: <ConfidenceBadge level={selectedCat.confidence} />
               </span>
             </div>
@@ -164,7 +164,7 @@ function GeneratedInfoPanel({
 
         {/* Footer */}
         <div className="px-4 py-2.5 border-t border-[hsl(var(--border))] bg-[hsl(var(--muted))]/20 mt-auto">
-          <span className="text-[11px] text-[hsl(var(--muted-foreground))]">
+          <span className="text-xs text-[hsl(var(--muted-foreground))]">
             Generated {ageLabel}
           </span>
         </div>

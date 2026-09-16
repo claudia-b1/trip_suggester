@@ -102,7 +102,7 @@ export function ScorePopover({ breakdown, className = "" }: ScorePopoverProps) {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="flex h-4 w-4 items-center justify-center rounded-full border border-[hsl(var(--border))] text-[9px] text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+        className="flex h-4 w-4 items-center justify-center rounded-full border border-[hsl(var(--border))] text-xs text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
         title="Why this place?"
         aria-label="Score breakdown"
       >
@@ -111,7 +111,7 @@ export function ScorePopover({ breakdown, className = "" }: ScorePopoverProps) {
 
       {open && (
         <div className="absolute right-0 top-full z-40 mt-1 w-56 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 shadow-lg">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
             Why this place?
           </p>
           <div className="space-y-1">
@@ -123,13 +123,13 @@ export function ScorePopover({ breakdown, className = "" }: ScorePopoverProps) {
                 <span className="text-[hsl(var(--foreground))]">
                   {f.emoji} {f.label}
                 </span>
-                <span className={`flex-shrink-0 font-mono text-[10px] ${f.points >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
+                <span className={`flex-shrink-0 font-mono text-xs ${f.points >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
                   {f.points >= 0 ? "+" : ""}{Math.round(f.points)}
                 </span>
               </div>
             ))}
           </div>
-          <div className="mt-2 border-t border-[hsl(var(--border))] pt-1.5 flex items-center justify-between text-[10px]">
+          <div className="mt-2 border-t border-[hsl(var(--border))] pt-1.5 flex items-center justify-between text-xs">
             <span className="font-medium text-[hsl(var(--muted-foreground))]">Score</span>
             <span className="font-semibold text-[hsl(var(--foreground))]">{Math.round(breakdown.total)}</span>
           </div>

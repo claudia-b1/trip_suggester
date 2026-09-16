@@ -379,7 +379,7 @@ export function DestinationAdvisor() {
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label htmlFor="advisor-start" className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+              <label htmlFor="advisor-start" className="text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
                 Start date
               </label>
               <input
@@ -394,7 +394,7 @@ export function DestinationAdvisor() {
               />
             </div>
             <div className="space-y-1">
-              <label htmlFor="advisor-end" className="text-[10px] font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
+              <label htmlFor="advisor-end" className="text-xs font-medium text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
                 End date
               </label>
               <input

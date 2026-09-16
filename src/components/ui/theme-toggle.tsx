@@ -43,8 +43,8 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={cycle}
-      title={`Theme: ${theme}`}
-      className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-sm transition-colors hover:bg-[hsl(var(--muted))]"
+      title={`Theme: ${theme === "system" ? "device setting" : theme}`}
+      className="flex h-8 w-8 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] text-sm transition-colors hover:bg-[hsl(var(--muted))]"
     >
       {icons[theme]}
     </button>

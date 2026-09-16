@@ -254,14 +254,14 @@ function MultiDayAccommodation({
   return (
     <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 dark:border-indigo-800 dark:bg-indigo-950/20 p-2 space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+        <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
           🏠 Assign to multiple days
         </span>
         {unassignedDays.length > 0 && (
           <button
             type="button"
             onClick={selectAll}
-            className="text-[10px] text-indigo-500 hover:text-indigo-700"
+            className="text-xs text-indigo-500 hover:text-indigo-700"
           >
             Select all
           </button>
@@ -290,7 +290,7 @@ function MultiDayAccommodation({
               <span className={isAssigned ? "line-through" : ""}>
                 {formatDayWithIndex(dp.date, idx)}
               </span>
-              {isAssigned && <span className="text-[9px] text-indigo-400 ml-auto">assigned</span>}
+              {isAssigned && <span className="text-xs text-indigo-400 ml-auto">assigned</span>}
             </label>
           );
         })}
@@ -1330,7 +1330,7 @@ export function DailyPlan({
                       <div className="flex items-center justify-between gap-2">
                         <span className="font-medium truncate flex items-center gap-1">
                           {poi.name}
-                          {favouritedPoiIds?.has(poi.id) && <span className="text-red-400 text-[10px]">♥</span>}
+                          {favouritedPoiIds?.has(poi.id) && <span className="text-red-400 text-xs">♥</span>}
                         </span>
                         <CategoryBadge category={poi.category} />
                       </div>
@@ -1455,7 +1455,7 @@ export function DailyPlan({
                           type="button"
                           disabled={isCurrentDay}
                           onClick={() => setMoveTargetDayPlanId(dp.id)}
-                          className={`rounded-md px-2 py-1 text-[11px] border transition-colors ${
+                          className={`rounded-md px-2 py-1 text-xs border transition-colors ${
                             isCurrentDay
                               ? "opacity-30 cursor-not-allowed border-transparent bg-[hsl(var(--muted))]"
                               : isSelected
@@ -1465,11 +1465,11 @@ export function DailyPlan({
                           title={isCurrentDay ? "Current day" : `Move to Dag ${idx + 1}`}
                         >
                           <div className="font-medium">Dag {idx + 1}</div>
-                          <div className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                          <div className="text-xs text-[hsl(var(--muted-foreground))]">
                             {formatDay(dp.date)}
                           </div>
                           {dp.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length > 0 && (
-                            <div className="text-[9px] text-amber-600 dark:text-amber-400 mt-0.5">
+                            <div className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                               {dp.activities.filter((a) => a.poiCategory !== "ACCOMMODATION").length} activities
                             </div>
                           )}
@@ -1521,7 +1521,7 @@ export function DailyPlan({
                     type="button"
                     onClick={applyCrossSlotSuggestion}
                     disabled={busy}
-                    className="shrink-0 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                    className="shrink-0 rounded-full bg-amber-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
                   >
                     Apply
                   </button>
@@ -1567,7 +1567,7 @@ export function DailyPlan({
                                 <span className="truncate font-medium">{a.poiName}</span>
                               </PoiHoverCard>
                               {favouritedPoiIds?.has(a.poiId) && (
-                                <span className="text-red-400 text-[10px] shrink-0" title="In favourites">♥</span>
+                                <span className="text-red-400 text-xs shrink-0" title="In favourites">♥</span>
                               )}
                             </div>
                             <button
@@ -1650,7 +1650,7 @@ export function DailyPlan({
                               <span className="flex flex-col items-center gap-[2px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-40 sm:group-hover:opacity-100 transition-opacity" title="Drag to reorder" aria-label={`Drag to reorder ${a.poiName}`} role="img">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
                               </span>
-                              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15 text-[9px] font-bold text-[hsl(var(--primary))]">
+                              <span className="flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))]/15 text-xs font-bold text-[hsl(var(--primary))]">
                                 {slotStartNum + idx + 1}
                               </span>
                               <span
@@ -1661,7 +1661,7 @@ export function DailyPlan({
                                 <span className="truncate">{a.poiName}</span>
                               </PoiHoverCard>
                               {favouritedPoiIds?.has(a.poiId) && (
-                                <span className="text-red-400 text-[10px] shrink-0" title="In favourites">♥</span>
+                                <span className="text-red-400 text-xs shrink-0" title="In favourites">♥</span>
                               )}
                             </div>
                             <button
@@ -1705,7 +1705,7 @@ export function DailyPlan({
                 return (
                   <div className="space-y-2 rounded-lg border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--muted))]/30 p-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
-                      Sub-destination activities
+                      Day trip activities
                     </div>
                     {matchingSubs.map((sdp) => (
                       <div key={`${sdp.cityId}-${sdp.date}`} className="space-y-1">
@@ -1716,12 +1716,12 @@ export function DailyPlan({
                           >
                             <Link
                               href={`/trips/${sdp.tripId}/cities/${sdp.cityId}`}
-                              className="inline-flex items-center rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/20 transition-colors shrink-0"
+                              className="inline-flex items-center rounded-full bg-[hsl(var(--primary))]/10 px-2 py-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:bg-[hsl(var(--primary))]/20 transition-colors shrink-0"
                             >
                               {sdp.cityName}
                             </Link>
                             <span className="truncate text-[hsl(var(--muted-foreground))]">{a.poiName}</span>
-                            <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))]">
+                            <span className="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
                               {a.timeSlot === "MORNING" ? "🌅" : a.timeSlot === "AFTERNOON" ? "☀️" : "🌙"}
                             </span>
                           </div>
@@ -1755,7 +1755,7 @@ export function DailyPlan({
                     disabled={currentDayIndex <= 0}
                     onClick={() => setSelectedDate(dayPlans[0].date)}
                     title="Go to first day"
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-30 disabled:cursor-default transition-colors"
+                    className="text-xs px-1.5 py-0.5 rounded border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-30 disabled:cursor-default transition-colors"
                   >
                     Start
                   </button>

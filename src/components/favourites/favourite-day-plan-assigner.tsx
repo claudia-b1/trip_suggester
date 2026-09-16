@@ -151,14 +151,14 @@ export function FavouriteDayPlanAssigner({
   }
 
   const selectCls =
-    "w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-[10px]";
+    "w-full rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-0.5 text-xs";
 
   return (
     <div className="mt-1.5">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 text-[10px] font-medium text-[hsl(var(--primary))] hover:underline"
+        className="flex items-center gap-1 text-xs font-medium text-[hsl(var(--primary))] hover:underline"
       >
         <span
           className={`text-[8px] transition-transform ${open ? "rotate-90" : ""}`}
@@ -248,7 +248,7 @@ export function FavouriteDayPlanAssigner({
                 type="button"
                 onClick={assign}
                 disabled={!selectedDay || assigning}
-                className="w-full rounded bg-[hsl(var(--primary))] px-2 py-0.5 text-[10px] font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-40 hover:opacity-90"
+                className="w-full rounded bg-[hsl(var(--primary))] px-2 py-0.5 text-xs font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-40 hover:opacity-90"
               >
                 {assigning
                   ? "Adding..."

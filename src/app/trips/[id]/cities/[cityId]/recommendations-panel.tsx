@@ -445,7 +445,7 @@ export function RecommendationsPanel({
                 >
                   <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: active ? styles.dot : "#9ca3af" }} />
                   {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
-                  {subDesc && <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>}
+                  {subDesc && <span className="hidden sm:inline text-xs opacity-70">· {subDesc}</span>}
                 </button>
               );
             })}
@@ -463,7 +463,7 @@ export function RecommendationsPanel({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">1</span>
+            <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">1</span>
             <input
               type="range"
               min={1}
@@ -474,9 +474,9 @@ export function RecommendationsPanel({
               disabled={generating}
               className="flex-1 accent-[hsl(var(--primary))] disabled:opacity-40"
             />
-            <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
+            <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">30</span>
           </div>
-          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">
             Only include places within {radiusKm} km of the city centre
           </p>
         </div>
@@ -493,7 +493,7 @@ export function RecommendationsPanel({
             {Object.entries(subcats).some(
               ([cat, s]) => s.size < SUBCATEGORIES[cat as RecommendableCategory].length,
             ) && (
-              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">active</span>
+              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">active</span>
             )}
           </button>
 
@@ -512,7 +512,7 @@ export function RecommendationsPanel({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm">{CATEGORY_ICONS[cat]}</span>
                       <span className="text-xs font-semibold">{cat}</span>
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">
                         max:
                       </span>
                       <input
@@ -540,13 +540,13 @@ export function RecommendationsPanel({
                             type="button"
                             onClick={() => toggleSubcat(cat, sub.id)}
                             disabled={generating}
-                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
                               subActive
                                 ? `${styles.badge} border-transparent`
                                 : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
                             }`}
                           >
-                            <span className="text-[10px]">{sub.emoji}</span>
+                            <span className="text-xs">{sub.emoji}</span>
                             {sub.label}
                           </button>
                         );
@@ -556,7 +556,7 @@ export function RecommendationsPanel({
                     {/* Cuisine keyword input — only for FOOD */}
                     {cat === "FOOD" && (
                       <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-[hsl(var(--muted-foreground))] shrink-0">
+                        <label className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">
                           Cuisine:
                         </label>
                         <input
@@ -591,7 +591,7 @@ export function RecommendationsPanel({
             />
             <span className="text-sm font-medium">🗺️ Include nearby attractions</span>
           </label>
-          <p className="text-[11px] text-[hsl(var(--muted-foreground))] pl-6">
+          <p className="text-xs text-[hsl(var(--muted-foreground))] pl-6">
             Add culture &amp; nature highlights from beyond the city centre (≥ 4.0 stars &amp; 1K+ reviews). Up to 30 per category, independent of the max filter above.
           </p>
           {nearbyEnabled && (
@@ -605,7 +605,7 @@ export function RecommendationsPanel({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">5</span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">5</span>
                 <input
                   type="range"
                   min={5}
@@ -616,7 +616,7 @@ export function RecommendationsPanel({
                   disabled={generating}
                   className="flex-1 accent-orange-500 disabled:opacity-40"
                 />
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">60</span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">60</span>
               </div>
             </div>
           )}

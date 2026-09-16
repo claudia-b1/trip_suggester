@@ -159,7 +159,7 @@ function SortDropdown({ sortBy, onToggle }: { sortBy: SortKey[]; onToggle: (k: S
                 onClick={() => onToggle(key)}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-[hsl(var(--muted))] text-left"
               >
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-bold ${
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold ${
                   active
                     ? "bg-[hsl(var(--primary))] border-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                     : "border-[hsl(var(--border))]"
@@ -207,7 +207,7 @@ function StatusDropdown({ active, onToggle }: { active: Set<StatusFilter>; onTog
         <span className="shrink-0 text-[hsl(var(--muted-foreground))]">Status:</span>
         <span className="flex-1 truncate text-left">{label}</span>
         {active.size > 0 && (
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-[9px] font-bold">
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-xs font-bold">
             {active.size}
           </span>
         )}
@@ -224,7 +224,7 @@ function StatusDropdown({ active, onToggle }: { active: Set<StatusFilter>; onTog
                 onClick={() => onToggle(key)}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-[hsl(var(--muted))] text-left"
               >
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] font-bold ${
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-xs font-bold ${
                   isActive
                     ? "bg-[hsl(var(--primary))] border-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                     : "border-[hsl(var(--border))]"
@@ -1230,7 +1230,7 @@ export function PoisSection({
                     </svg>
                     Subcategories ({subDefs.length})
                     {includedSubcategories.size > 0 && (
-                      <span className="rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-1.5 py-0.5 text-[10px] font-semibold">
+                      <span className="rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-1.5 py-0.5 text-xs font-semibold">
                         {includedSubcategories.size}
                       </span>
                     )}
@@ -1666,7 +1666,7 @@ export function PoisSection({
                           setAddPhotoUrl(dataUri);
                         }}
                       />
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste</span>
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">or paste</span>
                       {addPhotoUrl && (
                         <>
                           {/* eslint-disable-next-line @next/next/no-img-element */}

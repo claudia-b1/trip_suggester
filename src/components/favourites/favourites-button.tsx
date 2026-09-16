@@ -9,7 +9,7 @@ export function FavouritesButton() {
     <button
       onClick={toggle}
       aria-label={isOpen ? "Close favourites" : "Open favourites"}
-      className="flex h-8 w-8 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] transition-colors hover:bg-[hsl(var(--muted))]"
+      className="flex h-8 w-8 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 items-center justify-center rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] transition-colors hover:bg-[hsl(var(--muted))]"
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

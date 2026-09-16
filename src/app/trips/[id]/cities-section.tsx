@@ -541,7 +541,7 @@ export function CitiesSection({
     setAddParentCityId(null);
     setAddOpen(false);
     router.refresh();
-    toast(`Added ${newCity.nickname || newCity.name}${addParentCityId ? " as sub-destination" : ""}`);
+    toast(`Added ${newCity.nickname || newCity.name}${addParentCityId ? " as a day trip" : ""}`);
   }
 
   async function onDelete(city: City) {
@@ -549,7 +549,7 @@ export function CitiesSection({
     const ok = await confirm({
       title: "Delete destination?",
       message: hasSubs
-        ? `Remove "${displayName(city)}", its ${city.subcities.length} sub-destination(s), and all their POIs and day plans? This cannot be undone.`
+        ? `Remove "${displayName(city)}", its ${city.subcities.length} day trip(s), and all their POIs and day plans? This cannot be undone.`
         : `Remove "${displayName(city)}" and its POIs and day plans? This cannot be undone.`,
       confirmText: "Delete",
       variant: "destructive",
@@ -580,7 +580,7 @@ export function CitiesSection({
       return;
     }
     router.refresh();
-    toast("Moved as sub-destination");
+    toast("Moved as day trip");
   }
 
   async function detachSubcity(cityId: number) {
@@ -639,7 +639,7 @@ export function CitiesSection({
 
           <Link href={`/trips/${tripId}/cities/${city.id}`} className="flex-1 min-w-0">
             <p className="truncate text-xs font-medium group-hover:text-[hsl(var(--primary))] transition-colors">{displayName(city)}</p>
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
               {sameDay
                 ? `${fmtShort(city.startDate)} · ${days}d`
                 : `${fmtShort(city.startDate)} – ${fmtShort(city.endDate)} · ${days}d`}
@@ -649,7 +649,7 @@ export function CitiesSection({
           {/* Detach button */}
           <button
             type="button"
-            className="shrink-0 rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+            className="shrink-0 rounded px-1.5 py-1 sm:py-0.5 text-xs text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
             onClick={() => detachSubcity(city.id)}
             title="Promote to top-level destination"
           >
@@ -665,7 +665,7 @@ export function CitiesSection({
             aria-label={`Delete ${displayName(city)}`}
           >
             {deletingId === city.id ? (
-              <span className="text-[10px]">…</span>
+              <span className="text-xs">…</span>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-3 sm:w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <polyline points="3 6 5 6 21 6" />
@@ -765,7 +765,7 @@ export function CitiesSection({
 
           <Link href={`/trips/${tripId}/cities/${city.id}`} className="flex-1 min-w-0">
             <p className={`truncate font-medium group-hover:text-[hsl(var(--primary))] transition-colors ${city.type === "stop" ? "text-xs text-[hsl(var(--muted-foreground))]" : "text-sm"}`}>{displayName(city)}</p>
-            <p className="text-[11px] text-[hsl(var(--muted-foreground))]">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
               {city.type === "stop"
                 ? fmtShort(city.startDate)
                 : sameDay
@@ -779,7 +779,7 @@ export function CitiesSection({
             <div className="relative shrink-0">
               <button
                 type="button"
-                className="rounded px-1.5 py-1 sm:py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
+                className="rounded px-1.5 py-1 sm:py-0.5 text-xs text-[hsl(var(--muted-foreground))] sm:hidden sm:group-hover:inline-block transition-all hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
                 onClick={() => setMoveMenuOpenId(moveMenuOpenId === city.id ? null : city.id)}
                 title="Move under another destination"
               >
@@ -811,7 +811,7 @@ export function CitiesSection({
             aria-label={`Delete ${displayName(city)}`}
           >
             {deletingId === city.id ? (
-              <span className="text-[10px]">…</span>
+              <span className="text-xs">…</span>
             ) : (
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-3.5 sm:w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <polyline points="3 6 5 6 21 6" />
@@ -875,13 +875,13 @@ export function CitiesSection({
                   <button
                     type="button"
                     onClick={() => setSubDestPickerOpen((v) => !v)}
-                    className="text-[11px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors"
+                    className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors"
                   >
-                    + Add sub-destination
+                    + Add day trip
                   </button>
                   {subDestPickerOpen && (
                     <div className="absolute left-0 top-full mt-1 z-20 min-w-[200px] rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-1 shadow-lg">
-                      <p className="px-2 py-1 text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Under which destination?</p>
+                      <p className="px-2 py-1 text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Under which destination?</p>
                       {localCities.map((c) => (
                         <button
                           key={c.id}
@@ -907,13 +907,13 @@ export function CitiesSection({
             >
           {addParentCityId && (
             <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))] bg-[hsl(var(--muted))]/50 rounded-md px-3 py-1.5">
-              <span>Adding sub-destination under</span>
+              <span>Adding day trip under</span>
               <span className="font-medium text-[hsl(var(--foreground))]">
                 {(() => { const p = localCities.find((c) => c.id === addParentCityId); return p ? displayName(p) : ""; })()}
               </span>
               <button
                 type="button"
-                className="ml-auto text-[10px] hover:text-[hsl(var(--foreground))]"
+                className="ml-auto text-xs hover:text-[hsl(var(--foreground))]"
                 onClick={() => setAddParentCityId(null)}
               >
                 (add as top-level instead)
@@ -982,7 +982,7 @@ export function CitiesSection({
                   <Label htmlFor="city-nickname" className="text-xs whitespace-nowrap">Display name</Label>
                   <button
                     type="button"
-                    className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                     onClick={() => { setShowNickname(false); setNickname(""); }}
                   >
                     ✕
@@ -995,13 +995,13 @@ export function CitiesSection({
                   placeholder={`e.g. "Amalfi Coast" instead of "${name}"`}
                   className="text-sm"
                 />
-                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                <p className="text-xs text-[hsl(var(--muted-foreground))]">
                   Shown everywhere instead of &ldquo;{name}&rdquo;. The original name is kept for geocoding.
                 </p>
               </div>
             )}
           </div>
-          {/* Travel stop toggle (not for sub-destinations) */}
+          {/* Travel stop toggle (not for day trips) */}
           {!addParentCityId && (
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
@@ -1125,7 +1125,7 @@ export function CitiesSection({
                         min={10}
                         max={500}
                       />
-                      <span className="text-[10px]">km max</span>
+                      <span className="text-xs">km max</span>
                     </span>
                   )}
                 </label>
@@ -1142,7 +1142,7 @@ export function CitiesSection({
                         min={5}
                         max={200}
                       />
-                      <span className="text-[10px]">km max</span>
+                      <span className="text-xs">km max</span>
                     </span>
                   )}
                 </label>
@@ -1167,7 +1167,7 @@ export function CitiesSection({
 
           <div className="flex gap-2">
             <Button type="submit" disabled={submitting || !!generating || !!dateError}>
-              {submitting ? "Adding…" : generating ? "Generating…" : isStop ? "Add travel stop" : addParentCityId ? "Add sub-destination" : "Add destination"}
+              {submitting ? "Adding…" : generating ? "Generating…" : isStop ? "Add travel stop" : addParentCityId ? "Add day trip" : "Add destination"}
             </Button>
             <Button type="button" variant="outline" onClick={closeAddForm} disabled={submitting || !!generating}>
               Cancel
