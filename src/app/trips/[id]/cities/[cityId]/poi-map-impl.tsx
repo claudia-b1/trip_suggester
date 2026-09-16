@@ -1085,7 +1085,7 @@ export function PoiMapImpl(props: PoiMapProps) {
             ⊡ Fit (no accom.)
           </button>
         )}
-        {userLocation && (
+        {userLocation ? (
           <button
             type="button"
             onClick={() => {
@@ -1096,7 +1096,14 @@ export function PoiMapImpl(props: PoiMapProps) {
           >
             📍 My location
           </button>
-        )}
+        ) : userLocationError ? (
+          <div
+            className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-2.5 py-1.5 text-xs text-[hsl(var(--muted-foreground))] shadow-sm backdrop-blur-sm"
+            title="Enable location access in your browser settings"
+          >
+            📍 Location unavailable
+          </div>
+        ) : null}
         <button
           type="button"
           onClick={() =>
@@ -1145,6 +1152,18 @@ export function PoiMapImpl(props: PoiMapProps) {
           {fullscreen ? "✕ Exit fullscreen" : "⛶ Fullscreen"}
         </button>
       </div>
+
+      {located.length === 0 && visibleFavourites.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
+          <div className="pointer-events-auto rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))]/90 px-5 py-4 text-center shadow-lg backdrop-blur-sm">
+            <p className="text-sm font-medium text-[hsl(var(--foreground))]">No POIs on the map yet</p>
+            <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
+              <span className="hidden sm:inline">Add POIs via Discover or right-click to drop a pin</span>
+              <span className="sm:hidden">Add POIs via Discover or long-press to drop a pin</span>
+            </p>
+          </div>
+        </div>
+      )}
 
       <MapGL
         ref={mapRef}

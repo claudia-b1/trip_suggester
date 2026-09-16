@@ -61,6 +61,9 @@ export async function POST(req: Request) {
   if (typeof latitude !== "number" || typeof longitude !== "number") {
     return NextResponse.json({ error: "latitude and longitude are required" }, { status: 400 });
   }
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+    return NextResponse.json({ error: "Coordinates out of range (lat: -90..90, lon: -180..180)" }, { status: 400 });
+  }
   if (typeof listId !== "number") {
     return NextResponse.json({ error: "listId is required" }, { status: 400 });
   }

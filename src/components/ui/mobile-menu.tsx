@@ -134,7 +134,7 @@ function MobileMenuSheet({ onClose }: { onClose: () => void }) {
           <div className="h-1 w-10 rounded-full bg-[hsl(var(--muted-foreground))]/30" />
         </div>
 
-        <div className="px-2 pb-6 space-y-1">
+        <div className="max-h-[75vh] overflow-y-auto px-2 pb-6 space-y-1">
           {/* User section */}
           {activeUser && (
             <>

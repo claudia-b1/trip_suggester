@@ -136,6 +136,7 @@ export function RecommendationsPanel({
   };
 
   const [profiles, setProfiles] = useState<DiscoverProfileDTO[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null);
   const profilesFetched = useRef(false);
 
@@ -180,6 +181,7 @@ export function RecommendationsPanel({
   useEffect(() => {
     if (!discoverOpen || profilesFetched.current) return;
     profilesFetched.current = true;
+    setProfilesLoading(true);
 
     fetch("/api/discover-profiles")
       .then((r) => (r.ok ? r.json() : []))
@@ -191,7 +193,8 @@ export function RecommendationsPanel({
           applyProfile(defaultProfile);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setProfilesLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discoverOpen]);
 
@@ -305,7 +308,10 @@ export function RecommendationsPanel({
         const body: { error?: string } = await res.json().catch(() => ({}));
         const msg = body.error ?? "Failed to run Discover";
         setError(msg);
-        toast(msg, { variant: "error" });
+        toast(msg, {
+          variant: "error",
+          action: { label: "Retry", onClick: () => runGenerate(overwrite) },
+        });
         return;
       }
       const body: { created: number; failures: Failure[] } = await res.json();
@@ -342,7 +348,10 @@ export function RecommendationsPanel({
       abortRef.current = null;
       const msg = err instanceof Error ? err.message : "Failed to run Discover";
       setError(msg);
-      toast(msg, { variant: "error" });
+      toast(msg, {
+        variant: "error",
+        action: { label: "Retry", onClick: () => runGenerate(overwrite) },
+      });
     }
   }
 
@@ -379,7 +388,13 @@ export function RecommendationsPanel({
       </CardHeader>
       {discoverOpen && <CardContent className="space-y-4">
         {/* Profile selector */}
-        {profiles.length > 0 && (
+        {profilesLoading && (
+          <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            Loading profiles…
+          </div>
+        )}
+        {!profilesLoading && profiles.length > 0 && (
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
               Profile

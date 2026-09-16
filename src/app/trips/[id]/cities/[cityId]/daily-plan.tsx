@@ -574,6 +574,8 @@ export function DailyPlan({
 
   async function moveActivity(activityId: number, toDayPlanId: number, toSlot: TimeSlot, targetIndex?: number) {
     setBusy(true);
+    // Snapshot for rollback
+    const snapshot = dayPlans;
     // Optimistic update
     setDayPlans((prev) => {
       let activity: DayActivityDTO | undefined;
@@ -602,7 +604,15 @@ export function DailyPlan({
     });
     setBusy(false);
     if (!res.ok) {
-      toast("Failed to move activity", { variant: "error" });
+      setDayPlans(snapshot);
+      toast("Failed to move activity", {
+        variant: "error",
+        action: {
+          label: "Retry",
+          onClick: () => moveActivity(activityId, toDayPlanId, toSlot, targetIndex),
+        },
+      });
+      return;
     }
     router.refresh();
   }
@@ -610,6 +620,7 @@ export function DailyPlan({
   async function remove(activityId: number) {
     if (busy) return;
     setBusy(true);
+    const snapshot = dayPlans;
     // Optimistic update
     setDayPlans((prev) =>
       prev.map((dp) => ({ ...dp, activities: dp.activities.filter((a) => a.id !== activityId) })),
@@ -617,7 +628,12 @@ export function DailyPlan({
     const res = await fetch(`/api/day-activities/${activityId}`, { method: "DELETE" });
     setBusy(false);
     if (!res.ok) {
-      toast("Failed to remove activity", { variant: "error" });
+      setDayPlans(snapshot);
+      toast("Failed to remove activity", {
+        variant: "error",
+        action: { label: "Retry", onClick: () => remove(activityId) },
+      });
+      return;
     }
     router.refresh();
   }
