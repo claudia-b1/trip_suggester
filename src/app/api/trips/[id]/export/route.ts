@@ -110,6 +110,17 @@ export async function GET(
     ? trip.cities.filter((c) => selectedCityIds.has(c.id))
     : trip.cities;
 
+  // Compute trip summary stats
+  const totalActivities = filteredCities.reduce(
+    (sum, c) => sum + c.dayPlans.reduce((s, dp) => s + dp.activities.length, 0),
+    0,
+  );
+  const totalPois = new Set(
+    filteredCities.flatMap((c) =>
+      c.dayPlans.flatMap((dp) => dp.activities.map((a) => a.poiId)),
+    ),
+  ).size;
+
   // Build HTML for each city
   let citiesHtml = "";
   // Only show top-level cities; subcities are rendered under their parent
@@ -360,6 +371,13 @@ export async function GET(
     line-height: 1.4;
   }
 
+  .activity-stats {
+    font-size: 0.75rem;
+    color: #374151;
+    margin-top: 0.15rem;
+    font-weight: 500;
+  }
+
   .activity-meta {
     font-size: 0.75rem;
     color: #6b7280;
@@ -500,7 +518,8 @@ export async function GET(
   <h1>${escapeHtml(trip.name)}</h1>
   <p class="trip-meta">
     ${formatDateRange(trip.startDate, trip.endDate)} &middot; ${tripDays} day${tripDays === 1 ? "" : "s"} &middot;
-    ${topLevelCities.length} destination${topLevelCities.length === 1 ? "" : "s"}
+    ${topLevelCities.length} destination${topLevelCities.length === 1 ? "" : "s"} &middot;
+    ${totalPois} place${totalPois === 1 ? "" : "s"} &middot; ${totalActivities} planned activit${totalActivities === 1 ? "y" : "ies"}
   </p>
 </div>
 
@@ -533,6 +552,7 @@ interface DayPlanWithActivities {
     id: number;
     timeSlot: string;
     order: number;
+    poiId: number;
     poi: {
       id: number;
       name: string;
@@ -543,6 +563,10 @@ interface DayPlanWithActivities {
       openingHours: string | null;
       latitude: number | null;
       longitude: number | null;
+      rating: number | null;
+      estimatedDurationMinutes: number | null;
+      priceLevel: number | null;
+      website: string | null;
     };
   }[];
   notes: NoteRow[];
@@ -667,7 +691,24 @@ function renderDayPlans(
               html += `<div class="activity-detail">${escapeHtml(act.poi.description)}</div>`;
             }
 
-            // Meta line: address, phone, opening hours
+            // Quick stats line: rating, duration, price
+            const stats: string[] = [];
+            if (act.poi.rating != null) {
+              stats.push(`⭐ ${act.poi.rating.toFixed(1)}`);
+            }
+            if (act.poi.estimatedDurationMinutes != null) {
+              const mins = act.poi.estimatedDurationMinutes;
+              stats.push(`⏱ ${mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}` : `${mins}m`}`);
+            }
+            if (act.poi.priceLevel != null) {
+              const priceLabels = ["Free", "$", "$$", "$$$", "$$$$"];
+              stats.push(priceLabels[act.poi.priceLevel] ?? "");
+            }
+            if (stats.length > 0) {
+              html += `<div class="activity-stats">${stats.join(" &middot; ")}</div>`;
+            }
+
+            // Meta line: address, phone, opening hours, website
             const meta: string[] = [];
             if (act.poi.address) {
               meta.push(`<span>📍 ${escapeHtml(act.poi.address)}</span>`);
@@ -677,6 +718,10 @@ function renderDayPlans(
             }
             if (act.poi.phoneNumber) {
               meta.push(`<span>📞 ${escapeHtml(act.poi.phoneNumber)}</span>`);
+            }
+            if (act.poi.website) {
+              const displayUrl = act.poi.website.replace(/^https?:\/\//, "").replace(/\/$/, "");
+              meta.push(`<span>🔗 ${escapeHtml(displayUrl)}</span>`);
             }
             if (meta.length > 0) {
               html += `<div class="activity-meta">${meta.join("")}</div>`;

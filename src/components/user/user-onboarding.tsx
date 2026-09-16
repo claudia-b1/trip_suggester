@@ -122,7 +122,7 @@ export function UserOnboarding() {
                 >
                   {emoji ?? (
                     <span
-                      className="flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                      className="flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold text-white"
                       style={{ backgroundColor: color }}
                     >
                       {name.trim() ? name.trim().charAt(0).toUpperCase() : "A"}

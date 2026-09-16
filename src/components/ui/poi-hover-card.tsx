@@ -89,7 +89,7 @@ export function PoiHoverCard({
                 {poi.name}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+            <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
               {poi.rating != null && <span>⭐ {poi.rating.toFixed(1)}</span>}
               {poi.estimatedDurationMinutes != null && (
                 <span>⏱ ~{poi.estimatedDurationMinutes}m</span>
@@ -99,7 +99,7 @@ export function PoiHoverCard({
               </span>
             </div>
             {poi.description && (
-              <p className="text-[10px] leading-snug text-[hsl(var(--muted-foreground))] line-clamp-2">
+              <p className="text-xs leading-snug text-[hsl(var(--muted-foreground))] line-clamp-2">
                 {poi.description}
               </p>
             )}

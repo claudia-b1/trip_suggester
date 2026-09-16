@@ -79,6 +79,19 @@ function getSubcatGroups(cat: string): SubcategoryGroup[] | null {
   return null;
 }
 
+/** Simple fuzzy match: normalize and check if names are similar enough. */
+function fuzzyNameMatch(a: string, b: string): boolean {
+  // Normalize: lowercase, strip punctuation, collapse whitespace
+  const normalize = (s: string) =>
+    s.toLowerCase().replace(/[''`.\-,&]/g, "").replace(/\s+/g, " ").trim();
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na === nb) return true;
+  // One contains the other (handles "McDonald's" vs "McDonalds Centraal")
+  if (na.includes(nb) || nb.includes(na)) return true;
+  return false;
+}
+
 /** Find a duplicate favourite by sourcePlaceId or name+city. */
 function findDuplicate(
   lists: FavouriteListDTO[],
@@ -86,32 +99,30 @@ function findDuplicate(
   name: string,
   city: string,
 ): { item: FavouriteItemDTO; listName: string } | null {
-  const nameLower = name.toLowerCase();
   const cityLower = city.toLowerCase();
+
+  function matchItem(item: FavouriteItemDTO, listName: string): { item: FavouriteItemDTO; listName: string } | null {
+    if (sourcePlaceId && item.sourcePlaceId === sourcePlaceId) {
+      return { item, listName };
+    }
+    if (
+      fuzzyNameMatch(item.name, name) &&
+      item.city.toLowerCase() === cityLower
+    ) {
+      return { item, listName };
+    }
+    return null;
+  }
 
   for (const list of lists) {
     for (const item of list.items) {
-      if (sourcePlaceId && item.sourcePlaceId === sourcePlaceId) {
-        return { item, listName: list.name };
-      }
-      if (
-        item.name.toLowerCase() === nameLower &&
-        item.city.toLowerCase() === cityLower
-      ) {
-        return { item, listName: list.name };
-      }
+      const match = matchItem(item, list.name);
+      if (match) return match;
     }
     for (const sub of list.sublists ?? []) {
       for (const item of sub.items) {
-        if (sourcePlaceId && item.sourcePlaceId === sourcePlaceId) {
-          return { item, listName: `${list.name} / ${sub.name}` };
-        }
-        if (
-          item.name.toLowerCase() === nameLower &&
-          item.city.toLowerCase() === cityLower
-        ) {
-          return { item, listName: `${list.name} / ${sub.name}` };
-        }
+        const match = matchItem(item, `${list.name} / ${sub.name}`);
+        if (match) return match;
       }
     }
   }

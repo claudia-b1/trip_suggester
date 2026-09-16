@@ -307,11 +307,11 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
                 <div className="px-1 py-0.5 min-w-[140px]">
                   <p className="text-sm font-semibold">{picked.cityName}</p>
                   {picked.country && (
-                    <p className="text-[11px] text-gray-500">{picked.country}</p>
+                    <p className="text-xs text-gray-500">{picked.country}</p>
                   )}
                   {/* Driving distance from user location */}
                   {userLocation && (
-                    <p className="text-[11px] text-gray-500 mt-0.5">
+                    <p className="text-xs text-gray-500 mt-0.5">
                       {picked.drivingDistanceLoading ? (
                         <span className="inline-flex items-center gap-1">
                           <span className="inline-block h-2.5 w-2.5 border-[1.5px] border-gray-400 border-t-transparent rounded-full animate-spin" />
@@ -325,7 +325,7 @@ export function MapLocationPicker({ onSelect, onClose, existingCities }: MapLoca
                     </p>
                   )}
                   {picked.error && (
-                    <p className="text-[11px] text-red-500 mt-0.5">{picked.error}</p>
+                    <p className="text-xs text-red-500 mt-0.5">{picked.error}</p>
                   )}
                   <Button
                     type="button"

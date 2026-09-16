@@ -478,7 +478,7 @@ export function FavouritesPanel() {
         <div className="flex items-center gap-1 py-1.5">
           {/* Drag handle */}
           {!selectMode && (
-            <span className="cursor-grab text-[10px] text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:opacity-100 active:cursor-grabbing select-none" title="Drag to reorder">
+            <span className="cursor-grab text-xs text-[hsl(var(--muted-foreground))] opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:opacity-100 active:cursor-grabbing select-none" title="Drag to reorder">
               ⋮⋮
             </span>
           )}
@@ -511,7 +511,7 @@ export function FavouritesPanel() {
                 {indent ? "📁" : "📂"} {list.name}
               </span>
             )}
-            <span className="ml-auto text-[10px] text-[hsl(var(--muted-foreground))]">
+            <span className="ml-auto text-xs text-[hsl(var(--muted-foreground))]">
               {totalItems}
             </span>
           </button>
@@ -524,7 +524,7 @@ export function FavouritesPanel() {
                 e.stopPropagation();
                 handleAddItemToList(list.id);
               }}
-              className="rounded-md border border-pink-300/40 bg-pink-500/10 px-1.5 py-0.5 text-[10px] font-medium text-pink-400 hover:bg-pink-500/20 hover:text-pink-300 transition-colors"
+              className="rounded-md border border-pink-300/40 bg-pink-500/10 px-1.5 py-0.5 text-xs font-medium text-pink-400 hover:bg-pink-500/20 hover:text-pink-300 transition-colors"
               title="Add favourite item to this list"
             >
               + Add
@@ -583,7 +583,7 @@ export function FavouritesPanel() {
             {/* Items */}
             {list.items.length === 0 && list.sublists.length === 0 && (
               <p className="ml-6 text-xs text-[hsl(var(--muted-foreground))] italic">
-                No items yet
+                No places saved yet. Tap the ♥ on any place to add it here.
               </p>
             )}
             {list.items.map((item, idx) => (
@@ -754,7 +754,7 @@ export function FavouritesPanel() {
                   </svg>
                   {/* Active filter count badge */}
                   {!showFilters && (categoryFilter !== null || subcategoryFilter !== null || listFilter !== null || visitedFilter !== "all" || extraFieldFilters.length > 0) && (
-                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-[9px] font-bold text-[hsl(var(--primary-foreground))]">
+                    <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-xs font-bold text-[hsl(var(--primary-foreground))]">
                       {(categoryFilter ? 1 : 0) + (subcategoryFilter ? 1 : 0) + (listFilter ? 1 : 0) + (visitedFilter !== "all" ? 1 : 0) + extraFieldFilters.length}
                     </span>
                   )}
@@ -776,7 +776,7 @@ export function FavouritesPanel() {
                             setSubcategoryFilter(null);
                             setExtraFieldFilters([]);
                           }}
-                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                             active
                               ? `${styles.badge} border-transparent`
                               : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -793,7 +793,7 @@ export function FavouritesPanel() {
                     <div className="flex flex-wrap gap-1">
                       <button
                         onClick={() => { setSubcategoryFilter(null); setExtraFieldFilters([]); }}
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                        className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                           !subcategoryFilter
                             ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                             : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -808,7 +808,7 @@ export function FavouritesPanel() {
                             setSubcategoryFilter(subcategoryFilter === sub.id ? null : sub.id);
                             setExtraFieldFilters([]);
                           }}
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                          className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                             subcategoryFilter === sub.id
                               ? "border-indigo-400 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400"
                               : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -844,7 +844,7 @@ export function FavouritesPanel() {
                         <button
                           key={v}
                           onClick={() => setVisitedFilter(v)}
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                          className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                             visitedFilter === v
                               ? "border-emerald-400 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                               : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -870,7 +870,7 @@ export function FavouritesPanel() {
                                   key={def.key}
                                   value={getFilterDropdownValue(def.key)}
                                   onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "proximity")}
-                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                  className={`rounded-md border px-2 py-1 text-xs transition-all ${
                                     isActive
                                       ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
                                       : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
@@ -889,7 +889,7 @@ export function FavouritesPanel() {
                                   key={def.key}
                                   value={getFilterDropdownValue(def.key)}
                                   onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "stars")}
-                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                  className={`rounded-md border px-2 py-1 text-xs transition-all ${
                                     isActive
                                       ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
                                       : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
@@ -908,7 +908,7 @@ export function FavouritesPanel() {
                                   key={def.key}
                                   value={getFilterDropdownValue(def.key)}
                                   onChange={(e) => setExtraFieldDropdown(def.key, e.target.value, "select")}
-                                  className={`rounded-md border px-2 py-1 text-[11px] transition-all ${
+                                  className={`rounded-md border px-2 py-1 text-xs transition-all ${
                                     isActive
                                       ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium"
                                       : "border-[hsl(var(--border))] bg-[hsl(var(--background))] text-[hsl(var(--muted-foreground))]"
@@ -935,7 +935,7 @@ export function FavouritesPanel() {
                               <button
                                 key={def.key}
                                 onClick={() => toggleBooleanFilter(def.key)}
-                                className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all ${
+                                className={`rounded-full border px-2 py-0.5 text-xs font-medium transition-all ${
                                   isActive
                                     ? "border-violet-400 bg-violet-500/10 text-violet-600 dark:text-violet-400"
                                     : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] opacity-60 hover:opacity-100"
@@ -952,7 +952,7 @@ export function FavouritesPanel() {
                       {extraFieldFilters.length > 0 && (
                         <button
                           onClick={() => setExtraFieldFilters([])}
-                          className="text-[10px] font-medium text-red-400 hover:text-red-500 transition-colors"
+                          className="text-xs font-medium text-red-400 hover:text-red-500 transition-colors"
                         >
                           ✕ Clear {extraFieldFilters.length} filter{extraFieldFilters.length > 1 ? "s" : ""}
                         </button>
@@ -984,7 +984,7 @@ export function FavouritesPanel() {
                     </p>
                     {filteredItems.map(({ item, listName }) => (
                       <div key={item.id}>
-                        <p className="mb-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+                        <p className="mb-0.5 text-xs text-[hsl(var(--muted-foreground))]">
                           {listName}
                         </p>
                         <FavouriteItemCard

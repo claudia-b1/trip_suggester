@@ -176,9 +176,9 @@ function StopPoiCard({
           <span className="text-lg leading-none">{CATEGORY_ICONS[poi.category]}</span>
           {poi.rating != null && (
             <div className="flex flex-col items-center text-center gap-0.5">
-              <span className="text-[10px] font-semibold text-amber-600 leading-none">⭐ {poi.rating.toFixed(1)}</span>
+              <span className="text-xs font-semibold text-amber-600 leading-none">⭐ {poi.rating.toFixed(1)}</span>
               {poi.userRatingCount != null && (
-                <span className="text-[9px] leading-none text-slate-400">({formatReviewCount(poi.userRatingCount)})</span>
+                <span className="text-xs leading-none text-slate-400">({formatReviewCount(poi.userRatingCount)})</span>
               )}
             </div>
           )}
@@ -240,20 +240,20 @@ function StopPoiCard({
         {/* Subcategory + price */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {poi.subcategory && (
-            <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
+            <span className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${CATEGORY_STYLES[poi.category].badge}`}>
               {poi.subcategory}
             </span>
           )}
           {poi.priceLevel != null && poi.priceLevel > 0 && (
-            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">{PRICE_LABELS[poi.priceLevel]}</span>
+            <span className="text-xs text-[hsl(var(--muted-foreground))]">{PRICE_LABELS[poi.priceLevel]}</span>
           )}
           {getStopScoreBadges(poi.scoreBreakdown).map((b) => (
-            <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
+            <span key={b.label} className="rounded-full bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-xs font-medium text-slate-600 dark:text-slate-300">
               {b.emoji} {b.label}
             </span>
           ))}
           {getClusterCount(poi.extraFields) > 0 && (
-            <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+            <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
               +{getClusterCount(poi.extraFields)} more nearby
             </span>
           )}
@@ -264,7 +264,7 @@ function StopPoiCard({
         )}
 
         {poi.openingHours && (
-          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+          <p className="text-xs text-[hsl(var(--muted-foreground))]">
             🕐 {poi.openingHours.split(";")[0]}
           </p>
         )}
@@ -292,7 +292,7 @@ function StopPoiCard({
               <button
                 type="button"
                 onClick={() => onViewOnMap(poi.id)}
-                className="text-[11px] text-[hsl(var(--primary))] hover:underline"
+                className="text-xs text-[hsl(var(--primary))] hover:underline"
               >
                 📍 Show on map
               </button>
@@ -300,7 +300,7 @@ function StopPoiCard({
                 href={googleMapsUrl(poi.name, poi.latitude!, poi.longitude!)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[11px] text-[hsl(var(--muted-foreground))] hover:underline"
+                className="text-xs text-[hsl(var(--muted-foreground))] hover:underline"
               >
                 Google Maps ↗
               </a>
@@ -311,7 +311,7 @@ function StopPoiCard({
               href={poi.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] text-[hsl(var(--muted-foreground))] hover:underline"
+              className="text-xs text-[hsl(var(--muted-foreground))] hover:underline"
             >
               Website ↗
             </a>
@@ -320,7 +320,7 @@ function StopPoiCard({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onSetAccommodation(poi); }}
-              className={`ml-auto text-[11px] font-medium shrink-0 ${
+              className={`ml-auto text-xs font-medium shrink-0 ${
                 isCurrentAccommodation
                   ? "text-emerald-600 cursor-default"
                   : "text-[hsl(var(--primary))] hover:underline"
@@ -804,7 +804,7 @@ export function StopPlanningSection({
               className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ring))] resize-y"
               autoFocus
             />
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
               {noteSaving ? "Saving..." : "Auto-saved on blur"}
             </p>
           </div>
@@ -894,7 +894,7 @@ export function StopPlanningSection({
                     >
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: active ? styles.dot : "#9ca3af" }} />
                       {CATEGORY_ICON_MAP[cat]} {CATEGORY_LABELS[cat as Category]}
-                      {subDesc && <span className="hidden sm:inline text-[10px] opacity-70">· {subDesc}</span>}
+                      {subDesc && <span className="hidden sm:inline text-xs opacity-70">· {subDesc}</span>}
                     </button>
                   );
                 })}
@@ -912,7 +912,7 @@ export function StopPlanningSection({
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">1</span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">1</span>
                 <input
                   type="range"
                   min={1}
@@ -923,9 +923,9 @@ export function StopPlanningSection({
                   disabled={generating}
                   className="flex-1 accent-[hsl(var(--primary))] disabled:opacity-40"
                 />
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))] shrink-0">30</span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">30</span>
               </div>
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
                 Centered on city center · {radiusKm} km radius
               </p>
             </div>
@@ -946,7 +946,7 @@ export function StopPlanningSection({
                       return allowed && s.size < allowed.length;
                     },
                   ) && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">active</span>
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-bold text-amber-700">active</span>
                   )}
                 </button>
 
@@ -968,7 +968,7 @@ export function StopPlanningSection({
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm">{CATEGORY_ICON_MAP[cat]}</span>
                             <span className="text-xs font-semibold">{CATEGORY_LABELS[cat]}</span>
-                            <span className="text-[10px] text-[hsl(var(--muted-foreground))]">max:</span>
+                            <span className="text-xs text-[hsl(var(--muted-foreground))]">max:</span>
                             <input
                               type="number"
                               min={1}
@@ -993,13 +993,13 @@ export function StopPlanningSection({
                                   type="button"
                                   onClick={() => toggleSubcat(cat, sub.id)}
                                   disabled={generating}
-                                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors ${
                                     subActive
                                       ? `${styles.badge} border-transparent`
                                       : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:bg-[hsl(var(--muted))]"
                                   }`}
                                 >
-                                  <span className="text-[10px]">{sub.emoji}</span>
+                                  <span className="text-xs">{sub.emoji}</span>
                                   {sub.label}
                                 </button>
                               );
@@ -1009,7 +1009,7 @@ export function StopPlanningSection({
                           {/* Cuisine filter for FOOD */}
                           {cat === "FOOD" && (
                             <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-[hsl(var(--muted-foreground))] shrink-0">
+                              <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">
                                 Cuisine:
                               </span>
                               <input
@@ -1294,7 +1294,7 @@ export function StopPlanningSection({
                                 return next;
                               });
                             }}
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${
                               isActive
                                 ? "bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
                                 : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] opacity-50"
@@ -1310,7 +1310,7 @@ export function StopPlanningSection({
                   {/* Active filter count */}
                   {(filterCategories.size > 0 || filterIncludedSubcats.size > 0 || filterSearch || filterFavouritesOnly) && (
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                      <span className="text-xs text-[hsl(var(--muted-foreground))]">
                         Showing {filteredPois.length} of {pois.length} places
                       </span>
                       <button
@@ -1321,7 +1321,7 @@ export function StopPlanningSection({
                           setFilterSearch("");
                           setFilterFavouritesOnly(false);
                         }}
-                        className="text-[10px] text-[hsl(var(--primary))] hover:underline"
+                        className="text-xs text-[hsl(var(--primary))] hover:underline"
                       >
                         Clear filters
                       </button>

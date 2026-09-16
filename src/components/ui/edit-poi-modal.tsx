@@ -293,7 +293,7 @@ export function EditPoiModal({
                 <Button variant="outline" size="sm" className="text-xs" onClick={() => fileRef.current?.click()}>
                   Upload photo
                 </Button>
-                <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste from clipboard</span>
+                <span className="text-xs text-[hsl(var(--muted-foreground))]">or paste from clipboard</span>
                 {photoUrl && (
                   <Button variant="ghost" size="sm" className="text-xs text-[hsl(var(--muted-foreground))]" onClick={() => { setPhotoUrl(null); setPhotoPreview(null); }}>
                     Remove photo
@@ -377,14 +377,14 @@ export function EditPoiModal({
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
                 Country
-                {reverseGeocoding && !country && <span className="ml-1 text-[10px] font-normal normal-case">...</span>}
+                {reverseGeocoding && !country && <span className="ml-1 text-xs font-normal normal-case">...</span>}
               </label>
               <Input value={country} disabled className="text-sm opacity-60" />
             </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
                 City
-                {reverseGeocoding && !cityName && <span className="ml-1 text-[10px] font-normal normal-case">...</span>}
+                {reverseGeocoding && !cityName && <span className="ml-1 text-xs font-normal normal-case">...</span>}
               </label>
               <Input value={cityName} disabled className="text-sm opacity-60" />
             </div>
@@ -394,11 +394,11 @@ export function EditPoiModal({
           <div className="space-y-1">
             <label className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">
               Address
-              {reverseGeocoding && <span className="ml-2 text-[10px] font-normal normal-case">resolving...</span>}
+              {reverseGeocoding && <span className="ml-2 text-xs font-normal normal-case">resolving...</span>}
             </label>
             <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Auto-filled from coordinates" className="text-sm" />
             {poi.latitude != null && poi.longitude != null && (
-              <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              <p className="text-xs text-[hsl(var(--muted-foreground))]">
                 📍 {poi.latitude.toFixed(5)}, {poi.longitude.toFixed(5)}
               </p>
             )}
@@ -567,7 +567,7 @@ export function EditPoiModal({
                   <button
                     type="button"
                     onClick={() => setPersonalRating(null)}
-                    className="ml-1 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    className="ml-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                   >
                     clear
                   </button>

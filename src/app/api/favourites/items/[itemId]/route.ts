@@ -22,8 +22,8 @@ export async function PATCH(
   if (typeof body.country === "string") data.country = body.country.trim();
   if (typeof body.city === "string") data.city = body.city.trim();
   if (body.address !== undefined) data.address = body.address || null;
-  if (typeof body.latitude === "number") data.latitude = body.latitude;
-  if (typeof body.longitude === "number") data.longitude = body.longitude;
+  if (typeof body.latitude === "number" && body.latitude >= -90 && body.latitude <= 90) data.latitude = body.latitude;
+  if (typeof body.longitude === "number" && body.longitude >= -180 && body.longitude <= 180) data.longitude = body.longitude;
   if (body.description !== undefined) data.description = body.description || null;
   if (body.notes !== undefined) data.notes = body.notes || null;
   if (body.photoUrl !== undefined) data.photoUrl = body.photoUrl || null;

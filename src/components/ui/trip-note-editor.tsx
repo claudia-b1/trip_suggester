@@ -101,13 +101,13 @@ export function TripNoteEditor({
               autoFocus
             />
             <div className="mt-0.5 flex items-center justify-between">
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+              <span className="text-xs text-[hsl(var(--muted-foreground))]">
                 {saving ? "Saving..." : "Auto-saved"}
               </span>
               <button
                 type="button"
                 onClick={() => setExpanded(false)}
-                className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
               >
                 Collapse
               </button>
@@ -117,7 +117,7 @@ export function TripNoteEditor({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="flex items-center gap-1 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            className="flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
           >
             {hasContent ? (
               <span className="truncate max-w-[200px]">
@@ -167,7 +167,7 @@ export function TripNoteEditor({
             className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] resize-y"
             autoFocus
           />
-          <p className="mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">
+          <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
             {saving ? "Saving..." : hasContent ? "Auto-saved" : "Start typing to save"}
           </p>
         </div>

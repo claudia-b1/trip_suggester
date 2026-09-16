@@ -165,7 +165,7 @@ export function TripGrid({
                 role="tab"
                 aria-selected={sortBy === opt.value}
                 onClick={() => handleSortChange(opt.value)}
-                className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                className={`rounded px-2 py-1 text-xs font-medium transition-colors ${
                   sortBy === opt.value
                     ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                     : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
@@ -180,7 +180,7 @@ export function TripGrid({
         {archivedCount > 0 && (
           <button
             onClick={() => setShowArchived(!showArchived)}
-            className={`ml-auto rounded-full border px-2.5 py-0.5 text-[10px] font-medium transition-all ${
+            className={`ml-auto rounded-full border px-2.5 py-0.5 text-xs font-medium transition-all ${
               showArchived
                 ? "border-amber-400 bg-amber-500/10 text-amber-600 dark:text-amber-400"
                 : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
@@ -239,7 +239,7 @@ export function TripGrid({
                       🏙️ {cityCount} {cityCount === 1 ? "destination" : "destinations"}
                     </span>
                     {trip.archived && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
                         📦 Archived
                       </span>
                     )}

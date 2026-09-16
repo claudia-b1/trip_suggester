@@ -1041,7 +1041,7 @@ export function AddToFavouritesModal() {
               <label className="block text-xs font-medium text-[hsl(var(--foreground))]">
                 Location *
               </label>
-              <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5 text-[10px]">
+              <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5 text-xs">
                 <button
                   type="button"
                   onClick={() => { setLocMode("address"); setLocationError(null); }}
@@ -1123,7 +1123,7 @@ export function AddToFavouritesModal() {
                       </span>
                       <span className="text-[hsl(var(--muted-foreground))]">?</span>
                     </span>
-                    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-medium text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300">
+                    <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-600 dark:bg-indigo-900 dark:text-indigo-300">
                       Apply
                     </span>
                   </button>
@@ -1221,7 +1221,7 @@ export function AddToFavouritesModal() {
                   }}
                 />
               </label>
-              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">or paste</span>
+              <span className="text-xs text-[hsl(var(--muted-foreground))]">or paste</span>
               {photoUrl && (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}

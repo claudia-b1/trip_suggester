@@ -100,7 +100,7 @@ export function AddSubDestinationModal({
       });
 
       if (!res.ok) {
-        toast("Failed to add sub-destination", { variant: "error" });
+        toast("Failed to add day trip", { variant: "error" });
         setSubmitting(false);
         return;
       }
@@ -138,10 +138,10 @@ export function AddSubDestinationModal({
 
       setGenerating(null);
       router.refresh();
-      toast(`Added ${newCity.nickname || newCity.name} as sub-destination`);
+      toast(`Added ${newCity.nickname || newCity.name} as a day trip`);
       onClose();
     } catch {
-      toast("Failed to add sub-destination", { variant: "error" });
+      toast("Failed to add day trip", { variant: "error" });
       setSubmitting(false);
       setGenerating(null);
     }
@@ -158,7 +158,7 @@ export function AddSubDestinationModal({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-bold">Add sub-destination</h2>
+            <h2 className="text-lg font-bold">Add day trip</h2>
             <p className="text-xs text-[hsl(var(--muted-foreground))]">Under {parentCityName}</p>
           </div>
           <button type="button" onClick={onClose} className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] text-xl leading-none">&times;</button>
@@ -222,7 +222,7 @@ export function AddSubDestinationModal({
                   <Label htmlFor="sub-city-nickname" className="text-xs whitespace-nowrap">Display name</Label>
                   <button
                     type="button"
-                    className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                    className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
                     onClick={() => { setShowNickname(false); setNickname(""); }}
                   >
                     ✕
@@ -274,7 +274,7 @@ export function AddSubDestinationModal({
 
           {/* Generate on creation */}
           <div className="space-y-2 rounded-lg border border-[hsl(var(--border))] p-3 bg-[hsl(var(--muted))]/30">
-            <p className="text-[10px] font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Generate on creation</p>
+            <p className="text-xs font-semibold text-[hsl(var(--muted-foreground))] uppercase tracking-wide">Generate on creation</p>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={genAbout} onChange={(e) => setGenAbout(e.target.checked)} className="rounded" />
               About destination (AI-generated insights)
@@ -292,14 +292,14 @@ export function AddSubDestinationModal({
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <input type="checkbox" checked={genNearbyCities} onChange={(e) => setGenNearbyCities(e.target.checked)} className="rounded h-3.5 w-3.5" />
                   Nearby cities
-                  <Input type="number" value={maxCitiesKm} onChange={(e) => setMaxCitiesKm(Number(e.target.value))} className="w-14 h-5 text-[10px] px-1" />
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                  <Input type="number" value={maxCitiesKm} onChange={(e) => setMaxCitiesKm(Number(e.target.value))} className="w-14 h-5 text-xs px-1" />
+                  <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <input type="checkbox" checked={genNearbyActivities} onChange={(e) => setGenNearbyActivities(e.target.checked)} className="rounded h-3.5 w-3.5" />
                   Recommended activities nearby
-                  <Input type="number" value={maxActivitiesKm} onChange={(e) => setMaxActivitiesKm(Number(e.target.value))} className="w-14 h-5 text-[10px] px-1" />
-                  <span className="text-[10px] text-[hsl(var(--muted-foreground))]">km max</span>
+                  <Input type="number" value={maxActivitiesKm} onChange={(e) => setMaxActivitiesKm(Number(e.target.value))} className="w-14 h-5 text-xs px-1" />
+                  <span className="text-xs text-[hsl(var(--muted-foreground))]">km max</span>
                 </label>
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <input type="checkbox" checked={genHikes} onChange={(e) => setGenHikes(e.target.checked)} className="rounded h-3.5 w-3.5" />
@@ -319,7 +319,7 @@ export function AddSubDestinationModal({
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={busy || !name.trim()}>
-              {submitting ? "Adding..." : generating ? `Generating ${generating}...` : "Add sub-destination"}
+              {submitting ? "Adding..." : generating ? `Generating ${generating}...` : "Add day trip"}
             </Button>
           </div>
         </form>

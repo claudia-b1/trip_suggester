@@ -185,12 +185,12 @@ export function UserManageModal({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{u.name}</span>
                     {u.id === activeUser?.id && (
-                      <span className="shrink-0 rounded bg-[hsl(var(--primary)/0.1)] px-1.5 py-0.5 text-[10px] font-semibold text-[hsl(var(--primary))]">
+                      <span className="shrink-0 rounded bg-[hsl(var(--primary)/0.1)] px-1.5 py-0.5 text-xs font-semibold text-[hsl(var(--primary))]">
                         Active
                       </span>
                     )}
                     {u.id === defaultUserId && (
-                      <span className="shrink-0 rounded bg-[hsl(var(--muted))] px-1.5 py-0.5 text-[10px] font-semibold text-[hsl(var(--muted-foreground))]">
+                      <span className="shrink-0 rounded bg-[hsl(var(--muted))] px-1.5 py-0.5 text-xs font-semibold text-[hsl(var(--muted-foreground))]">
                         Default
                       </span>
                     )}

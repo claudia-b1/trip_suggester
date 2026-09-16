@@ -15,6 +15,8 @@ import { prisma } from "@/lib/prisma";
 
 const DISCOVERY_TTL_DAYS = 30;
 const ENRICHMENT_TTL_DAYS = 30;
+/** Null results (failed lookups) expire faster so they get retried sooner. */
+const ENRICHMENT_NULL_TTL_DAYS = 7;
 
 /** Generic discovery cache — stores any JSON-serialisable value. */
 export async function withCache<T>(
@@ -70,8 +72,16 @@ export async function withEnrichCache<T>(
 
   if (existing) {
     const ageMs = Date.now() - existing.cachedAt.getTime();
-    if (ageMs < ttlDays * 24 * 60 * 60 * 1000) {
-      const parsed = JSON.parse(existing.payload) as T | null;
+    const parsed = JSON.parse(existing.payload) as T | null;
+
+    // Null results expire faster (ENRICHMENT_NULL_TTL_DAYS) so failed lookups
+    // get retried — a place that now has Wikidata/Google data won't stay
+    // permanently marked as "nothing found".
+    const effectiveTtl = parsed === null
+      ? ENRICHMENT_NULL_TTL_DAYS * 24 * 60 * 60 * 1000
+      : ttlDays * 24 * 60 * 60 * 1000;
+
+    if (ageMs < effectiveTtl) {
       // If skipCachedNull and the cached value is null, fall through to re-fetch.
       // This handles nearby places whose null was cached via a wrong city-name query.
       if (!skipCachedNull || parsed !== null) return parsed;

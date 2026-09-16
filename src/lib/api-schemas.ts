@@ -26,7 +26,10 @@ export const createTripSchema = z.object({
   name: z.string().min(1, "Name is required").max(200),
   startDate: isoDate,
   endDate: isoDate,
-});
+}).refine(
+  (d) => d.endDate >= d.startDate,
+  { message: "End date must be on or after start date", path: ["endDate"] },
+);
 
 export const updateTripSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -50,7 +53,10 @@ export const createCitySchema = z.object({
   timezone: z.string().max(100).optional(),
   parentCityId: z.number().int().optional(),
   type: z.enum(["destination", "stop"]).optional(),
-});
+}).refine(
+  (d) => d.endDate >= d.startDate,
+  { message: "End date must be on or after start date", path: ["endDate"] },
+);
 
 export const reorderCitiesSchema = z.object({
   cityIds: z.array(z.number().int()).min(1, "At least one city is required"),

@@ -47,21 +47,31 @@ export function SettingsForm() {
 
   // Load from localStorage on mount
   useEffect(() => {
-    const stored = {
-      distanceUnit: localStorage.getItem("pref-distance-unit") as DistanceUnit | null,
-      dateFormat: localStorage.getItem("pref-date-format") as DateFormat | null,
-      mapStyle: localStorage.getItem("pref-map-style") as MapStyle | null,
-      discoverRadius: localStorage.getItem("pref-discover-radius"),
-      nearbyRadius: localStorage.getItem("pref-nearby-radius"),
-    };
+    function loadFromStorage() {
+      const stored = {
+        distanceUnit: localStorage.getItem("pref-distance-unit") as DistanceUnit | null,
+        dateFormat: localStorage.getItem("pref-date-format") as DateFormat | null,
+        mapStyle: localStorage.getItem("pref-map-style") as MapStyle | null,
+        discoverRadius: localStorage.getItem("pref-discover-radius"),
+        nearbyRadius: localStorage.getItem("pref-nearby-radius"),
+      };
 
-    if (stored.distanceUnit) setDistanceUnit(stored.distanceUnit);
-    if (stored.dateFormat) setDateFormat(stored.dateFormat);
-    if (stored.mapStyle) setMapStyle(stored.mapStyle);
-    if (stored.discoverRadius) setDiscoverRadius(Number(stored.discoverRadius));
-    if (stored.nearbyRadius) setNearbyRadius(Number(stored.nearbyRadius));
+      if (stored.distanceUnit) setDistanceUnit(stored.distanceUnit);
+      if (stored.dateFormat) setDateFormat(stored.dateFormat);
+      if (stored.mapStyle) setMapStyle(stored.mapStyle);
+      if (stored.discoverRadius) setDiscoverRadius(Number(stored.discoverRadius));
+      if (stored.nearbyRadius) setNearbyRadius(Number(stored.nearbyRadius));
+    }
 
+    loadFromStorage();
     setMounted(true);
+
+    // Sync settings across tabs
+    function onStorage(e: StorageEvent) {
+      if (e.key?.startsWith("pref-")) loadFromStorage();
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   function save(key: string, value: string) {
@@ -153,15 +163,25 @@ export function SettingsForm() {
           <div className="space-y-2">
             <Label className="text-[hsl(var(--muted-foreground))]">Date format</Label>
             <div className="flex flex-wrap gap-2">
-              {(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as const).map((fmt) => (
-                <OptionButton
-                  key={fmt}
-                  selected={dateFormat === fmt}
-                  onClick={() => handleDateFormat(fmt)}
-                >
-                  {fmt}
-                </OptionButton>
-              ))}
+              {(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as const).map((fmt) => {
+                const examples: Record<string, string> = {
+                  "DD/MM/YYYY": "25/12/2026",
+                  "MM/DD/YYYY": "12/25/2026",
+                  "YYYY-MM-DD": "2026-12-25",
+                };
+                return (
+                  <OptionButton
+                    key={fmt}
+                    selected={dateFormat === fmt}
+                    onClick={() => handleDateFormat(fmt)}
+                  >
+                    <span className="flex flex-col items-center gap-0.5">
+                      <span>{fmt}</span>
+                      <span className="text-xs opacity-70">e.g. {examples[fmt]}</span>
+                    </span>
+                  </OptionButton>
+                );
+              })}
             </div>
           </div>
 

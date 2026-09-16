@@ -230,7 +230,7 @@ export function EditCityButton({
           )}
         </div>
         <div className="space-y-1">
-          <Label htmlFor="edit-city-nickname">Display name <span className="text-[10px] font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
+          <Label htmlFor="edit-city-nickname">Display name <span className="text-xs font-normal text-[hsl(var(--muted-foreground))]">(optional)</span></Label>
           <Input
             id="edit-city-nickname"
             value={nickname}
@@ -238,7 +238,7 @@ export function EditCityButton({
             placeholder={`e.g. a shorter name for "${name}"`}
           />
           {nickname.trim() && (
-            <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            <p className="text-xs text-[hsl(var(--muted-foreground))]">
               Will display &ldquo;{nickname.trim()}&rdquo; instead of &ldquo;{name}&rdquo;
             </p>
           )}
@@ -302,7 +302,7 @@ export function EditCityButton({
                 {poisDeleted ? "✅" : "🗑️"}
                 <div>
                   <span className="font-medium">{poisDeleted ? "Places deleted" : deletingPois ? "Deleting..." : "Delete all discovered places"}</span>
-                  {!poisDeleted && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Remove {poiCount} POI{poiCount !== 1 ? "s" : ""} so you can Discover for the new location</p>}
+                  {!poisDeleted && <p className="text-xs text-[hsl(var(--muted-foreground))]">Remove {poiCount} POI{poiCount !== 1 ? "s" : ""} so you can Discover for the new location</p>}
                 </div>
               </button>
             )}
@@ -316,7 +316,7 @@ export function EditCityButton({
                 {recsCleared ? "✅" : "🔄"}
                 <div>
                   <span className="font-medium">{recsCleared ? "Recommendations cleared" : clearingRecs ? "Clearing..." : "Clear recommendations"}</span>
-                  {!recsCleared && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Clear cached recommendations so they can be regenerated</p>}
+                  {!recsCleared && <p className="text-xs text-[hsl(var(--muted-foreground))]">Clear cached recommendations so they can be regenerated</p>}
                 </div>
               </button>
             )}
@@ -330,7 +330,7 @@ export function EditCityButton({
                 {accomCleared ? "✅" : "🏨"}
                 <div>
                   <span className="font-medium">{accomCleared ? "Accommodation cleared" : clearingAccom ? "Clearing..." : "Clear accommodation"}</span>
-                  {!accomCleared && <p className="text-[10px] text-[hsl(var(--muted-foreground))]">Unset the selected accommodation for this stop</p>}
+                  {!accomCleared && <p className="text-xs text-[hsl(var(--muted-foreground))]">Unset the selected accommodation for this stop</p>}
                 </div>
               </button>
             )}

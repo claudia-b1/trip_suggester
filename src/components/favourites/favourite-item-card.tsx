@@ -118,7 +118,7 @@ export function FavouriteItemCard({
           </span>
           {cat && styles && (
             <span
-              className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${styles.badge}`}
+              className={`ml-auto inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${styles.badge}`}
             >
               {CATEGORY_ICONS[cat]}
             </span>
@@ -179,7 +179,7 @@ export function FavouriteItemCard({
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {cat && styles && (
               <span
-                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${styles.badge}`}
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${styles.badge}`}
               >
                 {CATEGORY_ICONS[cat]} {CATEGORY_LABELS[cat]}
               </span>
@@ -187,7 +187,7 @@ export function FavouriteItemCard({
             {item.subcategory && (() => {
               const accomSub = cat === "ACCOMMODATION" ? ACCOMMODATION_SUBCATEGORIES.find((s) => s.id === item.subcategory) : null;
               return (
-                <span className="rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+                <span className="rounded-full bg-[hsl(var(--muted))] px-2 py-0.5 text-xs text-[hsl(var(--muted-foreground))]">
                   {accomSub ? `${accomSub.emoji} ${accomSub.label}` : item.subcategory}
                 </span>
               );
@@ -214,7 +214,7 @@ export function FavouriteItemCard({
               </button>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-[hsl(var(--muted-foreground))] truncate">
+          <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))] truncate">
             {item.city}, {item.country}
           </p>
         </div>

@@ -31,9 +31,11 @@ export async function GET(req: Request) {
   url.searchParams.set("format", "json");
   url.searchParams.set("apiKey", GEOAPIFY_KEY);
 
-  // Restrict results to within 30km of the city center and bias towards it
+  // Restrict results to within the specified radius (default 30km) and bias towards center
+  const radiusParam = searchParams.get("radius");
+  const radiusM = radiusParam ? Math.min(Math.max(Number(radiusParam), 1000), 200000) : 30000;
   if (lat && lon) {
-    url.searchParams.set("filter", `circle:${lon},${lat},30000`);
+    url.searchParams.set("filter", `circle:${lon},${lat},${radiusM}`);
     url.searchParams.set("bias", `proximity:${lon},${lat}`);
   }
 
