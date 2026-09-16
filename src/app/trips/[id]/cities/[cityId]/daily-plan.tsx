@@ -1235,8 +1235,7 @@ export function DailyPlan({
       {/* Header & plan controls */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          <span className="hidden sm:inline">Drag POIs between slots/days, or click a POI then a slot to assign.</span>
-          <span className="sm:hidden">Tap a POI below, then tap a time slot to assign it.</span>
+          Drag POIs between slots/days, or click a POI then a slot to assign.
         </p>
         {totalActivities > 0 && (
           <Button
@@ -1611,14 +1610,16 @@ export function DailyPlan({
                       <div className="text-xs font-semibold uppercase tracking-wide text-[hsl(var(--muted-foreground))]">
                         {SLOT_LABELS[slot]}
                       </div>
-                      {items.length === 0 && !selectedPoi && (
-                        <div className={`rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs ${
-                          isPoiOver
-                            ? "border-indigo-300 text-indigo-500"
-                            : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"
-                        }`}>
-                          {isPoiOver ? "Drop here" : <><span className="hidden sm:inline">Drag a POI here</span><span className="sm:hidden">Tap + Assign here</span></>}
-                        </div>
+                      {items.length === 0 && (
+                        isPoiOver ? (
+                          <div className="rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs border-indigo-300 text-indigo-500">
+                            Drop here
+                          </div>
+                        ) : !selectedPoi ? (
+                          <p className="px-1 py-2 text-center text-xs italic text-[hsl(var(--muted-foreground))]/60">
+                            No activities planned
+                          </p>
+                        ) : null
                       )}
                       <ul className="space-y-1">
                         {items.map((a, idx) => (
@@ -1662,16 +1663,18 @@ export function DailyPlan({
                           </li>
                         ))}
                       </ul>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={!selectedPoi || busy}
-                        onClick={() => assign(currentDayPlan.id, slot)}
-                        className="w-full"
-                      >
-                        {selectedPoi ? `+ Assign ${selectedPoi.name}` : "+ Assign here"}
-                      </Button>
+                      {selectedPoi && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => assign(currentDayPlan.id, slot)}
+                          className="w-full"
+                        >
+                          + Assign {selectedPoi.name}
+                        </Button>
+                      )}
                     </div>
                   );
                 });
