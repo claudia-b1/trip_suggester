@@ -62,10 +62,6 @@ function inferTip(category: Category, placeCategory: string): string {
   return "Check opening times and any admission fees before visiting.";
 }
 
-// ─── Price level description ──────────────────────────────────────────────────
-
-const PRICE_LABELS = ["Free", "$", "$$", "$$$", "$$$$"] as const;
-
 // ─── Core enrichment functions ────────────────────────────────────────────────
 
 async function getWikidata(placeId: string, name: string, cityName?: string, knownQId?: string): Promise<WikidataEnrichment | null> {
@@ -175,5 +171,3 @@ export async function enrichPlace(
   };
 }
 
-// Re-export price label helper so UI can consume it
-export { PRICE_LABELS };

@@ -612,7 +612,7 @@ export function PoiMapImpl(props: PoiMapProps) {
   const mapRef = useRef<MapRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeId, setActiveId] = useState<number | null>(focusPoiId ?? null);
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [activeFavId, setActiveFavId] = useState<number | null>(null);
   const [favPopupPos, setFavPopupPos] = useState<{ x: number; y: number } | null>(null);
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
@@ -1200,14 +1200,14 @@ export function PoiMapImpl(props: PoiMapProps) {
         <ScaleControl position="top-right" unit="metric" />
         {fullscreen && <CategoryLegend showFavourites={hasFavourites} />}
 
-        {/* User location blue dot */}
+        {/* User location blue dot — always in front of everything */}
         {userLocation && (
-          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
-            <div className="relative flex items-center justify-center" style={{ width: 22, height: 22 }}>
+          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 3 }}>
+            <div className="relative flex items-center justify-center" style={{ width: 36, height: 36 }}>
               {/* Pulsing ring */}
-              <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 22, height: 22 }} />
+              <div className="user-location-ring absolute rounded-full bg-blue-500/30" style={{ width: 36, height: 36 }} />
               {/* Blue dot */}
-              <div className="relative rounded-full bg-blue-500 border-2 border-white shadow-md" style={{ width: 14, height: 14 }} />
+              <div className="relative rounded-full bg-blue-500 border-[2.5px] border-white shadow-lg" style={{ width: 20, height: 20 }} />
             </div>
           </Marker>
         )}
@@ -1355,6 +1355,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={poi.longitude}
               latitude={poi.latitude}
               anchor="bottom"
+              style={{ zIndex: 2 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveId((prev) => prev === poi.id ? null : poi.id);
@@ -1362,8 +1363,8 @@ export function PoiMapImpl(props: PoiMapProps) {
             >
               <div
                 className="relative flex flex-col items-center cursor-pointer"
-                onMouseEnter={() => setHoverId(poi.id)}
-                onMouseLeave={() => setHoverId(null)}
+                onMouseEnter={() => { cancelHoverClose(); setHoverId(poi.id); if (activeId !== null && activeId !== poi.id) setActiveId(null); }}
+                onMouseLeave={() => scheduleHoverClose()}
               >
                 {isHovered && (
                   <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-md bg-gray-900/90 px-2 py-0.5 text-xs font-medium text-white shadow pointer-events-none">
@@ -1418,6 +1419,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               longitude={fav.longitude}
               latitude={fav.latitude}
               anchor="center"
+              style={{ zIndex: 2 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
                 setActiveFavId((prev) => prev === fav.id ? null : fav.id);

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
-export function DeleteTripButton({ id }: { id: number }) {
+export function DeleteTripButton({ id, iconOnly = false }: { id: number; iconOnly?: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -30,6 +30,30 @@ export function DeleteTripButton({ id }: { id: number }) {
     }
     router.push("/");
     router.refresh();
+  }
+
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        onClick={onDelete}
+        disabled={deleting}
+        title="Delete trip"
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 hover:border-red-300 disabled:opacity-50"
+      >
+        {deleting ? (
+          <span className="spinner h-3.5 w-3.5" />
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+            <path d="M9 6V4h6v2" />
+          </svg>
+        )}
+      </button>
+    );
   }
 
   return (

@@ -84,30 +84,42 @@ export default async function TripDetailPage({
           <div className="h-3 bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-500" />
         )}
         <div className="p-4 sm:p-6 space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-bold text-gradient">{trip.name}</h1>
-                {trip.archived && (
-                  <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                    📦 Archived
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
-                {formatDate(trip.startDate)} – {formatDate(trip.endDate)}
-                <span className="mx-2">·</span>
-                {(() => { const days = Math.round((trip.endDate.getTime() - trip.startDate.getTime()) / 86400000) + 1; return `${days} day${days === 1 ? "" : "s"}`; })()}
-                <span className="mx-2">·</span>
-                {totalDestinations} {totalDestinations === 1 ? "destination" : "destinations"}
-              </p>
-              <div className="mt-2">
-                <CoverImageUpload tripId={trip.id} currentImage={trip.coverImage} />
+          <div>
+            {/* Trip name + action icons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold text-gradient">{trip.name}</h1>
+              {trip.archived && (
+                <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                  📦 Archived
+                </span>
+              )}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <EditTripButton
+                  trip={{
+                    id: trip.id,
+                    name: trip.name,
+                    startDate: trip.startDate.toISOString(),
+                    endDate: trip.endDate.toISOString(),
+                  }}
+                  iconOnly
+                />
+                <ArchiveTripButton id={trip.id} archived={trip.archived} iconOnly />
+                <DeleteTripButton id={trip.id} iconOnly />
               </div>
             </div>
-            <div className="flex gap-2">
+            <p className="mt-1 text-sm text-[hsl(var(--muted-foreground))]">
+              {formatDate(trip.startDate)} – {formatDate(trip.endDate)}
+              <span className="mx-2">·</span>
+              {(() => { const days = Math.round((trip.endDate.getTime() - trip.startDate.getTime()) / 86400000) + 1; return `${days} day${days === 1 ? "" : "s"}`; })()}
+              <span className="mx-2">·</span>
+              {totalDestinations} {totalDestinations === 1 ? "destination" : "destinations"}
+            </p>
+            {/* Photo + PDF actions */}
+            <div className="mt-2 flex items-center justify-between flex-wrap gap-2">
+              <CoverImageUpload tripId={trip.id} currentImage={trip.coverImage} />
               <ExportTripButton
                 tripId={trip.id}
+                compact
                 cities={trip.cities.map((c) => ({
                   id: c.id,
                   name: c.nickname ?? c.name,
@@ -121,16 +133,6 @@ export default async function TripDetailPage({
                   })),
                 }))}
               />
-              <ArchiveTripButton id={trip.id} archived={trip.archived} />
-              <EditTripButton
-                trip={{
-                  id: trip.id,
-                  name: trip.name,
-                  startDate: trip.startDate.toISOString(),
-                  endDate: trip.endDate.toISOString(),
-                }}
-              />
-              <DeleteTripButton id={trip.id} />
             </div>
           </div>
 

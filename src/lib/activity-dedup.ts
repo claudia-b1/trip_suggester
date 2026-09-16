@@ -33,7 +33,7 @@ type DeduplicatableItem = {
 };
 
 /** Check if two items likely refer to the same thing. */
-export function isDuplicate(a: DeduplicatableItem, b: DeduplicatableItem): boolean {
+function isDuplicate(a: DeduplicatableItem, b: DeduplicatableItem): boolean {
   const titleSim = nameSimilarity(a.title, b.title);
 
   // Direct title match

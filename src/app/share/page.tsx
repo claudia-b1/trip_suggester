@@ -160,6 +160,9 @@ function SharePageContent() {
     item: FavouriteItemDTO;
     listName: string;
   } | null>(null);
+  const [showNewList, setShowNewList] = useState(false);
+  const [newListName, setNewListName] = useState("");
+  const [creatingList, setCreatingList] = useState(false);
 
   // Extract URL from share params
   const mapsUrl = useMemo(
@@ -263,6 +266,34 @@ function SharePageContent() {
     }
     return result;
   }, [lists]);
+
+  // ── Create new list handler ──────────────────────────────────────────────
+
+  const handleCreateList = useCallback(async () => {
+    if (!newListName.trim()) return;
+    setCreatingList(true);
+    try {
+      const res = await fetch("/api/favourites/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newListName.trim() }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        await refreshLists();
+        setSelectedListId(created.id);
+        setNewListName("");
+        setShowNewList(false);
+        toast("List created!");
+      } else {
+        toast("Failed to create list", { variant: "error" });
+      }
+    } catch {
+      toast("Failed to create list", { variant: "error" });
+    } finally {
+      setCreatingList(false);
+    }
+  }, [newListName, refreshLists, toast]);
 
   // ── Save handler ─────────────────────────────────────────────────────────
 
@@ -547,28 +578,64 @@ function SharePageContent() {
                 </label>
                 {listsLoading ? (
                   <div className="h-9 animate-pulse rounded-md bg-[hsl(var(--muted))]" />
-                ) : flatLists.length === 0 ? (
-                  <p className="text-sm text-[hsl(var(--muted-foreground))]">
-                    No lists yet. Create one in the Favourites panel first.
-                  </p>
                 ) : (
-                  <select
-                    value={selectedListId}
-                    onChange={(e) =>
-                      setSelectedListId(
-                        e.target.value ? Number(e.target.value) : "",
-                      )
-                    }
-                    className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))]"
-                  >
-                    <option value="">Select a list...</option>
-                    {flatLists.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.indent ? "  " : ""}
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    {flatLists.length > 0 && (
+                      <select
+                        value={selectedListId}
+                        onChange={(e) =>
+                          setSelectedListId(
+                            e.target.value ? Number(e.target.value) : "",
+                          )
+                        }
+                        className="w-full rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-2 text-sm text-[hsl(var(--foreground))]"
+                      >
+                        <option value="">Select a list...</option>
+                        {flatLists.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.indent ? "  " : ""}
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {showNewList ? (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={newListName}
+                          onChange={(e) => setNewListName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreateList(); } }}
+                          placeholder="New list name…"
+                          autoFocus
+                          className="flex-1 rounded-md border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-3 py-1.5 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))]"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleCreateList}
+                          disabled={creatingList || !newListName.trim()}
+                          className="rounded-md bg-[hsl(var(--primary))] px-3 py-1.5 text-sm font-medium text-[hsl(var(--primary-foreground))] disabled:opacity-50"
+                        >
+                          {creatingList ? "…" : "Create"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowNewList(false); setNewListName(""); }}
+                          className="text-sm text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setShowNewList(true)}
+                        className="mt-1.5 text-sm font-medium text-[hsl(var(--primary))] hover:underline"
+                      >
+                        + Create new list
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
 

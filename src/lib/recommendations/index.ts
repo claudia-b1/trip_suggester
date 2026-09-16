@@ -9,7 +9,7 @@
 export type { GenerateInput, RecommendedPoi } from "./_shared";
 
 export { searchPlaces, type DiscoveredPlace } from "./geoapify";
-export { enrichPlace, PRICE_LABELS } from "./enrichment";
+export { enrichPlace } from "./enrichment";
 export { scorePoi, topN } from "./scoring";
 export { withCache, withEnrichCache } from "./cache";
 export { SUBCATEGORIES, resolveApiValues, resolveSpecialFlags } from "./subcategories";

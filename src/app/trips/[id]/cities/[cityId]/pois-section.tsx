@@ -1341,7 +1341,7 @@ export function PoisSection({
         ) : view === "map" ? (
           <div className="space-y-2">
             <p className="text-xs text-[hsl(var(--muted-foreground))]">
-              💡 Right-click anywhere on the map to drop a pin and add a POI at that location.
+              💡 <span className="hidden sm:inline">Right-click anywhere on the map to drop a pin and add a POI at that location.</span><span className="sm:hidden">Long-press anywhere on the map to drop a pin and add a POI at that location.</span>
             </p>
             <div className="relative min-h-[500px] lg:min-h-[600px]">
               <PoiMap

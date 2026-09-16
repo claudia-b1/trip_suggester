@@ -8,9 +8,11 @@ import { useToast } from "@/components/ui/toast";
 export function ArchiveTripButton({
   id,
   archived,
+  iconOnly = false,
 }: {
   id: number;
   archived: boolean;
+  iconOnly?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -30,6 +32,34 @@ export function ArchiveTripButton({
       toast("Failed to update trip", { variant: "error" });
     }
     setLoading(false);
+  }
+
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={loading}
+        title={loading ? (archived ? "Unarchiving…" : "Archiving…") : archived ? "Unarchive trip" : "Archive trip"}
+        className="flex h-7 w-7 items-center justify-center rounded-md border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] transition-colors hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] disabled:opacity-50"
+      >
+        {loading ? (
+          <span className="spinner h-3.5 w-3.5" />
+        ) : archived ? (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="17 11 12 6 7 11" />
+            <line x1="12" y1="6" x2="12" y2="18" />
+            <path d="M5 18h14" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="21 8 21 21 3 21 3 8" />
+            <rect x="1" y="3" width="22" height="5" />
+            <line x1="10" y1="12" x2="14" y2="12" />
+          </svg>
+        )}
+      </button>
+    );
   }
 
   return (
