@@ -404,6 +404,7 @@ export function AddToFavouritesModal() {
     addModalPrefill, closeAddModal,
     editModalItem, closeEditModal,
     lists, refreshLists, favouritedPlaceIds,
+    open: openPanel,
   } = useFavourites();
   const { toast } = useToast();
 
@@ -606,8 +607,13 @@ export function AddToFavouritesModal() {
   }
 
   const handleClose = () => {
-    if (isEditMode) closeEditModal();
-    else closeAddModal();
+    if (isEditMode) {
+      closeEditModal();
+      // Re-open the favourites panel so the user stays in their list
+      openPanel();
+    } else {
+      closeAddModal();
+    }
   };
 
   const availableLists = flattenLists();
