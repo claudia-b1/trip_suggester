@@ -112,7 +112,7 @@ export const SUBCATEGORIES: Record<RecommendableCategory, SubcategoryDef[]> = {
 // ─── Backward compatibility ──────────────────────────────────────────────────
 
 /** Maps old (pre-split) subcategory IDs to their new equivalents. */
-export const LEGACY_SUBCAT_MAP: Record<string, string> = {
+const LEGACY_SUBCAT_MAP: Record<string, string> = {
   cycling:   "bike_rental",
   kayaking:  "kayak_spots",
   surfing:   "surf_spots",
