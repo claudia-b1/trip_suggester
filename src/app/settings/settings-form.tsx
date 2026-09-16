@@ -47,21 +47,31 @@ export function SettingsForm() {
 
   // Load from localStorage on mount
   useEffect(() => {
-    const stored = {
-      distanceUnit: localStorage.getItem("pref-distance-unit") as DistanceUnit | null,
-      dateFormat: localStorage.getItem("pref-date-format") as DateFormat | null,
-      mapStyle: localStorage.getItem("pref-map-style") as MapStyle | null,
-      discoverRadius: localStorage.getItem("pref-discover-radius"),
-      nearbyRadius: localStorage.getItem("pref-nearby-radius"),
-    };
+    function loadFromStorage() {
+      const stored = {
+        distanceUnit: localStorage.getItem("pref-distance-unit") as DistanceUnit | null,
+        dateFormat: localStorage.getItem("pref-date-format") as DateFormat | null,
+        mapStyle: localStorage.getItem("pref-map-style") as MapStyle | null,
+        discoverRadius: localStorage.getItem("pref-discover-radius"),
+        nearbyRadius: localStorage.getItem("pref-nearby-radius"),
+      };
 
-    if (stored.distanceUnit) setDistanceUnit(stored.distanceUnit);
-    if (stored.dateFormat) setDateFormat(stored.dateFormat);
-    if (stored.mapStyle) setMapStyle(stored.mapStyle);
-    if (stored.discoverRadius) setDiscoverRadius(Number(stored.discoverRadius));
-    if (stored.nearbyRadius) setNearbyRadius(Number(stored.nearbyRadius));
+      if (stored.distanceUnit) setDistanceUnit(stored.distanceUnit);
+      if (stored.dateFormat) setDateFormat(stored.dateFormat);
+      if (stored.mapStyle) setMapStyle(stored.mapStyle);
+      if (stored.discoverRadius) setDiscoverRadius(Number(stored.discoverRadius));
+      if (stored.nearbyRadius) setNearbyRadius(Number(stored.nearbyRadius));
+    }
 
+    loadFromStorage();
     setMounted(true);
+
+    // Sync settings across tabs
+    function onStorage(e: StorageEvent) {
+      if (e.key?.startsWith("pref-")) loadFromStorage();
+    }
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   function save(key: string, value: string) {

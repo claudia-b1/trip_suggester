@@ -660,25 +660,45 @@ export function RecommendationsPanel({
             </div>
           )}
 
-          {generating ? (
-            <Button
-              type="button"
-              onClick={cancelDiscover}
-              variant="outline"
-              className="w-1/3 min-w-[180px] border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
-            >
-              ✕ Cancel discovery
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={onGenerate}
-              disabled={selected.size === 0}
-              className="w-1/3 min-w-[180px]"
-            >
-              🔍 Discover places
-            </Button>
-          )}
+          <div className="flex items-center gap-3">
+            {generating ? (
+              <Button
+                type="button"
+                onClick={cancelDiscover}
+                variant="outline"
+                className="w-1/3 min-w-[180px] border-red-300 text-red-600 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900/20"
+              >
+                ✕ Cancel discovery
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={onGenerate}
+                disabled={selected.size === 0}
+                className="w-1/3 min-w-[180px]"
+              >
+                🔍 Discover places
+              </Button>
+            )}
+            {!generating && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`/api/cities/${cityId}/clear-cache`, { method: "POST" });
+                    if (!res.ok) throw new Error();
+                    toast("Cache cleared — next Discover will fetch fresh data");
+                  } catch {
+                    toast("Failed to clear cache", { variant: "error" });
+                  }
+                }}
+                className="text-xs text-[hsl(var(--muted-foreground))] underline-offset-2 hover:text-[hsl(var(--foreground))] hover:underline"
+                title="Clear cached discovery and enrichment data for this city"
+              >
+                Clear cache
+              </button>
+            )}
+          </div>
 
           {/* Progress steps */}
           {generating && progressStep && (
