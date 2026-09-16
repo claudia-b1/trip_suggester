@@ -1233,10 +1233,7 @@ export function DailyPlan({
   return (
     <div className="space-y-4">
       {/* Header & plan controls */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-[hsl(var(--muted-foreground))]">
-          Drag POIs between slots/days, or click a POI then a slot to assign.
-        </p>
+      <div className="flex items-center justify-end">
         {totalActivities > 0 && (
           <Button
             type="button"
