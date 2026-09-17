@@ -472,6 +472,7 @@ export function PoisSection({
     () => liveDayPlans.map((dp) => ({
       id: dp.id,
       label: new Date(dp.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      assignedPoiIds: dp.activities.map((a) => a.poiId),
     })),
     [liveDayPlans],
   );
