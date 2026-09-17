@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -124,9 +124,18 @@ export function TimelineAssignButton({ poi, dayPlans }: { poi: { id: number; nam
   const router = useRouter();
   const { toast } = useToast();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set());
-  const [assigning, setAssigning] = useState(false);
   const isAccommodation = poi.category === "ACCOMMODATION";
+  const alreadyAssignedDayIds = useMemo(
+    () => new Set(dayPlans.filter((d) => d.assignedPoiIds?.includes(poi.id)).map((d) => d.id)),
+    [dayPlans, poi.id],
+  );
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set(alreadyAssignedDayIds));
+  const [assigning, setAssigning] = useState(false);
+
+  // Re-sync when assigned days change (e.g. after router.refresh)
+  useEffect(() => {
+    setSelectedDays(new Set(alreadyAssignedDayIds));
+  }, [alreadyAssignedDayIds]);
 
   if (dayPlans.length === 0) return null;
 
@@ -214,38 +223,49 @@ export function TimelineAssignButton({ poi, dayPlans }: { poi: { id: number; nam
               <button type="button" onClick={selectAllDays} className="text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300">
                 Select all
               </button>
-              <button type="button" onClick={() => { setPopoverOpen(false); setSelectedDays(new Set()); }} className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+              <button type="button" onClick={() => { setPopoverOpen(false); setSelectedDays(new Set(alreadyAssignedDayIds)); }} className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
                 ✕
               </button>
             </div>
           </div>
           <div className="max-h-[160px] overflow-y-auto space-y-0.5">
-            {dayPlans.map((d) => (
-              <label
-                key={d.id}
-                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedDays.has(d.id)}
-                  onChange={() => toggleDay(d.id)}
-                  disabled={assigning}
-                  className="rounded border-indigo-300"
-                />
-                <span>{d.label}</span>
-              </label>
-            ))}
+            {dayPlans.map((d) => {
+              const alreadyAssigned = alreadyAssignedDayIds.has(d.id);
+              return (
+                <label
+                  key={d.id}
+                  className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedDays.has(d.id)}
+                    onChange={() => toggleDay(d.id)}
+                    disabled={assigning}
+                    className="rounded border-indigo-300"
+                  />
+                  <span>{d.label}</span>
+                  {alreadyAssigned && (
+                    <span className="ml-auto text-xs text-indigo-400 dark:text-indigo-500">✓ assigned</span>
+                  )}
+                </label>
+              );
+            })}
           </div>
-          {selectedDays.size > 0 && (
-            <button
-              type="button"
-              onClick={assignMulti}
-              disabled={assigning}
-              className="w-full rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
-            >
-              {assigning ? "Assigning…" : `Assign to ${selectedDays.size} day${selectedDays.size !== 1 ? "s" : ""}`}
-            </button>
-          )}
+          {(() => {
+            const newDays = [...selectedDays].filter((id) => !alreadyAssignedDayIds.has(id));
+            return newDays.length > 0 ? (
+              <button
+                type="button"
+                onClick={assignMulti}
+                disabled={assigning}
+                className="w-full rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+              >
+                {assigning ? "Assigning…" : `Assign to ${newDays.length} new day${newDays.length !== 1 ? "s" : ""}`}
+              </button>
+            ) : selectedDays.size > 0 ? (
+              <p className="text-xs text-center text-indigo-400">Already assigned to all selected days</p>
+            ) : null;
+          })()}
         </div>
       )}
     </div>

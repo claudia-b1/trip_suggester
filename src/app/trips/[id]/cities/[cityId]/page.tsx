@@ -469,9 +469,18 @@ export default async function CityDetailPage({
     0,
   );
 
+  // Validate accommodationPoiId still references an existing POI — reset if stale.
+  const accomPois = city.pois.filter((p) => p.category === "ACCOMMODATION");
+  if (city.accommodationPoiId && !accomPois.some((p) => p.id === city.accommodationPoiId)) {
+    await prisma.city.update({
+      where: { id: city.id },
+      data: { accommodationPoiId: null },
+    });
+    city.accommodationPoiId = null;
+  }
+
   // Auto-set accommodationPoiId if it's null but ACCOMMODATION POIs exist.
   // Only for destinations — travel stops require explicit selection by the user.
-  const accomPois = city.pois.filter((p) => p.category === "ACCOMMODATION");
   if (!isStop && !city.accommodationPoiId && accomPois.length > 0) {
     const firstAccom = accomPois.find((p) => p.latitude != null && p.longitude != null);
     if (firstAccom) {
@@ -506,19 +515,6 @@ export default async function CityDetailPage({
       );
     }
   }
-
-  const accommodations = accomPois.map((p) => {
-    // Use favourite's address field when available (POI description may contain notes)
-    let address: string | undefined;
-    if (p.favouriteItemId) {
-      const fav = allCountryFavs.find((f) => f.id === p.favouriteItemId);
-      address = fav?.address ?? undefined;
-    }
-    if (!address && p.description && p.description.includes(",")) {
-      address = p.description;
-    }
-    return { name: p.name, address };
-  });
 
   return (
     <div className="space-y-4">
@@ -577,8 +573,7 @@ export default async function CityDetailPage({
         isStop={isStop}
         latitude={city.latitude}
         longitude={city.longitude}
-        accommodations={isStop ? undefined : accommodations}
-        stopAccommodation={isStop ? {
+        stopAccommodation={{
           initial: (() => {
             // Show only the explicitly selected accommodation (via accommodationPoiId)
             const selectedId = city.accommodationPoiId;
@@ -606,7 +601,7 @@ export default async function CityDetailPage({
           cityLon: city.longitude,
           pois: pois.map((p) => ({ id: p.id, name: p.name, category: p.category, latitude: p.latitude, longitude: p.longitude })),
           dayPlanIds: dayPlans.map((dp) => dp.id),
-        } : undefined}
+        }}
       />
 
       {subcityTabData && (

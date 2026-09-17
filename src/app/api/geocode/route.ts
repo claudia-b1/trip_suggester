@@ -4,17 +4,17 @@ const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 /**
- * GET /api/geocode?action=autocomplete&q=...&types=address|cities&country=FR
- *   → address or city autocomplete suggestions via Google Places / Mapbox
+ * GET /api/geocode?action=autocomplete&q=...&types=address|cities|establishment&country=FR
+ *   → autocomplete suggestions via Mapbox (no Google Places)
  *
  * GET /api/geocode?action=geocode&address=...&country=FR
- *   → geocode address to lat/lng
+ *   → geocode address to lat/lng (Mapbox first, Google fallback for legacy placeId)
  *
  * GET /api/geocode?action=validate&lat=...&lng=...&country=France
- *   → check if lat/lng is within the given country
+ *   → check if lat/lng is within the given country (Mapbox first)
  *
  * GET /api/geocode?action=reverse&lat=...&lng=...
- *   → reverse geocode lat/lng to address, city, country
+ *   → reverse geocode lat/lng to address, city, country (Mapbox first)
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -40,22 +40,14 @@ export async function GET(req: Request) {
 
 async function handleAutocomplete(params: URLSearchParams) {
   const q = params.get("q");
-  const types = params.get("types") ?? "address"; // "address" | "cities"
+  const types = params.get("types") ?? "address"; // "address" | "cities" | "establishment"
   const country = params.get("country") ?? "";
 
   if (!q || q.trim().length < 2) {
     return NextResponse.json([]);
   }
 
-  // Try Google Places Autocomplete first
-  if (GOOGLE_KEY) {
-    try {
-      const result = await googleAutocomplete(q, types, country);
-      if (result) return NextResponse.json(result);
-    } catch { /* fall through */ }
-  }
-
-  // Mapbox fallback
+  // Mapbox only — no Google Places for autocomplete
   if (MAPBOX_TOKEN) {
     try {
       const result = await mapboxAutocomplete(q, types, country);
@@ -66,39 +58,8 @@ async function handleAutocomplete(params: URLSearchParams) {
   return NextResponse.json([]);
 }
 
-async function googleAutocomplete(q: string, types: string, country: string) {
-  const googleTypes = types === "cities" ? "(cities)" : "address";
-
-  const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
-  url.searchParams.set("input", q);
-  url.searchParams.set("types", googleTypes);
-  url.searchParams.set("key", GOOGLE_KEY!);
-  if (country) {
-    // Convert country name to ISO code for Google
-    const code = await countryNameToCode(country);
-    if (code) url.searchParams.set("components", `country:${code}`);
-  }
-
-  const res = await fetch(url.toString());
-  if (!res.ok) return null;
-  const data = await res.json() as {
-    predictions?: Array<{
-      place_id: string;
-      description: string;
-      structured_formatting?: { main_text: string; secondary_text: string };
-    }>;
-  };
-
-  return (data.predictions ?? []).map((p) => ({
-    placeId: p.place_id,
-    description: p.description,
-    mainText: p.structured_formatting?.main_text ?? p.description,
-    secondaryText: p.structured_formatting?.secondary_text ?? "",
-  }));
-}
-
 async function mapboxAutocomplete(q: string, types: string, country: string) {
-  const mapboxTypes = types === "cities" ? "place" : "address,poi";
+  const mapboxTypes = types === "cities" ? "place" : types === "establishment" ? "poi" : "address,poi";
   const url = new URL(
     `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(q)}.json`,
   );
@@ -143,60 +104,7 @@ async function handleGeocode(params: URLSearchParams) {
     return NextResponse.json({ error: "address or placeId required" }, { status: 400 });
   }
 
-  // Google geocode
-  if (GOOGLE_KEY) {
-    try {
-      const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-      if (placeId) {
-        url.searchParams.set("place_id", placeId);
-      } else {
-        url.searchParams.set("address", address!);
-        if (country) {
-          const code = await countryNameToCode(country);
-          if (code) url.searchParams.set("components", `country:${code}`);
-        }
-      }
-      url.searchParams.set("key", GOOGLE_KEY);
-
-      const res = await fetch(url.toString());
-      if (res.ok) {
-        const data = await res.json() as {
-          results?: Array<{
-            geometry: { location: { lat: number; lng: number } };
-            formatted_address: string;
-            address_components?: Array<{
-              long_name: string;
-              short_name: string;
-              types: string[];
-            }>;
-          }>;
-        };
-        const result = data.results?.[0];
-        if (result) {
-          // Extract city and country from address components
-          let resolvedCity = "";
-          let resolvedCountry = "";
-          for (const comp of result.address_components ?? []) {
-            if (comp.types.includes("locality")) resolvedCity = comp.long_name;
-            if (comp.types.includes("administrative_area_level_1") && !resolvedCity) {
-              resolvedCity = comp.long_name;
-            }
-            if (comp.types.includes("country")) resolvedCountry = comp.long_name;
-          }
-
-          return NextResponse.json({
-            lat: result.geometry.location.lat,
-            lng: result.geometry.location.lng,
-            formattedAddress: result.formatted_address,
-            city: resolvedCity,
-            country: resolvedCountry,
-          });
-        }
-      }
-    } catch { /* fall through */ }
-  }
-
-  // Mapbox fallback
+  // Mapbox first (for address-based geocoding)
   if (MAPBOX_TOKEN && address) {
     try {
       const url = new URL(
@@ -204,6 +112,10 @@ async function handleGeocode(params: URLSearchParams) {
       );
       url.searchParams.set("limit", "1");
       url.searchParams.set("access_token", MAPBOX_TOKEN);
+      if (country) {
+        const code = await countryNameToCode(country);
+        if (code) url.searchParams.set("country", code.toLowerCase());
+      }
 
       const res = await fetch(url.toString());
       if (res.ok) {
@@ -222,6 +134,50 @@ async function handleGeocode(params: URLSearchParams) {
             lat: feature.center[1],
             lng: feature.center[0],
             formattedAddress: feature.place_name,
+            city: resolvedCity,
+            country: resolvedCountry,
+          });
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Google fallback — only for legacy placeId lookups (Mapbox can't resolve Google Place IDs)
+  if (GOOGLE_KEY && placeId) {
+    try {
+      const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+      url.searchParams.set("place_id", placeId);
+      url.searchParams.set("key", GOOGLE_KEY);
+
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json() as {
+          results?: Array<{
+            geometry: { location: { lat: number; lng: number } };
+            formatted_address: string;
+            address_components?: Array<{
+              long_name: string;
+              short_name: string;
+              types: string[];
+            }>;
+          }>;
+        };
+        const result = data.results?.[0];
+        if (result) {
+          let resolvedCity = "";
+          let resolvedCountry = "";
+          for (const comp of result.address_components ?? []) {
+            if (comp.types.includes("locality")) resolvedCity = comp.long_name;
+            if (comp.types.includes("administrative_area_level_1") && !resolvedCity) {
+              resolvedCity = comp.long_name;
+            }
+            if (comp.types.includes("country")) resolvedCountry = comp.long_name;
+          }
+
+          return NextResponse.json({
+            lat: result.geometry.location.lat,
+            lng: result.geometry.location.lng,
+            formattedAddress: result.formatted_address,
             city: resolvedCity,
             country: resolvedCountry,
           });
@@ -256,52 +212,7 @@ async function handleValidate(params: URLSearchParams) {
     return NextResponse.json({ valid: true });
   }
 
-  // Reverse geocode to check if the point is in the given country
-  if (GOOGLE_KEY) {
-    try {
-      const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-      url.searchParams.set("latlng", `${lat},${lng}`);
-      url.searchParams.set("result_type", "country");
-      url.searchParams.set("key", GOOGLE_KEY);
-
-      const res = await fetch(url.toString());
-      if (res.ok) {
-        const data = await res.json() as {
-          results?: Array<{
-            address_components?: Array<{
-              long_name: string;
-              short_name: string;
-              types: string[];
-            }>;
-          }>;
-        };
-        const result = data.results?.[0];
-        if (result) {
-          const countryComp = result.address_components?.find((c) =>
-            c.types.includes("country"),
-          );
-          if (countryComp) {
-            // Compare by ISO code to handle translations (e.g. "Nederland" vs "Netherlands" → both "NL")
-            const userCode = await countryNameToCode(country.trim());
-            const detectedCode = countryComp.short_name.toUpperCase();
-            const matches =
-              (userCode != null && userCode === detectedCode) ||
-              countryComp.long_name.toLowerCase() === country.trim().toLowerCase() ||
-              countryComp.short_name.toLowerCase() === country.trim().toLowerCase();
-            return NextResponse.json({
-              valid: matches,
-              detectedCountry: countryComp.long_name,
-              reason: matches
-                ? undefined
-                : `Coordinates are in ${countryComp.long_name}, not ${country.trim()}`,
-            });
-          }
-        }
-      }
-    } catch { /* fall through */ }
-  }
-
-  // Mapbox fallback — reverse geocode
+  // Mapbox first — reverse geocode to check country
   if (MAPBOX_TOKEN) {
     try {
       const url = new URL(
@@ -337,6 +248,50 @@ async function handleValidate(params: URLSearchParams) {
     } catch { /* fall through */ }
   }
 
+  // Google fallback
+  if (GOOGLE_KEY) {
+    try {
+      const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
+      url.searchParams.set("latlng", `${lat},${lng}`);
+      url.searchParams.set("result_type", "country");
+      url.searchParams.set("key", GOOGLE_KEY);
+
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json() as {
+          results?: Array<{
+            address_components?: Array<{
+              long_name: string;
+              short_name: string;
+              types: string[];
+            }>;
+          }>;
+        };
+        const result = data.results?.[0];
+        if (result) {
+          const countryComp = result.address_components?.find((c) =>
+            c.types.includes("country"),
+          );
+          if (countryComp) {
+            const userCode = await countryNameToCode(country.trim());
+            const detectedCode = countryComp.short_name.toUpperCase();
+            const matches =
+              (userCode != null && userCode === detectedCode) ||
+              countryComp.long_name.toLowerCase() === country.trim().toLowerCase() ||
+              countryComp.short_name.toLowerCase() === country.trim().toLowerCase();
+            return NextResponse.json({
+              valid: matches,
+              detectedCountry: countryComp.long_name,
+              reason: matches
+                ? undefined
+                : `Coordinates are in ${countryComp.long_name}, not ${country.trim()}`,
+            });
+          }
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
   // If we can't validate, assume valid
   return NextResponse.json({ valid: true });
 }
@@ -351,7 +306,39 @@ async function handleReverse(params: URLSearchParams) {
     return NextResponse.json({ error: "Invalid lat/lng" }, { status: 400 });
   }
 
-  // Google reverse geocode
+  // Mapbox first
+  if (MAPBOX_TOKEN) {
+    try {
+      const url = new URL(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`,
+      );
+      url.searchParams.set("limit", "1");
+      url.searchParams.set("access_token", MAPBOX_TOKEN);
+
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data = await res.json() as {
+          features?: Array<{
+            place_name: string;
+            text: string;
+            context?: Array<{ id: string; text: string }>;
+          }>;
+        };
+        const feature = data.features?.[0];
+        if (feature) {
+          const resolvedCity = feature.context?.find((c) => c.id.startsWith("place"))?.text ?? "";
+          const resolvedCountry = feature.context?.find((c) => c.id.startsWith("country"))?.text ?? "";
+          return NextResponse.json({
+            address: feature.place_name,
+            city: resolvedCity,
+            country: resolvedCountry,
+          });
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // Google fallback
   if (GOOGLE_KEY) {
     try {
       const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
@@ -383,38 +370,6 @@ async function handleReverse(params: URLSearchParams) {
           }
           return NextResponse.json({
             address: result.formatted_address,
-            city: resolvedCity,
-            country: resolvedCountry,
-          });
-        }
-      }
-    } catch { /* fall through */ }
-  }
-
-  // Mapbox fallback
-  if (MAPBOX_TOKEN) {
-    try {
-      const url = new URL(
-        `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json`,
-      );
-      url.searchParams.set("limit", "1");
-      url.searchParams.set("access_token", MAPBOX_TOKEN);
-
-      const res = await fetch(url.toString());
-      if (res.ok) {
-        const data = await res.json() as {
-          features?: Array<{
-            place_name: string;
-            text: string;
-            context?: Array<{ id: string; text: string }>;
-          }>;
-        };
-        const feature = data.features?.[0];
-        if (feature) {
-          const resolvedCity = feature.context?.find((c) => c.id.startsWith("place"))?.text ?? "";
-          const resolvedCountry = feature.context?.find((c) => c.id.startsWith("country"))?.text ?? "";
-          return NextResponse.json({
-            address: feature.place_name,
             city: resolvedCity,
             country: resolvedCountry,
           });

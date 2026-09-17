@@ -35,7 +35,7 @@ type LocatedPoi = {
   openingHours?: string | null;
 };
 
-export type DayPlanOption = { id: number; label: string };
+export type DayPlanOption = { id: number; label: string; assignedPoiIds?: number[] };
 
 /** A recommendation item shown as a preview marker on the map (not yet committed as a POI) */
 export type RecommendationMarker = {
@@ -301,6 +301,52 @@ function PopupContent({
   const [hoverStar, setHoverStar] = useState<number | null>(null);
   const isAccommodation = poi.category === "ACCOMMODATION";
 
+  // Multi-day accommodation assignment state
+  const [accomPopoverOpen, setAccomPopoverOpen] = useState(false);
+  const alreadyAssignedDayIds = useMemo(
+    () => new Set(dayPlans.filter((d) => d.assignedPoiIds?.includes(poi.id)).map((d) => d.id)),
+    [dayPlans, poi.id],
+  );
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(() => new Set(alreadyAssignedDayIds));
+  const [assigningMulti, setAssigningMulti] = useState(false);
+
+  // Re-sync when alreadyAssignedDayIds changes (e.g. after router.refresh)
+  useEffect(() => {
+    setSelectedDays(new Set(alreadyAssignedDayIds));
+  }, [alreadyAssignedDayIds]);
+
+  function toggleDay(id: number) {
+    setSelectedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function assignAccomMulti() {
+    if (selectedDays.size === 0) return;
+    setAssigningMulti(true);
+    const res = await fetch("/api/day-plans/batch-assign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        poiId: poi.id,
+        dayPlanIds: [...selectedDays],
+        timeSlot: "EVENING",
+      }),
+    });
+    setAssigningMulti(false);
+    if (res.ok) {
+      const data = await res.json();
+      toast(`${poi.name} assigned to ${data.created} day${data.created !== 1 ? "s" : ""}!`);
+      setAccomPopoverOpen(false);
+      setSelectedDays(new Set());
+      router.refresh();
+    } else {
+      toast("Failed to assign", { variant: "error" });
+    }
+  }
+
   const currentRating = userRatings?.[poi.id];
   const displayStars = hoverStar ?? currentRating ?? 0;
 
@@ -328,46 +374,115 @@ function PopupContent({
       </div>
       {/* Drag to timeline (desktop) / Add to timeline (mobile) */}
       {dayPlans.length > 0 && (
-        <>
-          {/* Desktop: draggable + clickable */}
-          <div
-            draggable
-            onDragStart={(e) => {
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData("application/x-poi-id", String(poi.id));
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
-                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
-              }));
-            }}
-            className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/40 transition-colors"
-            title="Drag to timeline"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
-              <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
-              <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
-            </svg>
-            <span className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
+        isAccommodation ? (
+          /* Accommodation: multi-day assignment inline */
+          <div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setAccomPopoverOpen((v) => !v); }}
+              className="flex w-full items-center gap-1.5 rounded-md border border-dashed border-indigo-300 dark:border-indigo-700 px-2 py-1.5 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
+            >
+              <span className="text-xs">🏠</span>
+              <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">Assign to days</span>
+            </button>
+            {accomPopoverOpen && (
+              <div className="mt-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/20 p-2.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                    Select days
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setSelectedDays(new Set(dayPlans.map((d) => d.id)))} className="text-xs text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300">
+                      Select all
+                    </button>
+                    <button type="button" onClick={() => { setAccomPopoverOpen(false); setSelectedDays(new Set(alreadyAssignedDayIds)); }} className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]">
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                <div className="max-h-[160px] overflow-y-auto space-y-0.5">
+                  {dayPlans.map((d) => {
+                    const alreadyAssigned = alreadyAssignedDayIds.has(d.id);
+                    return (
+                      <label
+                        key={d.id}
+                        className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs hover:bg-indigo-100/50 dark:hover:bg-indigo-900/20 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDays.has(d.id)}
+                          onChange={() => toggleDay(d.id)}
+                          disabled={assigningMulti}
+                          className="rounded border-indigo-300"
+                        />
+                        <span>{d.label}</span>
+                        {alreadyAssigned && (
+                          <span className="ml-auto text-xs text-indigo-400 dark:text-indigo-500">✓ assigned</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                {(() => {
+                  const newDays = [...selectedDays].filter((id) => !alreadyAssignedDayIds.has(id));
+                  return newDays.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={assignAccomMulti}
+                      disabled={assigningMulti}
+                      className="w-full rounded-md bg-indigo-500 px-2 py-1.5 text-xs font-medium text-white hover:bg-indigo-600 disabled:opacity-50 transition-colors"
+                    >
+                      {assigningMulti ? "Assigning…" : `Assign to ${newDays.length} new day${newDays.length !== 1 ? "s" : ""}`}
+                    </button>
+                  ) : selectedDays.size > 0 ? (
+                    <p className="text-xs text-center text-indigo-400">Already assigned to all selected days</p>
+                  ) : null;
+                })()}
+              </div>
+            )}
           </div>
-          {/* Mobile: tap to add to timeline */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
-                detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
-              }));
-            }}
-            className="lg:hidden flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/30 px-2 py-1.5 hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/50 transition-colors"
-            title="Add to timeline"
-          >
-            <span className="text-xs">📅</span>
-            <span className="text-xs font-medium text-[hsl(var(--primary))]">Add to timeline</span>
-          </button>
-        </>
+        ) : (
+          <>
+            {/* Desktop: draggable + clickable */}
+            <div
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "copy";
+                e.dataTransfer.setData("application/x-poi-id", String(poi.id));
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                  detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+                }));
+              }}
+              className="hidden lg:flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--border))] px-2 py-1.5 cursor-grab active:cursor-grabbing hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/40 transition-colors"
+              title="Drag to timeline"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-[hsl(var(--muted-foreground))]" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/>
+                <rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/>
+                <rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/>
+              </svg>
+              <span className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Drag to timeline</span>
+            </div>
+            {/* Mobile: tap to add to timeline */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent("assign-poi-to-timeline", {
+                  detail: { poiId: poi.id, poiName: poi.name, poiCategory: poi.category },
+                }));
+              }}
+              className="lg:hidden flex items-center gap-1.5 rounded-md border border-dashed border-[hsl(var(--primary))]/30 px-2 py-1.5 hover:bg-[hsl(var(--muted))] hover:border-[hsl(var(--primary))]/50 transition-colors"
+              title="Add to timeline"
+            >
+              <span className="text-xs">📅</span>
+              <span className="text-xs font-medium text-[hsl(var(--primary))]">Add to timeline</span>
+            </button>
+          </>
+        )
       )}
       {(poi.llmDescription || poi.description) && (() => {
         const desc = poi.llmDescription || poi.description!;
