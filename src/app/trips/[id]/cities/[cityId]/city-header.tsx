@@ -192,70 +192,24 @@ export function CityHeader({
       try {
         const lat = stopAccommodation?.cityLat;
         const lon = stopAccommodation?.cityLon;
-
-        // Search via server-side geocode API (Google Places → Mapbox fallback)
-        // in parallel: address search + establishment search + Mapbox client-side
-        const addressParams = new URLSearchParams({
-          action: "autocomplete",
-          q: query.trim(),
-          types: "address",
-        });
-        const establishmentParams = new URLSearchParams({
-          action: "autocomplete",
-          q: query.trim(),
-          types: "establishment",
-        });
         const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        if (!token) { setAccomResults([]); setAccomResultsOpen(false); return; }
+
         const proximity = lat != null && lon != null ? `&proximity=${lon},${lat}` : "";
-        const mapboxUrl = token
-          ? `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query.trim())}.json` +
-            `?types=poi,address,place&limit=5${proximity}&access_token=${token}`
-          : null;
+        const mapboxUrl =
+          `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query.trim())}.json` +
+          `?types=poi,address,place&limit=8${proximity}&access_token=${token}`;
 
-        const [addressRes, establishmentRes, mapboxRes] = await Promise.all([
-          fetch(`/api/geocode?${addressParams}`).then((r) => r.ok ? r.json() : []).catch(() => []),
-          fetch(`/api/geocode?${establishmentParams}`).then((r) => r.ok ? r.json() : []).catch(() => []),
-          mapboxUrl ? fetch(mapboxUrl).then((r) => r.ok ? r.json() : { features: [] }).catch(() => ({ features: [] })) : Promise.resolve({ features: [] }),
-        ]);
-        // Combine address + establishment results from Google
-        const geocodeRes = [...(establishmentRes as unknown[]), ...(addressRes as unknown[])];
+        const mapboxRes = await fetch(mapboxUrl)
+          .then((r) => r.ok ? r.json() : { features: [] })
+          .catch(() => ({ features: [] }));
 
-        // Merge results: geocode API results (Google Places) first, then Mapbox
         type Result = { id: string; place_name: string; text: string; center: [number, number] };
         const results: Result[] = [];
         const seen = new Set<string>();
-
-        // Add Google Places results (via geocode API) — need to resolve placeId → coords
-        for (const r of (geocodeRes as Array<{ placeId: string; description: string; mainText: string; secondaryText: string; lat?: number; lng?: number }>)) {
-          if (r.lat != null && r.lng != null) {
-            const key = `${r.lat.toFixed(4)},${r.lng.toFixed(4)}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              results.push({ id: r.placeId, place_name: r.description, text: r.mainText, center: [r.lng, r.lat] });
-            }
-          } else if (r.placeId) {
-            // Resolve coordinates via geocode endpoint
-            try {
-              const geoRes = await fetch(`/api/geocode?action=geocode&placeId=${r.placeId}`);
-              if (geoRes.ok) {
-                const geo = await geoRes.json() as { lat: number; lng: number; formattedAddress: string };
-                const key = `${geo.lat.toFixed(4)},${geo.lng.toFixed(4)}`;
-                if (!seen.has(key)) {
-                  seen.add(key);
-                  results.push({ id: r.placeId, place_name: r.description, text: r.mainText, center: [geo.lng, geo.lat] });
-                }
-              }
-            } catch { /* skip */ }
-          }
-        }
-
-        // Add Mapbox results
-        for (const f of (mapboxRes.features ?? []) as Array<{ id: string; place_name: string; text: string; center: [number, number] }>) {
+        for (const f of (mapboxRes.features ?? []) as Result[]) {
           const key = `${f.center[1].toFixed(4)},${f.center[0].toFixed(4)}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            results.push(f);
-          }
+          if (!seen.has(key)) { seen.add(key); results.push(f); }
         }
 
         setAccomResults(results.slice(0, 8));
