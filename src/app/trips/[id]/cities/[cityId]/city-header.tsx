@@ -90,8 +90,7 @@ export type CityHeaderProps = {
   /** City coordinates for map centering */
   latitude?: number | null;
   longitude?: number | null;
-  accommodations?: { name: string; address?: string }[];
-  /** Stop-only: interactive accommodation picker data */
+  /** Interactive accommodation picker data */
   stopAccommodation?: {
     initial: { id: number; name: string; latitude: number; longitude: number; address?: string } | null;
     favourites: FavouriteItemDTO[];
@@ -127,7 +126,6 @@ export function CityHeader({
   isStop,
   latitude,
   longitude,
-  accommodations,
   stopAccommodation,
 }: CityHeaderProps) {
   const router = useRouter();
@@ -327,7 +325,7 @@ export function CityHeader({
                 className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--primary))] transition-colors mb-0.5 flex items-center gap-1"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-                Sub-destination of {parentCity.name}
+                Day trip from {parentCity.name}
               </button>
             )}
             <div className="flex items-center gap-2">
@@ -405,8 +403,8 @@ export function CityHeader({
         )}
       </div>
 
-      {/* Accommodation — interactive picker for stops, static list for destinations */}
-      {isStop && stopAccommodation ? (
+      {/* Accommodation — interactive picker */}
+      {stopAccommodation ? (
         <div className="space-y-1">
           <div className="flex items-start sm:items-center gap-2 text-sm">
             <span className="shrink-0 mt-0.5 sm:mt-0">🏠</span>
@@ -519,25 +517,6 @@ export function CityHeader({
               )}
             </div>
           )}
-        </div>
-      ) : accommodations && accommodations.length > 0 ? (
-        <div className="flex items-start gap-2 text-sm">
-          <span className="shrink-0 mt-0.5">🏠</span>
-          <div className="flex flex-col gap-0.5 min-w-0">
-            {accommodations.map((a, i) => (
-              <div key={i} className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-medium truncate">{a.name}</span>
-                  {a.address && a.address !== a.name && (
-                    <span className="hidden sm:inline text-xs text-[hsl(var(--primary))]/70 truncate">{a.address}</span>
-                  )}
-                </div>
-                {a.address && a.address !== a.name && (
-                  <p className="sm:hidden text-xs text-[hsl(var(--primary))]/70 truncate">{a.address}</p>
-                )}
-              </div>
-            ))}
-          </div>
         </div>
       ) : null}
 
