@@ -67,7 +67,7 @@ async function handleAutocomplete(params: URLSearchParams) {
 }
 
 async function googleAutocomplete(q: string, types: string, country: string) {
-  const googleTypes = types === "cities" ? "(cities)" : "address";
+  const googleTypes = types === "cities" ? "(cities)" : types === "establishment" ? "establishment" : "address";
 
   const url = new URL("https://maps.googleapis.com/maps/api/place/autocomplete/json");
   url.searchParams.set("input", q);
