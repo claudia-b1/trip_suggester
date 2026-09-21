@@ -117,7 +117,7 @@ type MapStyleKey = keyof typeof MAP_STYLES;
 
 // ─── Cluster helpers ──────────────────────────────────────────────────────────
 
-type ClusterCell = { pois: LocatedPoi[]; lat: number; lng: number };
+type ClusterCell = { key: string; pois: LocatedPoi[]; lat: number; lng: number };
 
 function clusterPois(pois: LocatedPoi[], zoom: number): ClusterCell[] {
   // Smaller divisor → each cell is larger → less aggressive clustering
@@ -129,7 +129,8 @@ function clusterPois(pois: LocatedPoi[], zoom: number): ClusterCell[] {
     cell.push(p);
     grid.set(key, cell);
   }
-  return Array.from(grid.values()).map((cell) => ({
+  return Array.from(grid.entries()).map(([key, cell]) => ({
+    key,
     pois: cell,
     lat: cell.reduce((s, p) => s + p.latitude, 0) / cell.length,
     lng: cell.reduce((s, p) => s + p.longitude, 0) / cell.length,
@@ -750,6 +751,8 @@ export function PoiMapImpl(props: PoiMapProps) {
   const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(null);
   const [hoverPreviewId, setHoverPreviewId] = useState<string | null>(null);
   const [previewPopupPos, setPreviewPopupPos] = useState<{ x: number; y: number } | null>(null);
+  const [activeClusterKey, setActiveClusterKey] = useState<string | null>(null);
+  const [clusterPopupPos, setClusterPopupPos] = useState<{ x: number; y: number } | null>(null);
 
   // ── User location (in-memory only, never cached/saved) ──────────────────
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -984,6 +987,24 @@ export function PoiMapImpl(props: PoiMapProps) {
     return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [popupCluster, mapReady]);
+
+  // Track screen position of active POI cluster popup
+  const activeCluster = activeClusterKey ? clusters.find((c) => c.key === activeClusterKey) : null;
+  useEffect(() => {
+    if (!activeCluster || !mapRef.current || !mapReady) { setClusterPopupPos(null); return; }
+    const clusterRef = activeCluster;
+    function updatePos() {
+      if (!mapRef.current) return;
+      const pt = mapRef.current.project([clusterRef.lng, clusterRef.lat]);
+      setClusterPopupPos({ x: pt.x, y: pt.y });
+    }
+    updatePos();
+    const mapInstance = mapRef.current.getMap();
+    mapInstance.on("move", updatePos);
+    mapInstance.on("zoom", updatePos);
+    return () => { mapInstance.off("move", updatePos); mapInstance.off("zoom", updatePos); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCluster, mapReady]);
 
   // Fly to highlighted preview marker when triggered from card click.
   // Deps include mapReady (map may not be loaded when the highlight is first
@@ -1324,6 +1345,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         onClick={() => {
           setActiveId(null);
           setActiveFavId(null);
+          setActiveClusterKey(null);
           setActivePreviewClusterKey(null);
           setActivePreviewId(null);
           setExpandedPreviewId(null);
@@ -1408,7 +1430,12 @@ export function PoiMapImpl(props: PoiMapProps) {
                 anchor="center"
                 onClick={(e) => {
                   e.originalEvent.stopPropagation();
-                  mapRef.current?.flyTo({ center: [cell.lng, cell.lat], zoom: zoom + 2, duration: 500 });
+                  if (zoom >= 14) {
+                    setActiveClusterKey((prev) => prev === cell.key ? null : cell.key);
+                    setActiveId(null);
+                  } else {
+                    mapRef.current?.flyTo({ center: [cell.lng, cell.lat], zoom: zoom + 2, duration: 500 });
+                  }
                 }}
               >
                 <div className="cursor-pointer">
@@ -1430,6 +1457,7 @@ export function PoiMapImpl(props: PoiMapProps) {
                 e.originalEvent.stopPropagation();
                 const newId = activeId === poi.id ? null : poi.id;
                 setActiveId(newId);
+                setActiveClusterKey(null);
                 if (newId != null && mapRef.current) {
                   const map = mapRef.current;
                   const point = map.project([poi.longitude, poi.latitude]);
@@ -1782,6 +1810,56 @@ export function PoiMapImpl(props: PoiMapProps) {
           {/* Arrow tip */}
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
             <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid rgb(251, 207, 232)" }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
+          </div>
+        </div>
+      )}
+
+      {/* POI cluster popup — shows all POIs when cluster is clicked at high zoom */}
+      {activeCluster && clusterPopupPos && (
+        <div
+          className="absolute z-30 pointer-events-auto"
+          style={{ left: clusterPopupPos.x, top: clusterPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        >
+          <div className="relative rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-xl p-3 max-w-[280px]">
+            <button
+              type="button"
+              onClick={() => setActiveClusterKey(null)}
+              className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] text-xs z-10"
+              aria-label="Close"
+            >✕</button>
+            <div className="space-y-1 pr-4 max-h-[300px] overflow-y-auto">
+              <p className="text-xs font-medium text-[hsl(var(--muted-foreground))] mb-1">{activeCluster.pois.length} places here</p>
+              {activeCluster.pois.map((p) => {
+                const catStyle = CATEGORY_STYLES[p.category] ?? CATEGORY_STYLES.CULTURE;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveClusterKey(null);
+                      setActiveId(p.id);
+                    }}
+                    className="flex items-center gap-1.5 w-full text-left px-2 py-1.5 rounded-md border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/50 transition-colors"
+                  >
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: catStyle.dot }}
+                    />
+                    <span className="text-xs leading-tight truncate flex-1">{p.name}</span>
+                    {p.rating != null && (
+                      <span className="text-xs text-[hsl(var(--muted-foreground))] shrink-0">★ {p.rating.toFixed(1)}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {/* Arrow tip */}
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid hsl(var(--border))" }} />
           </div>
           <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
             <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />

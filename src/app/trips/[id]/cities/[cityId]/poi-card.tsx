@@ -364,6 +364,7 @@ export function PoiCard({
   onChangeCategory,
   onUploadPhoto,
   onEdit,
+  isRecommended,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -383,6 +384,7 @@ export function PoiCard({
   onChangeCategory: (poiId: number, cat: Category) => void;
   onUploadPhoto: (poiId: number, dataUri: string) => void;
   onEdit: (poi: PoiDTO) => void;
+  isRecommended?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -511,6 +513,9 @@ export function PoiCard({
           {/* UNESCO badge */}
           {poi.isUnescoSite && (
             <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-indigo-700 px-1.5 py-0.5 text-xs font-bold text-white shadow">🏛 UNESCO</span>
+          )}
+          {isRecommended && (
+            <span className={`absolute ${poi.isUnescoSite ? "left-[5.5rem]" : "left-1.5"} top-1.5 z-10 rounded-full bg-amber-600 px-1.5 py-0.5 text-xs font-bold text-white shadow`}>Recommended</span>
           )}
 
           {/* Bottom overlay: visited/assigned · user stars · ✕ · delete */}

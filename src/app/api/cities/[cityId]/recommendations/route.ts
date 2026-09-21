@@ -344,6 +344,86 @@ export async function POST(
     }
   }
 
+  // ── 1d. MUST-VISIT INJECTION — fill gaps from LLM reference list ────────────
+  // Generate a must-visit list, check which names are missing from discovery,
+  // then resolve them via Geoapify name search (with local-name fallback) or
+  // Google Places. Injected places enter the normal pre-scan → scoring pipeline.
+  let mustVisitNames: string[] = [];
+  let injectedGoogleMetaMap = new Map<string, GoogleMeta>();
+  try {
+    const { getMustVisitList, injectMustVisitPlaces, classifyGoogleTypes } = await import("@/lib/recommendations/must-visit");
+    mustVisitNames = await getMustVisitList(
+      cityIdNum,
+      city.name,
+      city.country ?? "",
+      center?.lat ?? 0,
+      center?.lon ?? 0,
+      categories,
+    );
+
+    if (mustVisitNames.length && center) {
+      const allDiscovered = categories.flatMap((cat) => discoveryByCategory[cat] ?? []);
+      const { places: injectedPlaces, googleMetaByPlaceId: injectedGoogleMeta } =
+        await injectMustVisitPlaces(mustVisitNames, allDiscovered, city.name, city.country ?? "", center.lat, center.lon, radiusKm);
+
+      // Add injected places to the best-matching category's discovery list.
+      // Match the place's Geoapify tags against CATEGORY_CATEGORIES to find
+      // the right bucket (e.g. a restaurant goes to FOOD, not CULTURE).
+      //
+      // First pass: tag-based routing. Collect unmatched places for LLM classification.
+      const matched: Array<{ place: DiscoveredPlace; cat: string }> = [];
+      const unmatched: Array<{ place: DiscoveredPlace; primaryType: string }> = [];
+      for (const place of injectedPlaces) {
+        let bestCat = categories[0];
+        let bestHits = 0;
+        for (const cat of categories) {
+          const catTags = (CATEGORY_CATEGORIES[cat as RecommendableCategory] ?? "").split(",").map((s) => s.trim());
+          const hits = place.categories.filter((t) =>
+            catTags.some((ct) => t === ct || t.startsWith(ct + ".") || ct.startsWith(t + ".")),
+          ).length;
+          if (hits > bestHits) { bestHits = hits; bestCat = cat; }
+        }
+        if (bestHits > 0) {
+          matched.push({ place, cat: bestCat });
+        } else {
+          // Try to find the Google primaryType for LLM classification
+          const gMeta = injectedGoogleMeta.get(place.placeId);
+          if (gMeta?.primaryType) {
+            unmatched.push({ place, primaryType: gMeta.primaryType });
+          } else {
+            // No primaryType available — fall back to first category
+            matched.push({ place, cat: categories[0] });
+          }
+        }
+      }
+
+      // LLM classification for unmatched types (single batched call, cached by type)
+      if (unmatched.length) {
+        const llmResults = await classifyGoogleTypes(
+          unmatched.map((u) => ({ name: u.place.name, primaryType: u.primaryType })),
+          categories,
+        );
+        for (const { place, primaryType } of unmatched) {
+          const llmCat = llmResults.get(primaryType.toLowerCase());
+          const cat = llmCat && (categories as string[]).includes(llmCat) ? llmCat : categories[0];
+          console.log(`[type-classify] "${place.name}" (${primaryType}) → ${cat}${llmCat ? " (LLM)" : " (fallback)"}`);
+          matched.push({ place, cat });
+        }
+      }
+
+      // Add all to discovery buckets
+      for (const { place, cat } of matched) {
+        if (!discoveryByCategory[cat]) discoveryByCategory[cat] = [];
+        discoveryByCategory[cat].push(place);
+      }
+
+      // Store for merging into googleMetaMap after pre-scan
+      injectedGoogleMetaMap = injectedGoogleMeta;
+    }
+  } catch (e) {
+    console.error("[recommendations] must-visit injection failed:", e);
+  }
+
   // ── 2. GOOGLE PRE-SCAN — filtered candidates only, to stay within the 100 req/day quota ────
   //
   // Strategy:
@@ -450,16 +530,66 @@ export async function POST(
         // Use the POI's actual city from Geoapify rather than the trip city.
         // This prevents wrong Google matches for nearby places in different municipalities.
         const queryCityName = place.poiCityName ?? city.name;
-        const meta = await withEnrichCache<GoogleMeta>(
+        let meta = await withEnrichCache<GoogleMeta>(
           place.placeId,
           "google-meta",
           () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName, place.address),
           undefined,   // ttlDays — use default
           nearbyOnlyPlaceIds.has(place.placeId), // skipCachedNull for nearby (cache-healing for old wrong-city nulls)
         );
+        // Stale cache migration: entries cached before primaryType was added to
+        // the Google field mask are missing it. Re-fetch to get the full data.
+        if (meta && !meta.primaryType) {
+          meta = await withEnrichCache<GoogleMeta>(
+            place.placeId,
+            "google-meta",
+            () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName, place.address),
+            0,  // force cache miss by setting TTL to 0
+          );
+        }
         googleMetaMap.set(place.placeId, meta);
       }),
     );
+  }
+
+  // Merge pre-resolved Google meta for must-visit Google-fallback places
+  for (const [placeId, meta] of injectedGoogleMetaMap) {
+    if (!googleMetaMap.has(placeId)) googleMetaMap.set(placeId, meta);
+  }
+
+  // ── Google-based reclassification ─────────────────────────────────────────
+  // Geoapify sometimes miscategorises places (e.g. a wine bar tagged as
+  // "tourism.attraction.artwork.statue"). After the Google prescan we know the
+  // Google primaryType, which is usually correct. Move places whose Google type
+  // clearly belongs to a different selected category.
+  {
+    const { googleTypeToCategoryKey } = await import("@/lib/recommendations/must-visit");
+    let reclassified = 0;
+    for (const sourceCat of categories) {
+      const places = discoveryByCategory[sourceCat];
+      if (!places) continue;
+      const toRemove: Set<string> = new Set();
+      for (const place of places) {
+        const gMeta = googleMetaMap.get(place.placeId);
+        if (!gMeta?.primaryType) {
+          if (gMeta) console.log(`[reclassify] "${place.name}" in ${sourceCat} has Google match but no primaryType`);
+          continue;
+        }
+        const correctCat = googleTypeToCategoryKey(gMeta.primaryType);
+        if (!correctCat || correctCat === sourceCat) continue;
+        // Only move if the correct category is one the user selected
+        if (!(categories as string[]).includes(correctCat)) continue;
+        console.log(`[reclassify] "${place.name}" ${sourceCat} → ${correctCat} (Google type: ${gMeta.primaryType})`);
+        if (!discoveryByCategory[correctCat]) discoveryByCategory[correctCat] = [];
+        discoveryByCategory[correctCat].push(place);
+        toRemove.add(place.placeId);
+        reclassified++;
+      }
+      if (toRemove.size) {
+        discoveryByCategory[sourceCat] = places.filter((p) => !toRemove.has(p.placeId));
+      }
+    }
+    if (reclassified) console.log(`[reclassify] moved ${reclassified} places based on Google primaryType`);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -702,6 +832,9 @@ export async function POST(
         hasOpeningHours:  !!(meta?.openingHours ?? place.openingHours),
         hasPhone:         !!(meta?.phoneNumber ?? place.tel),
         hasWebsite:       !!(meta?.website ?? place.website),
+        poiName:          place.name,
+        poiNameInternational: place.nameInternational,
+        mustVisitNames,
       });
       return { place, score: breakdown.total, breakdown, meta: meta ?? null, distKm };
     });
@@ -753,8 +886,12 @@ export async function POST(
       console.log(`  [no-google-match] "${item.place.name}" addr=${item.place.address ?? "?"}`);
     }
 
+    // Over-select by 50% to compensate for cluster suppression (which
+    // removes same-category POIs within 200m of each other). The post-
+    // cluster trim in step 4c brings each category back to the user's limit.
+    const overSelectLimit = Math.ceil(limit * 1.5);
     const { selected: selectedRegular, coordDupSet: regularCoordDupSet } =
-      selectTopN(qualifiedRegular, limit, new Set(), cat);
+      selectTopN(qualifiedRegular, overSelectLimit, new Set(), cat);
 
     const selectedRegularIds = new Set(selectedRegular.map((s) => s.place.placeId));
 
@@ -822,6 +959,9 @@ export async function POST(
           googleCoordScore:   computeCoordScore(place.latitude, place.longitude, meta),
           distanceFromCityKm: distKm,
           nameMatchScore:     computeNameMatch(place.name, meta),
+          poiName:            place.name,
+          poiNameInternational: place.nameInternational,
+          mustVisitNames,
         });
         return { place, score: breakdown.total, breakdown, meta: meta ?? null, distKm };
       });
@@ -934,18 +1074,20 @@ export async function POST(
   });
 
   // Sort within each category by final score.
-  // Regular POIs: trim to the user's per-category limit.
+  // Regular POIs: over-select (1.5×) before cluster suppression; the post-
+  // cluster trim (step 4c) will bring each category back to the user's limit.
   // Nearby POIs: always keep up to 30 — independent of the max filter.
   const NEARBY_RERANK_LIMIT = 30;
   const finalPois: typeof reScored = [];
   for (const cat of categories) {
     const limit = counts[cat] ?? 10;
+    const overSelectLimit = Math.ceil(limit * 1.5);
     const catEntries = reScored.filter((e) => e.category === cat);
 
     const regularEntries = catEntries
       .filter((e) => !nearbyOnlyPlaceIds.has(e.poi.placeId ?? ""))
       .sort((a, b) => b.finalScore - a.finalScore)
-      .slice(0, limit);
+      .slice(0, overSelectLimit);
 
     const nearbyEntries = catEntries
       .filter((e) => nearbyOnlyPlaceIds.has(e.poi.placeId ?? ""))
@@ -958,10 +1100,47 @@ export async function POST(
   // ── 4c. CLUSTER DETECTION — group 3+ same-category POIs within 200 m ────────
   // When a food court or museum complex produces multiple nearby results,
   // keep only the best-scored one and annotate it with "+N more nearby".
+  //
+  // Exception: must-visit places (injected from LLM reference list) are never
+  // suppressed. These are verified-notable landmarks that may cluster in a
+  // historic city centre (e.g. Temple, Forum, Castle all within 200 m in Pula)
+  // but are genuinely distinct places the user should see.
   const CLUSTER_RADIUS_M = 200;
   const CLUSTER_MIN_SIZE = 3;
   const clusterInfo = new Map<string, { count: number; names: string[] }>(); // placeId → info
   const suppressedByCluster = new Set<string>();
+
+  // Build a set of must-visit-protected placeIds: injected synthetic places
+  // (placeId starts with "must-visit-") and places that matched a must-visit
+  // name (got the +12 scoring boost via local or international name).
+  const mustVisitProtected = new Set<string>();
+  for (const entry of finalPois) {
+    const pid = entry.poi.placeId ?? "";
+    if (pid.startsWith("must-visit-")) {
+      mustVisitProtected.add(pid);
+      continue;
+    }
+    // Check if this place's name matches any must-visit name
+    if (mustVisitNames.length && entry.poi.name) {
+      for (const mv of mustVisitNames) {
+        if (nameSimilarity(entry.poi.name, mv) >= 0.8) { mustVisitProtected.add(pid); break; }
+      }
+    }
+  }
+  // Also check discovered places' international names (available before enrichment)
+  if (mustVisitNames.length) {
+    const allDiscoveredForIntl = categories.flatMap((cat) => discoveryByCategory[cat] ?? []);
+    for (const dp of allDiscoveredForIntl) {
+      if (!dp.nameInternational || mustVisitProtected.has(dp.placeId)) continue;
+      for (const mv of mustVisitNames) {
+        let matched = false;
+        for (const intlName of Object.values(dp.nameInternational)) {
+          if (nameSimilarity(intlName, mv) >= 0.8) { matched = true; break; }
+        }
+        if (matched) { mustVisitProtected.add(dp.placeId); break; }
+      }
+    }
+  }
 
   // Group by category first
   const byCat = new Map<string, typeof finalPois>();
@@ -971,12 +1150,23 @@ export async function POST(
     byCat.set(entry.category, arr);
   }
 
-  for (const [, catEntries] of byCat) {
+  // Categories exempt from cluster suppression: food, nightlife, shopping,
+  // groceries. Multiple restaurants/bars/shops near each other are distinct
+  // options, not duplicates of the same landmark.
+  const CLUSTER_EXEMPT_CATS = new Set(["FOOD", "NIGHTLIFE", "SHOPPING", "GROCERIES"]);
+
+  for (const [cat, catEntries] of byCat) {
+    if (CLUSTER_EXEMPT_CATS.has(cat)) continue;
     // Build adjacency: which POIs are within CLUSTER_RADIUS_M of each other?
+    // Must-visit-protected POIs don't form edges — they can't be clustered.
     const n = catEntries.length;
     const neighbors: number[][] = Array.from({ length: n }, () => []);
     for (let i = 0; i < n; i++) {
+      const pidI = catEntries[i].poi.placeId ?? "";
+      if (mustVisitProtected.has(pidI)) continue;
       for (let j = i + 1; j < n; j++) {
+        const pidJ = catEntries[j].poi.placeId ?? "";
+        if (mustVisitProtected.has(pidJ)) continue;
         const d = haversineKm(
           catEntries[i].poi.latitude, catEntries[i].poi.longitude,
           catEntries[j].poi.latitude, catEntries[j].poi.longitude,
@@ -1022,11 +1212,22 @@ export async function POST(
     }
   }
 
-  // Remove suppressed POIs from finalPois
-  const clusteredFinalPois = finalPois.filter(
+  // Remove suppressed POIs from finalPois, then trim each category back to
+  // the user's actual limit (we over-selected by 1.5× to absorb cluster losses).
+  const afterCluster = finalPois.filter(
     (e) => !suppressedByCluster.has(e.poi.placeId ?? ""),
   );
-  console.log(`[clustering] suppressed=${suppressedByCluster.size} clusters=${clusterInfo.size}`);
+  const clusteredFinalPois: typeof finalPois = [];
+  for (const cat of categories) {
+    const limit = counts[cat] ?? 10;
+    const catRegular = afterCluster
+      .filter((e) => e.category === cat && !nearbyOnlyPlaceIds.has(e.poi.placeId ?? ""))
+      .slice(0, limit);
+    const catNearby = afterCluster
+      .filter((e) => e.category === cat && nearbyOnlyPlaceIds.has(e.poi.placeId ?? ""));
+    clusteredFinalPois.push(...catRegular, ...catNearby);
+  }
+  console.log(`[clustering] suppressed=${suppressedByCluster.size} clusters=${clusterInfo.size} mustVisitProtected=${mustVisitProtected.size}`);
 
   // Map placeId → subcategory for final POI insert
   const poiSubcategoryMap = new Map<string, string | null>();
