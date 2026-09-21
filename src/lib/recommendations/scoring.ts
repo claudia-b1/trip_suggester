@@ -218,6 +218,12 @@ export function scoreRegularPoi(f: {
   hasWebsite?: boolean;
   /** Name similarity between Geoapify and Google match (0–1) */
   nameMatchScore?: number;
+  /** POI name — used for must-visit matching */
+  poiName?: string;
+  /** International name variants (e.g. {"en": "Temple of Augustus"}) — for cross-language must-visit matching */
+  poiNameInternational?: Record<string, string>;
+  /** LLM must-visit reference names for this city */
+  mustVisitNames?: string[];
 }): ScoreBreakdown {
   // Rating (0–30): Google 0–5 scale
   const rating = f.rating !== undefined ? (f.rating / 5) * 30 : 15;
@@ -268,11 +274,26 @@ export function scoreRegularPoi(f: {
     googleCoordPenalty = 10;
   }
 
-  const rawTotal = rating + proximity + notability + unesco + photo + categoryMatch + infoCompleteness;
+  // Must-visit boost (+12): LLM-generated reference list of notable places.
+  // Checks the local name AND all international names (e.g. name:en) to handle
+  // cross-language matching like "Augustov Hram" ↔ "Temple of Augustus".
+  let mustVisitBoost = 0;
+  if (f.poiName && f.mustVisitNames?.length) {
+    outer: for (const mv of f.mustVisitNames) {
+      if (nameSimilarity(f.poiName, mv) >= 0.8) { mustVisitBoost = 12; break; }
+      if (f.poiNameInternational) {
+        for (const intlName of Object.values(f.poiNameInternational)) {
+          if (nameSimilarity(intlName, mv) >= 0.8) { mustVisitBoost = 12; break outer; }
+        }
+      }
+    }
+  }
+
+  const rawTotal = rating + proximity + notability + unesco + photo + categoryMatch + infoCompleteness + mustVisitBoost;
   const total = Math.max(0, rawTotal - googleCoordPenalty);
 
   return {
-    rating, proximity, notability, categoryMatch,
+    rating, proximity, notability: notability + mustVisitBoost, categoryMatch,
     hiddenGem: 0, unesco, photo, preferences: 0,
     googleCoord: -googleCoordPenalty, total,
   };
@@ -300,6 +321,12 @@ export function scoreNearbyPoi(f: {
   distanceFromCityKm?: number;
   /** Name similarity between Geoapify and Google match (0–1) */
   nameMatchScore?: number;
+  /** POI name — used for must-visit matching */
+  poiName?: string;
+  /** International name variants (e.g. {"en": "Temple of Augustus"}) — for cross-language must-visit matching */
+  poiNameInternational?: Record<string, string>;
+  /** LLM must-visit reference names for this city */
+  mustVisitNames?: string[];
 }): ScoreBreakdown {
   // Rating (0–30): Google 0–5 scale
   const rating = f.rating !== undefined ? (f.rating / 5) * 30 : 15;
@@ -337,11 +364,24 @@ export function scoreNearbyPoi(f: {
     googleCoordPenalty = 10;
   }
 
-  const rawTotal = rating + notability + unesco + photo + geoIsolation;
+  // Must-visit boost (+12) — also checks international names for cross-language matching
+  let mustVisitBoost = 0;
+  if (f.poiName && f.mustVisitNames?.length) {
+    outer: for (const mv of f.mustVisitNames) {
+      if (nameSimilarity(f.poiName, mv) >= 0.8) { mustVisitBoost = 12; break; }
+      if (f.poiNameInternational) {
+        for (const intlName of Object.values(f.poiNameInternational)) {
+          if (nameSimilarity(intlName, mv) >= 0.8) { mustVisitBoost = 12; break outer; }
+        }
+      }
+    }
+  }
+
+  const rawTotal = rating + notability + unesco + photo + geoIsolation + mustVisitBoost;
   const total = Math.max(0, rawTotal - googleCoordPenalty);
 
   return {
-    rating, proximity: 0, notability, categoryMatch: 0,
+    rating, proximity: 0, notability: notability + mustVisitBoost, categoryMatch: 0,
     hiddenGem: geoIsolation, unesco, photo, preferences: 0,
     googleCoord: -googleCoordPenalty, total,
   };

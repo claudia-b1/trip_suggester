@@ -368,6 +368,47 @@ export function PoisSection({
     return () => window.removeEventListener("focus-poi-on-map", handleFocusPoi);
   }, []);
 
+  const [recItems, setRecItems] = useState<Array<{ name: string; lat?: number; lon?: number }>>([]);
+  useEffect(() => {
+    function handle(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      // Support both old format (string[]) and new format ({name, lat, lon}[])
+      if (Array.isArray(detail) && detail.length > 0 && typeof detail[0] === "string") {
+        setRecItems(detail.map((n: string) => ({ name: n })));
+      } else {
+        setRecItems(detail ?? []);
+      }
+    }
+    window.addEventListener("recommendation-names", handle);
+    return () => window.removeEventListener("recommendation-names", handle);
+  }, []);
+
+  const recommendedPoiIds = useMemo(() => {
+    if (!recItems.length) return new Set<number>();
+    const ids = new Set<number>();
+    for (const poi of pois) {
+      const poiLower = poi.name.toLowerCase();
+      for (const ri of recItems) {
+        const rnLower = ri.name.toLowerCase();
+        // 1. Name-based matching (substring)
+        if (poiLower.includes(rnLower) || rnLower.includes(poiLower)) {
+          ids.add(poi.id);
+          break;
+        }
+        // 2. Coordinate-based matching (within 200m) — handles cross-language names
+        if (ri.lat != null && ri.lon != null && poi.latitude != null && poi.longitude != null) {
+          const dLat = (ri.lat - poi.latitude) * 111_000;
+          const dLon = (ri.lon - poi.longitude) * 111_000 * Math.cos((poi.latitude * Math.PI) / 180);
+          if (Math.sqrt(dLat * dLat + dLon * dLon) <= 200) {
+            ids.add(poi.id);
+            break;
+          }
+        }
+      }
+    }
+    return ids;
+  }, [recItems, pois]);
+
   // Listen for "set-pois-view" events from CityHeader quick-action buttons
   useEffect(() => {
     function handleSetView(e: Event) {
@@ -1494,6 +1535,7 @@ export function PoisSection({
                     dayPlans={dayPlanOptions}
                     onChangeCategory={onChangeCategory}
                     onUploadPhoto={onUploadPhoto}
+                    isRecommended={recommendedPoiIds.has(poi.id)}
                     onEdit={(p) => setEditingPoi({
                       id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
                       description: p.description, latitude: p.latitude, longitude: p.longitude,

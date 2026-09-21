@@ -83,7 +83,7 @@ export function ActivityRecommendations({
   cityLongitude?: number | null;
   initialData: ActivityRecommendationsResult | null;
   /** Existing POIs — used to link recommendations to POIs and show their photos */
-  pois?: { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null }[];
+  pois?: { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null; latitude?: number | null; longitude?: number | null }[];
   /** If this city is a subcity, its parentCityId; null for top-level */
   parentCityId?: number | null;
 }) {
@@ -96,6 +96,20 @@ export function ActivityRecommendations({
   const isLoading = loadingSection !== null;
   const [error, setError] = useState<string | null>(null);
   const [addingPoiFor, setAddingPoiFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const items: Array<{ name: string; lat?: number; lon?: number }> = [];
+    for (const rec of data.recommendations ?? []) {
+      items.push({ name: rec.linkedPlace || rec.title, lat: rec.latitude, lon: rec.longitude });
+    }
+    for (const section of data.customSections ?? []) {
+      for (const rec of section.items) {
+        items.push({ name: rec.linkedPlace || rec.title, lat: rec.latitude, lon: rec.longitude });
+      }
+    }
+    window.dispatchEvent(new CustomEvent("recommendation-names", { detail: items }));
+  }, [data]);
 
   // Generation options (initial generation)
   const [genMustDo, setGenMustDo] = useState(true);
@@ -298,7 +312,7 @@ export function ActivityRecommendations({
 
     // Must-do recommendations — skip items already linked to a POI
     data.recommendations.forEach((rec, i) => {
-      if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace) && nearCity(rec.latitude, rec.longitude, 50)) {
+      if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude) && nearCity(rec.latitude, rec.longitude, 50)) {
         items.push({
           id: `rec-mustdo-${i}`,
           title: rec.title,
@@ -360,7 +374,7 @@ export function ActivityRecommendations({
     // Custom sections — skip items already linked to a POI
     data.customSections?.forEach((section) => {
       section.items.forEach((rec, i) => {
-        if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace) && nearCity(rec.latitude, rec.longitude, 50)) {
+        if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude) && nearCity(rec.latitude, rec.longitude, 50)) {
           items.push({
             id: `rec-custom-${section.id}-${i}`,
             title: rec.title,
@@ -628,13 +642,26 @@ export function ActivityRecommendations({
     }
   }
 
-  // Try to find a matching POI for a linked place name
-  function findPoiLink(linkedPlace?: string): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
-    if (!linkedPlace || !pois?.length) return null;
-    const lower = linkedPlace.toLowerCase();
-    const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
-    if (!match) return null;
-    return { id: match.id, name: match.name, photoUrl: match.photoUrl, isUnescoSite: match.isUnescoSite };
+  function findPoiLink(linkedPlace?: string, title?: string, recLat?: number | null, recLon?: number | null): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
+    if (!pois?.length) return null;
+    // 1. Name-based matching (substring)
+    const names = [linkedPlace, title].filter(Boolean) as string[];
+    for (const name of names) {
+      const lower = name.toLowerCase();
+      const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
+      if (match) return { id: match.id, name: match.name, photoUrl: match.photoUrl, isUnescoSite: match.isUnescoSite };
+    }
+    // 2. Coordinate-based matching (within 200m) — handles cross-language names
+    //    like "Temple of Augustus" in recs vs "Augustov Hram" in POIs.
+    if (recLat != null && recLon != null) {
+      const MATCH_KM = 0.2;
+      const match = pois.find((p) =>
+        p.latitude != null && p.longitude != null &&
+        haversineKm(recLat, recLon, p.latitude, p.longitude) <= MATCH_KM,
+      );
+      if (match) return { id: match.id, name: match.name, photoUrl: match.photoUrl, isUnescoSite: match.isUnescoSite };
+    }
+    return null;
   }
 
   /** Verify a POI's location via geocoding, then create it and show on map */
@@ -650,54 +677,13 @@ export function ActivityRecommendations({
     // Scroll to POIs section immediately so the user sees the map
     document.getElementById("pois-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
     try {
-      // Verify location via geocoding — try multiple queries
-      let verifiedLat = poiData.latitude;
-      let verifiedLng = poiData.longitude;
-
-      // Try geocoding with the place name + country for verification
-      const searchQueries = [
-        // Most specific: name + city + country
-        `${poiData.name}, ${cityName}${country ? `, ${country}` : ""}`,
-        // Name + country
-        country ? `${poiData.name}, ${country}` : null,
-        // Just the name
-        poiData.name,
-      ].filter(Boolean) as string[];
-
-      for (const query of searchQueries) {
-        const params = new URLSearchParams({ action: "geocode", address: query });
-        if (country) params.set("country", country);
-        try {
-          const geoRes = await fetch(`/api/geocode?${params}`);
-          if (geoRes.ok) {
-            const geoData = (await geoRes.json()) as { lat?: number; lng?: number };
-            if (typeof geoData.lat === "number" && typeof geoData.lng === "number") {
-              // Basic sanity: lat/lng should not be 0,0 and should be reasonable
-              if (geoData.lat !== 0 || geoData.lng !== 0) {
-                verifiedLat = geoData.lat;
-                verifiedLng = geoData.lng;
-                break; // Use first successful geocode result
-              }
-            }
-          }
-        } catch {
-          // Try next query
-        }
-      }
-
-      // If we still have no coordinates or (0,0), warn but proceed
-      if (verifiedLat === 0 && verifiedLng === 0) {
-        verifiedLat = null;
-        verifiedLng = null;
-      }
-
       const res = await fetch(`/api/cities/${cityId}/pois`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...poiData,
-          latitude: verifiedLat,
-          longitude: verifiedLng,
+          resolveViaGoogle: true,
+          cityName,
         }),
       });
       if (!res.ok) throw new Error("Failed to add POI");
@@ -1128,7 +1114,7 @@ export function ActivityRecommendations({
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 {data!.recommendations.map((rec, i) => {
-                  const poiLink = findPoiLink(rec.linkedPlace);
+                  const poiLink = findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude);
                   return (
                     <RecommendationCard
                       key={i}
@@ -1479,7 +1465,7 @@ export function ActivityRecommendations({
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   {section.items.map((rec, i) => {
-                    const poiLink = findPoiLink(rec.linkedPlace);
+                    const poiLink = findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude);
                     return (
                       <RecommendationCard
                         key={i}
@@ -1984,49 +1970,59 @@ function RecommendationCard({
           </span>
         )}
         {!selectMode && (
-          <>
-            {!addOpen ? (
-              <button
-                type="button"
-                onClick={() => setAddOpen(true)}
-                disabled={addingPoi}
-                className="inline-flex items-center gap-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
-              >
-                {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
-                {addingPoi ? "Adding…" : "Add as POI"}
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 ml-auto">
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
-                  ))}
-                </select>
+          poiLink ? (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("focus-poi-on-map", { detail: { poiId: poiLink.id } }))}
+              className="inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 ml-auto"
+            >
+              On map
+            </button>
+          ) : (
+            <>
+              {!addOpen ? (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (recId) window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "click" } }));
-                    onAddPoi(selectedCategory); setAddOpen(false);
-                  }}
+                  onClick={() => setAddOpen(true)}
                   disabled={addingPoi}
-                  className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex items-center gap-0.5 text-xs font-medium text-[hsl(var(--primary))] hover:underline disabled:opacity-50 ml-auto"
                 >
-                  {addingPoi ? "Adding…" : "Add"}
+                  {addingPoi ? <span className="spinner !h-3 !w-3" /> : "+"}
+                  {addingPoi ? "Adding…" : "Add as POI"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setAddOpen(false)}
-                  className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </>
+              ) : (
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    className="rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-1.5 py-0.5 text-xs"
+                  >
+                    {CATEGORIES.map((c) => (
+                      <option key={c} value={c}>{CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (recId) window.dispatchEvent(new CustomEvent("highlight-recommendation", { detail: { id: recId, action: "click" } }));
+                      onAddPoi(selectedCategory); setAddOpen(false);
+                    }}
+                    disabled={addingPoi}
+                    className="rounded bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] px-2 py-0.5 text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                  >
+                    {addingPoi ? "Adding…" : "Add"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddOpen(false)}
+                    className="text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </>
+          )
         )}
       </div>
       </div>

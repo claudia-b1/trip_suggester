@@ -125,6 +125,9 @@ export type DiscoveredPlace = {
   /** True when OSM has at least one translated name (name:en, name:de, etc.).
    *  Indicates internationally notable places. Used in the nearby Geoapify coarse score. */
   hasInternationalName?: boolean;
+  /** Map of international names from OSM (e.g. {"en": "Temple of Augustus", "de": "Augustustempel"}).
+   *  Used by must-visit injection to match English LLM names against local-language Geoapify names. */
+  nameInternational?: Record<string, string>;
 };
 
 // Raw Geoapify Places feature shape
@@ -249,6 +252,7 @@ export async function discoverUnescoCities(
       hasInternationalName:
         p.name_international != null &&
         Object.keys(p.name_international).length > 0,
+      nameInternational: p.name_international ?? undefined,
     });
   }
 
@@ -399,6 +403,7 @@ export async function searchPlaces(
         streetName:           raw?.["addr:street"] ?? undefined,
         poiCityName:          p.city ?? undefined,
         hasInternationalName: p.name_international != null && Object.keys(p.name_international).length > 0,
+        nameInternational: p.name_international ?? undefined,
       };
     });
 
@@ -439,4 +444,101 @@ async function estimateSearchRadius(cityName: string, apiKey: string): Promise<n
   } catch {
     return 10_000; // fallback 10 km
   }
+}
+
+// ─── Coordinate-based place search ──────────────────────────────────────────
+
+/**
+ * Targeted categories for must-visit coord search. Two separate queries:
+ *
+ * 1. HERITAGE_CATEGORIES — narrow: only heritage buildings and historic
+ *    structures. These get drowned out by memorials/artworks when mixed
+ *    with broader tourism categories, so they need their own query.
+ *
+ * 2. OTHER_CATEGORIES — everything else: museums, sights, attractions,
+ *    nature, beaches, etc.
+ *
+ * Results are merged and deduped by place_id.
+ */
+const HERITAGE_CATEGORIES = "heritage,building.historic";
+const OTHER_CATEGORIES =
+  "tourism.sights,tourism.attraction,entertainment.museum,entertainment.culture,natural,beach,leisure,education,sport";
+
+/**
+ * Search Geoapify for places near known coordinates. Returns all named places
+ * within the radius — caller should match by name similarity.
+ *
+ * Runs two queries: a heritage-focused one (temples, castles, museums) and a
+ * broader one (attractions, nature, beaches). Results are merged and deduped
+ * so that heritage buildings aren't crowded out by nearby statues/artworks.
+ */
+export async function searchPlacesNearCoords(
+  centerLat: number,
+  centerLon: number,
+  radiusM = 500,
+): Promise<DiscoveredPlace[]> {
+  const apiKey = process.env.GEOAPIFY_API_KEY;
+  if (!apiKey) return [];
+
+  async function doSearch(categories: string): Promise<GeoFeature[]> {
+    const url = new URL(GEOAPIFY_BASE);
+    url.searchParams.set("categories", categories);
+    url.searchParams.set("filter", `circle:${centerLon},${centerLat},${radiusM}`);
+    url.searchParams.set("limit", "20");
+    url.searchParams.set("lang", "en");
+    url.searchParams.set("apiKey", apiKey!);
+    const res = await fetch(url.toString());
+    if (!res.ok) return [];
+    const data = (await res.json()) as { features: GeoFeature[] };
+    return data.features ?? [];
+  }
+
+  // Run both queries in parallel
+  const [heritageFeatures, otherFeatures] = await Promise.all([
+    doSearch(HERITAGE_CATEGORIES),
+    doSearch(OTHER_CATEGORIES),
+  ]);
+
+  // Merge and deduplicate by place_id
+  const seenIds = new Set<string>();
+  const allFeatures: GeoFeature[] = [];
+  for (const f of [...heritageFeatures, ...otherFeatures]) {
+    const id = f.properties.place_id ?? `${f.geometry.coordinates[0]}-${f.geometry.coordinates[1]}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      allFeatures.push(f);
+    }
+  }
+
+  return allFeatures
+    .filter((f) => f.properties.name)
+    .map((f): DiscoveredPlace => {
+      const p = f.properties;
+      const raw = p.datasource?.raw;
+      const [lon, lat] = f.geometry.coordinates;
+      const catStr = (p.categories?.[0] ?? "place").split(".").pop() ?? "place";
+
+      return {
+        placeId:      p.place_id ?? `geo-${lon}-${lat}`,
+        name:         p.name!,
+        latitude:     p.lat ?? lat,
+        longitude:    p.lon ?? lon,
+        placeCategory: catStr.charAt(0).toUpperCase() + catStr.slice(1).replace(/_/g, " "),
+        categories:   p.categories ?? [],
+        description:  p.formatted ?? p.address_line1 ?? undefined,
+        tel:          p.phone ?? raw?.phone ?? undefined,
+        website:      p.website ?? raw?.website ?? undefined,
+        openingHours: p.opening_hours ?? raw?.opening_hours ?? undefined,
+        photoUrl:     undefined,
+        address:      p.formatted ?? p.address_line1 ?? undefined,
+        wikidataId:   raw?.wikidata ?? undefined,
+        fee:          raw?.fee ?? undefined,
+        isUnescoSite: raw?.heritage === "1" || raw?.["heritage:operator"]?.toUpperCase().includes("UNESCO") || false,
+        tourism:      raw?.tourism ?? undefined,
+        streetName:   raw?.["addr:street"] ?? undefined,
+        poiCityName:  p.city ?? undefined,
+        hasInternationalName: p.name_international != null && Object.keys(p.name_international).length > 0,
+        nameInternational: p.name_international ?? undefined,
+      };
+    });
 }

@@ -679,7 +679,7 @@ export default async function CityDetailPage({
               cityLatitude={city.latitude}
               cityLongitude={city.longitude}
               initialData={cachedActivities}
-              pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite }))}
+              pois={pois.map((p) => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite, latitude: p.latitude, longitude: p.longitude }))}
               parentCityId={city.parentCityId}
             />
           </ErrorBoundary>

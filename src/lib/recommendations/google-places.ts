@@ -26,6 +26,7 @@ const FIELD_MASK = [
   "places.websiteUri",
   "places.photos",
   "places.editorialSummary",
+  "places.primaryType",
 ].join(",");
 
 /**
@@ -49,6 +50,8 @@ export type GoogleMeta = {
   /** Google's reported lat/lon for coordinate cross-validation. */
   latitude?: number;
   longitude?: number;
+  /** Google primary type (e.g. "restaurant", "museum", "park") — used to assign the right category for must-visit injection. */
+  primaryType?: string;
 };
 
 export type GoogleEnrichment = {
@@ -181,6 +184,7 @@ export async function fetchGoogleMeta(
       editorialSummary: place.editorialSummary?.text,
       latitude:        place.location?.latitude,
       longitude:       place.location?.longitude,
+      primaryType:     (place as Record<string, unknown>).primaryType as string | undefined,
     };
   }
 
