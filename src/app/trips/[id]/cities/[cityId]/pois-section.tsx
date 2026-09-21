@@ -20,6 +20,7 @@ import { useFavourites } from "@/components/favourites/favourites-provider";
 import type { FavouriteItemDTO } from "@/components/favourites/favourites-provider";
 import { EditPoiModal, type EditPoiData } from "@/components/ui/edit-poi-modal";
 import { resizeImageFile, getImageFromClipboard } from "@/lib/resize-image";
+import { validatePoiLocation } from "@/lib/validate-poi-location";
 
 export type ScoreBreakdownDTO = {
   rating: number;
@@ -1536,6 +1537,10 @@ export function PoisSection({
                     onChangeCategory={onChangeCategory}
                     onUploadPhoto={onUploadPhoto}
                     isRecommended={recommendedPoiIds.has(poi.id)}
+                    locationWarningKm={(() => {
+                      const v = validatePoiLocation(poi.latitude, poi.longitude, cityLat, cityLon);
+                      return v.valid && !v.nearCity ? v.distanceKm : undefined;
+                    })()}
                     onEdit={(p) => setEditingPoi({
                       id: p.id, name: p.name, category: p.category, subcategory: p.subcategory,
                       description: p.description, latitude: p.latitude, longitude: p.longitude,

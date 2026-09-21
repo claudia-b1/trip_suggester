@@ -27,8 +27,14 @@ export async function PATCH(
   if (body.endDate) data.endDate = new Date(body.endDate);
   if (typeof body.country === "string") data.country = body.country;
   if (typeof body.countryCode === "string") data.countryCode = body.countryCode;
-  if (typeof body.latitude === "number") data.latitude = body.latitude;
-  if (typeof body.longitude === "number") data.longitude = body.longitude;
+  if (typeof body.latitude === "number") {
+    if (body.latitude < -90 || body.latitude > 90) return NextResponse.json({ error: "latitude must be between -90 and 90" }, { status: 400 });
+    data.latitude = body.latitude;
+  }
+  if (typeof body.longitude === "number") {
+    if (body.longitude < -180 || body.longitude > 180) return NextResponse.json({ error: "longitude must be between -180 and 180" }, { status: 400 });
+    data.longitude = body.longitude;
+  }
   if (typeof body.timezone === "string") data.timezone = body.timezone;
   if (typeof body.order === "number") data.order = body.order;
   if ("nickname" in body) data.nickname = body.nickname === "" ? null : (body.nickname ?? null);

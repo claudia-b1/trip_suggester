@@ -5,6 +5,7 @@ import { getActiveUserId } from "@/lib/active-user";
 import { verifyCityOwnership } from "@/lib/ownership";
 import { fetchGoogleMeta, resolvePhotoUri } from "@/lib/recommendations/google-places";
 import { haversineKm } from "@/lib/geo";
+import { validatePoiLocation } from "@/lib/validate-poi-location";
 
 export async function GET(
   _req: Request,
@@ -46,6 +47,11 @@ export async function POST(
   const cityIdNum = Number(cityId);
   const favItemId = typeof favouriteItemId === "number" ? favouriteItemId : null;
 
+  const city = await prisma.city.findUnique({
+    where: { id: cityIdNum },
+    select: { latitude: true, longitude: true, discoverRadiusKm: true },
+  });
+
   // Optionally resolve the place via Google Places Text Search for accurate coordinates
   let resolvedLat = typeof latitude === "number" && latitude >= -90 && latitude <= 90 ? latitude : null;
   let resolvedLng = typeof longitude === "number" && longitude >= -180 && longitude <= 180 ? longitude : null;
@@ -66,10 +72,6 @@ export async function POST(
       let biasLat = resolvedLat ?? 0;
       let biasLng = resolvedLng ?? 0;
       if (!biasLat && !biasLng) {
-        const city = await prisma.city.findUnique({
-          where: { id: cityIdNum },
-          select: { latitude: true, longitude: true },
-        });
         if (city?.latitude != null && city?.longitude != null) { biasLat = city.latitude; biasLng = city.longitude; }
       }
       const meta = await fetchGoogleMeta(
@@ -108,6 +110,23 @@ export async function POST(
     } catch { /* best-effort — fall back to provided coordinates */ }
   }
 
+  // Validate resolved coordinates against the city
+  const locValidation = validatePoiLocation(
+    resolvedLat, resolvedLng,
+    city?.latitude, city?.longitude,
+    { maxDistanceKm: city?.discoverRadiusKm ?? 75 },
+  );
+  if (!locValidation.valid && resolvedLat != null) {
+    console.log(`[poi-create] invalid coordinates for "${name}" — nulling out`);
+    resolvedLat = null;
+    resolvedLng = null;
+  }
+  let extraFields: { locationWarningKm: number } | undefined;
+  if (locValidation.valid && !locValidation.nearCity && locValidation.distanceKm != null) {
+    console.log(`[poi-create] "${name}" is ${locValidation.distanceKm}km from city centre`);
+    extraFields = { locationWarningKm: Math.round(locValidation.distanceKm) };
+  }
+
   const poi = await prisma.poi.create({
     data: {
       name,
@@ -127,6 +146,7 @@ export async function POST(
       fee: typeof fee === "string" ? fee : null,
       address: typeof address === "string" ? address : null,
       notes: typeof notes === "string" ? notes : null,
+      extraFields: extraFields ?? undefined,
       favouriteItemId: favItemId,
       cityId: cityIdNum,
     },
@@ -140,7 +160,10 @@ export async function POST(
     });
   }
 
-  return NextResponse.json(poi, { status: 201 });
+  return NextResponse.json(
+    { ...poi, _locationWarning: locValidation.warning ?? null },
+    { status: 201 },
+  );
 }
 
 export async function DELETE(

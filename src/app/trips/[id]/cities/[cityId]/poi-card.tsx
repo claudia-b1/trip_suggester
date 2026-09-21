@@ -10,13 +10,11 @@ import type { DayPlanOption } from "./poi-map";
 import type { PoiDTO, ScoreBreakdownDTO, AttachmentDTO } from "./pois-section";
 import { AttachmentsSection } from "@/components/ui/attachments-section";
 import { ScorePopover } from "@/components/ui/score-popover";
+import { googleMapsUrl } from "@/lib/geo";
 
 // ─── Utility functions ──────────────────────────────────────────────────────
 
-/** Build a Google Maps URL that resolves to the actual place if found, otherwise falls back to coordinates */
-export function googleMapsUrl(name: string, lat: number, lng: number) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
-}
+export { googleMapsUrl };
 
 /** Photo URL — data URIs returned directly, external URLs proxied through API to handle expired Google Places URLs */
 export function poiPhotoSrc(poi: { id: number; photoUrl: string | null }): string | null {
@@ -365,6 +363,7 @@ export function PoiCard({
   onUploadPhoto,
   onEdit,
   isRecommended,
+  locationWarningKm,
 }: {
   poi: PoiDTO;
   onDelete: (poi: PoiDTO) => void;
@@ -385,6 +384,7 @@ export function PoiCard({
   onUploadPhoto: (poiId: number, dataUri: string) => void;
   onEdit: (poi: PoiDTO) => void;
   isRecommended?: boolean;
+  locationWarningKm?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -611,7 +611,7 @@ export function PoiCard({
         {/* Info row: price level + cluster indicator */}
         {(() => {
           const cluster = getClusterCount(poi.extraFields);
-          const hasAnything = poi.priceLevel != null || cluster > 0;
+          const hasAnything = poi.priceLevel != null || cluster > 0 || locationWarningKm != null;
           if (!hasAnything) return null;
           return (
             <div className="mb-2 flex flex-wrap items-center gap-1">
@@ -623,6 +623,14 @@ export function PoiCard({
               {cluster > 0 && (
                 <span className="rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 px-1.5 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
                   +{cluster} more nearby
+                </span>
+              )}
+              {locationWarningKm != null && (
+                <span
+                  className="rounded-full bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300"
+                  title={`This place is ~${locationWarningKm}km from the city centre — coordinates may be wrong`}
+                >
+                  ⚠ ~{locationWarningKm}km away
                 </span>
               )}
             </div>
@@ -702,8 +710,9 @@ export function PoiCard({
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs font-medium text-[hsl(var(--primary))] hover:underline"
+              title={locationWarningKm != null ? `Coordinates may be wrong (~${locationWarningKm}km from city)` : undefined}
             >
-              📍 Google Maps
+              📍 Google Maps{locationWarningKm != null ? " ⚠" : ""}
             </a>
           )}
           {poi.website && (

@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import type { TimeSlot } from "@/lib/slots";
 import type { RecommendableCategory } from "@/lib/recommendations";
+import { googleMapsUrl } from "@/lib/geo";
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 import { FUEL_SUBCATEGORIES } from "@/lib/favourite-fields";
 import { PoiMap } from "./poi-map";
@@ -103,9 +104,6 @@ function formatReviewCount(n: number): string {
   return `${n}`;
 }
 
-function googleMapsUrl(name: string, lat: number, lng: number) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
-}
 
 const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
 

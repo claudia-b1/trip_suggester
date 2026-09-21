@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { getActiveUserId } from "@/lib/active-user";
 import { fetchGoogleMeta, resolvePhotoUri } from "@/lib/recommendations/google-places";
+import { haversineKm } from "@/lib/geo";
 
 // ── SSRF-safe URL allowlists ─────────────────────────────────────────────────
 
@@ -291,11 +292,18 @@ export async function POST(req: Request) {
       );
       if (meta) {
         sourcePlaceId = meta.googlePlaceId;
-        // Prefer Google's authoritative name and coordinates
+        // Prefer Google's authoritative name and coordinates, but only if
+        // they're within 50km of the URL's coordinates (prevents drift to a
+        // different branch of a chain store or a different city entirely).
         name = meta.name || name;
         if (meta.latitude != null && meta.longitude != null) {
-          lat = meta.latitude;
-          lng = meta.longitude;
+          const drift = haversineKm(lat, lng, meta.latitude, meta.longitude);
+          if (drift <= 50) {
+            lat = meta.latitude;
+            lng = meta.longitude;
+          } else {
+            console.log(`[resolve-google-maps] Google coords for "${name}" drifted ${Math.round(drift)}km from URL coords — keeping URL coords`);
+          }
         }
         rating = meta.rating;
         userRatingCount = meta.userRatingCount;
