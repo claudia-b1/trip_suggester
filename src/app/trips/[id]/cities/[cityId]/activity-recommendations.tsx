@@ -244,36 +244,14 @@ export function ActivityRecommendations({
 
     const results = await Promise.allSettled(
       toAdd.map(async (poiData) => {
-        // Verify location via geocoding
-        let verifiedLat = poiData.latitude;
-        let verifiedLng = poiData.longitude;
-        const searchQueries = [
-          `${poiData.name}, ${cityName}${country ? `, ${country}` : ""}`,
-          country ? `${poiData.name}, ${country}` : null,
-          poiData.name,
-        ].filter(Boolean) as string[];
-
-        for (const query of searchQueries) {
-          const params = new URLSearchParams({ action: "geocode", address: query });
-          if (country) params.set("country", country);
-          try {
-            const geoRes = await fetch(`/api/geocode?${params}`);
-            if (geoRes.ok) {
-              const geoData = (await geoRes.json()) as { lat?: number; lng?: number };
-              if (typeof geoData.lat === "number" && typeof geoData.lng === "number" && (geoData.lat !== 0 || geoData.lng !== 0)) {
-                verifiedLat = geoData.lat;
-                verifiedLng = geoData.lng;
-                break;
-              }
-            }
-          } catch { /* try next */ }
-        }
-        if (verifiedLat === 0 && verifiedLng === 0) { verifiedLat = null; verifiedLng = null; }
-
         const res = await fetch(`/api/cities/${cityId}/pois`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...poiData, latitude: verifiedLat, longitude: verifiedLng }),
+          body: JSON.stringify({
+            ...poiData,
+            resolveViaGoogle: true,
+            cityName,
+          }),
         });
         if (!res.ok) throw new Error("Failed");
         return res.json();

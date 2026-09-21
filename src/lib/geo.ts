@@ -93,3 +93,8 @@ export function haversineM(
       Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+/** Build a Google Maps search URL centred on the given coordinates. */
+export function googleMapsUrl(name: string, lat: number, lng: number) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
+}

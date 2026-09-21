@@ -1,6 +1,7 @@
 import type { Category } from "@/lib/categories";
 
 export { haversineKm, offsetLatLon } from "@/lib/geo";
+import { haversineKm } from "@/lib/geo";
 
 export type GenerateInput = {
   cityName: string;
@@ -53,7 +54,11 @@ export type CityCoords = { lat: number; lon: number };
  * Geocode a city name → {lat, lon} using the Geoapify Geocoding API.
  * Always available because GEOAPIFY_API_KEY is required for FOOD/NIGHTLIFE anyway.
  */
-export async function geocodeCity(cityName: string): Promise<CityCoords> {
+export async function geocodeCity(
+  cityName: string,
+  expectedCoords?: { lat: number; lon: number } | null,
+  maxDistanceKm = 200,
+): Promise<CityCoords> {
   const key = process.env.GEOAPIFY_API_KEY;
   if (!key) throw new Error("GEOAPIFY_API_KEY is not set");
 
@@ -71,6 +76,15 @@ export async function geocodeCity(cityName: string): Promise<CityCoords> {
   if (!data.features.length) throw new Error(`City not found: ${cityName}`);
 
   const [lon, lat] = data.features[0].geometry.coordinates;
+
+  if (expectedCoords) {
+    const dist = haversineKm(expectedCoords.lat, expectedCoords.lon, lat, lon);
+    if (dist > maxDistanceKm) {
+      console.warn(`[geocodeCity] "${cityName}" geocoded ${Math.round(dist)}km from expected — using expected coords`);
+      return { lat: expectedCoords.lat, lon: expectedCoords.lon };
+    }
+  }
+
   return { lat, lon };
 }
 

@@ -155,7 +155,10 @@ export async function POST(
       ? { lat: bodyCenterLat, lon: bodyCenterLon }
       : city.latitude != null && city.longitude != null
         ? { lat: city.latitude, lon: city.longitude }
-        : await geocodeCity(city.name).catch(() => null);
+        : await geocodeCity(
+            city.name,
+            city.latitude != null && city.longitude != null ? { lat: city.latitude, lon: city.longitude } : null,
+          ).catch(() => null);
 
   // Build centerOverride for searchPlaces — prefer explicit body override,
   // then stored city coordinates, so searchPlaces doesn't re-geocode the city

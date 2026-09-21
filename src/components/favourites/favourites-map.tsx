@@ -19,6 +19,7 @@ import {
   type ExtraFieldFilter,
   type ExtraFieldDef,
 } from "@/lib/favourite-fields";
+import { googleMapsUrl } from "@/lib/geo";
 import type { FavouriteItemDTO, FavouriteListDTO } from "./favourites-provider";
 
 const MAP_STYLES = {
@@ -606,10 +607,6 @@ export function FavouritesMap({
 
 const PRICE_LABELS: Record<number, string> = { 0: "Free", 1: "$", 2: "$$", 3: "$$$", 4: "$$$$" };
 
-/** Build a Google Maps search URL for a named place at coordinates */
-function googleMapsUrl(name: string, lat: number, lng: number) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(name)}/@${lat},${lng},17z`;
-}
 
 /** Render a single extra field value with its label */
 function ExtraFieldValue({ label, value, type }: { label: string; value: unknown; type: string }) {
