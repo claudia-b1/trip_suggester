@@ -193,8 +193,10 @@ export async function getMustVisitList(
   if (cached && Date.now() - cached.generatedAt.getTime() < CACHE_TTL_MS) {
     try {
       const parsed = JSON.parse(cached.data) as string[];
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) { console.log(`[must-visit] cache hit: ${parsed.length} names`); return parsed; }
     } catch { /* regenerate */ }
+  } else {
+    console.log(`[must-visit] cache miss (cached=${!!cached}), calling LLM`);
   }
 
   const categoryLabels = categories
@@ -204,41 +206,62 @@ export async function getMustVisitList(
 
   const prompt = `List the 20 most popular and notable places to visit in ${cityName}${country ? `, ${country}` : ""} for these categories: ${categoryLabels}. For each place, return just its name. Return a JSON array of strings. Example: ["Place A", "Place B"]. No explanation, no markdown.`;
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      messages: [
-        { role: "system", content: "Output ONLY raw JSON. No thinking, no reasoning, no explanation, no markdown fences." },
-        { role: "user", content: prompt },
-      ],
-      max_tokens: 2000,
-      temperature: 0.3,
-    }),
-  });
+  let names: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [
+          { role: "system", content: "Output ONLY raw JSON. No thinking, no reasoning, no explanation, no markdown fences." },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: 2000,
+        temperature: 0.3,
+      }),
+    });
 
-  if (!res.ok) return [];
+    if (!res.ok) { console.log(`[must-visit] LLM call failed: ${res.status} ${res.statusText}`); continue; }
 
-  const json = await res.json();
-  const text: string = json?.choices?.[0]?.message?.content ?? "";
+    const json = await res.json();
+    const text: string = json?.choices?.[0]?.message?.content ?? "";
 
-  // Parse: strip code fences, find JSON array
-  const cleaned = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, "").replace(/```/g, "")).trim();
-  const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (!arrayMatch) return [];
+    let cleaned = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, "").replace(/```/g, "")).trim();
+    // Handle truncated arrays: if starts with [ but no closing ], try to close it
+    if (cleaned.includes("[") && !cleaned.includes("]")) {
+      // Find the last complete quoted string entry
+      const bracketIdx = cleaned.indexOf("[");
+      const afterBracket = cleaned.slice(bracketIdx);
+      // Match all complete "..." entries
+      const completeEntries = [...afterBracket.matchAll(/"[^"]*"/g)];
+      if (completeEntries.length) {
+        const lastEntry = completeEntries[completeEntries.length - 1];
+        const cutoff = bracketIdx + lastEntry.index! + lastEntry[0].length;
+        cleaned = cleaned.slice(0, cutoff).replace(/,\s*$/, "") + "]";
+        console.log(`[must-visit] repaired truncated array with ${completeEntries.length} entries (attempt ${attempt + 1})`);
+      }
+    }
+    const arrayMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (!arrayMatch) {
+      console.log(`[must-visit] LLM returned no parseable array (attempt ${attempt + 1}): ${cleaned.slice(0, 200)}`);
+      continue;
+    }
 
-  let names: string[];
-  try {
-    const parsed = JSON.parse(arrayMatch[0]);
-    if (!Array.isArray(parsed)) return [];
-    names = parsed.filter((n): n is string => typeof n === "string" && n.trim().length > 0);
-  } catch {
-    return [];
+    try {
+      const parsed = JSON.parse(arrayMatch[0]);
+      if (!Array.isArray(parsed)) { console.log("[must-visit] parsed result is not an array"); continue; }
+      names = parsed.filter((n): n is string => typeof n === "string" && n.trim().length > 0);
+      if (names.length) break;
+      console.log(`[must-visit] LLM returned empty array (attempt ${attempt + 1})`);
+    } catch {
+      console.log("[must-visit] JSON parse failed");
+    }
   }
+  if (!names.length) return [];
 
   // Cache the result
   await prisma.cityInfoCache.upsert({
@@ -282,7 +305,7 @@ export async function injectMustVisitPlaces(
     !discoveredNames.some((dn) => nameSimilarity(mv, dn) >= MATCH_THRESHOLD),
   );
 
-  if (!unmatched.length) return { places: [], googleMetaByPlaceId: new Map() };
+  if (!unmatched.length) { console.log(`[must-visit] all ${mustVisitNames.length} names matched in discovered set`); return { places: [], googleMetaByPlaceId: new Map() }; }
   console.log(`[must-visit] ${unmatched.length} unmatched names to resolve:`, unmatched.slice(0, 10));
 
   const injected: DiscoveredPlace[] = [];

@@ -339,14 +339,32 @@ export async function searchPlaces(
   // (bakeries, butchers, etc. are dual-tagged as both catering and commercial food shops)
   const GROCERIES_CATERING_ALLOWLIST = ["commercial.food_and_drink"];
 
+  // Name patterns that indicate food/drink establishments — catches places tagged
+  // as tourism.attraction without any catering.* category
+  const FOOD_NAME_PATTERNS = /\b(restaurant|pizzeria|ristorante|trattoria|osteria|bistro|brasserie|café|cafe|cafeteria|bar\b|pub\b|grill|diner|tavern|konoba|gostilna|asian fusion|brunch|sushi|burger|kebab|steakhouse)\b/i;
+
   /** Check if a feature should be blocked by the cross-contamination filter */
   function isCrossFiltered(f: GeoFeature, cat: RecommendableCategory): boolean {
     const blockPrefixes = CROSS_FILTERS[cat];
     if (!blockPrefixes) return false;
-    if (!hasCatPrefix(f, blockPrefixes)) return false;
-    // GROCERIES exception: allow items that have both catering + commercial.food_and_drink tags
-    if (cat === "GROCERIES" && hasCatPrefix(f, GROCERIES_CATERING_ALLOWLIST)) return false;
-    return true;
+
+    // Category-prefix match
+    if (hasCatPrefix(f, blockPrefixes)) {
+      // GROCERIES exception: allow items that have both catering + commercial.food_and_drink tags
+      if (cat === "GROCERIES" && hasCatPrefix(f, GROCERIES_CATERING_ALLOWLIST)) return false;
+      return true;
+    }
+
+    // For non-food categories, also block places that look like restaurants/cafes
+    // even when they lack a catering.* tag (common with tourism.attraction-tagged eateries)
+    if (cat !== "FOOD" && cat !== "NIGHTLIFE") {
+      const raw = f.properties.datasource?.raw;
+      if (raw?.cuisine) return true;
+      const name = f.properties.name ?? "";
+      if (FOOD_NAME_PATTERNS.test(name)) return true;
+    }
+
+    return false;
   }
 
   const crossFilteredNames: string[] = [];

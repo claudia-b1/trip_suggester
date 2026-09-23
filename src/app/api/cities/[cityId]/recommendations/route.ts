@@ -363,6 +363,7 @@ export async function POST(
       center?.lon ?? 0,
       categories,
     );
+    console.log(`[must-visit] getMustVisitList returned ${mustVisitNames.length} names`);
 
     if (mustVisitNames.length && center) {
       const allDiscovered = categories.flatMap((cat) => discoveryByCategory[cat] ?? []);
@@ -759,14 +760,26 @@ export async function POST(
         continue;
       }
       // Coord dedup: only against same-category POIs (a supermarket next to a
-      // campsite are different POIs even at 50m apart)
-      const sameCatCoords = forCategory
-        ? seenCoords.filter((c) => c.category === forCategory)
-        : seenCoords;
-      const nearSeen = sameCatCoords.some(
-        (c) => haversineKm(c.lat, c.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
+      // campsite are different POIs even at 50m apart).
+      // Must-visit places (verified-notable landmarks) are exempt from coord dedup
+      // against existing POIs — a statue 16m from a triumphal arch are genuinely
+      // distinct places. They still dedup against each other within this selection.
+      const isMustVisit = mustVisitNames.length > 0 && (
+        item.place.placeId.startsWith("must-visit-") ||
+        mustVisitNames.some((mv) => nameSimilarity(mv, item.place.name) >= 0.8) ||
+        (item.place.nameInternational && Object.values(item.place.nameInternational).some(
+          (intl) => mustVisitNames.some((mv) => nameSimilarity(mv, intl) >= 0.8),
+        ))
       );
-      if (nearSeen) { coordDupSet.add(item.place.placeId); continue; }
+      if (!isMustVisit) {
+        const sameCatCoords = forCategory
+          ? seenCoords.filter((c) => c.category === forCategory)
+          : seenCoords;
+        const nearSeen = sameCatCoords.some(
+          (c) => haversineKm(c.lat, c.lon, item.place.latitude, item.place.longitude) * 1000 < COORD_DEDUP_M,
+        );
+        if (nearSeen) { coordDupSet.add(item.place.placeId); continue; }
+      }
       // Within-call coord dedup: catch duplicates selected in this same call
       // (seenCoords is only updated AFTER selectTopN returns, so items selected
       // earlier in this loop are invisible to the sameCatCoords check above).

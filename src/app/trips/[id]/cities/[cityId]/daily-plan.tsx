@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CATEGORY_STYLES, CATEGORY_LABELS, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -324,34 +324,103 @@ function DayMapModal({
   onClose,
   startAccom,
   endAccom,
+  dayPlanId,
+  onActivitiesChange,
 }: {
   pois: { id: number; name: string; category: Category; description: string | null; latitude: number | null; longitude: number | null; photoUrl?: string | null }[];
   activities: DayActivityDTO[];
   dayLabel: string;
   onClose: () => void;
-  /** Accommodation from the night before (where you wake up) */
   startAccom: AccommodationLoc;
-  /** Accommodation for the current night (where you sleep) */
   endAccom: AccommodationLoc;
+  dayPlanId: number;
+  onActivitiesChange?: (dayPlanId: number, reordered: DayActivityDTO[]) => void;
 }) {
-  // Order non-accommodation POIs by time slot
-  const orderedPois = useMemo(() =>
+  const [localActivities, setLocalActivities] = useState(activities);
+  useEffect(() => setLocalActivities(activities), [activities]);
+
+  const [showReorder, setShowReorder] = useState(false);
+  const [reorderMode, setReorderMode] = useState<"list" | "map">("list");
+  const [tapSequence, setTapSequence] = useState<number[]>([]);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+
+  // Trigger Mapbox resize when sidebar toggles so "Fit all" accounts for new width
+  useLayoutEffect(() => {
+    const timer = setTimeout(() => window.dispatchEvent(new Event("resize")), 50);
+    return () => clearTimeout(timer);
+  }, [showReorder]);
+
+  const orderedActivities = useMemo(() =>
     TIME_SLOTS.flatMap((slot) =>
-      activities.filter((a) => a.timeSlot === slot && a.poiCategory !== "ACCOMMODATION"),
-    )
+      localActivities.filter((a) => a.timeSlot === slot && a.poiCategory !== "ACCOMMODATION"),
+    ),
+    [localActivities],
+  );
+
+  const orderedPois = useMemo(() =>
+    orderedActivities
       .map((act) => pois.find((p) => p.id === act.poiId))
       .filter((p): p is NonNullable<typeof p> => p != null && p.latitude != null && p.longitude != null),
-    [activities, pois],
+    [orderedActivities, pois],
   );
+
+  const applyNewOrder = useCallback(async (reordered: DayActivityDTO[]) => {
+    const perSlot = Math.ceil(reordered.length / TIME_SLOTS.length);
+    const withSlots = reordered.map((a, i) => ({
+      ...a,
+      timeSlot: TIME_SLOTS[Math.min(Math.floor(i / perSlot), TIME_SLOTS.length - 1)],
+    }));
+    const accomActivities = localActivities.filter((a) => a.poiCategory === "ACCOMMODATION");
+    const newAll = [...accomActivities, ...withSlots];
+    setLocalActivities(newAll);
+    onActivitiesChange?.(dayPlanId, newAll);
+    await Promise.all(
+      withSlots.map((a, i) =>
+        fetch(`/api/day-activities/${a.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timeSlot: a.timeSlot, order: i }),
+        }),
+      ),
+    );
+  }, [localActivities, dayPlanId, onActivitiesChange]);
+
+  // List drag & drop: move item from dragIdx to targetIdx
+  const handleListDrop = useCallback((targetIdx: number) => {
+    if (dragIdx == null || dragIdx === targetIdx) { setDragIdx(null); return; }
+    const reordered = [...orderedActivities];
+    const [item] = reordered.splice(dragIdx, 1);
+    reordered.splice(targetIdx, 0, item);
+    setDragIdx(null);
+    applyNewOrder(reordered);
+  }, [dragIdx, orderedActivities, applyNewOrder]);
+
+  // Map tap reorder: handle marker tap
+  const handleMapTap = useCallback((poiId: number) => {
+    setTapSequence((prev) => {
+      if (prev.includes(poiId)) return prev.filter((id) => id !== poiId);
+      return [...prev, poiId];
+    });
+  }, []);
+
+  // Apply map tap sequence
+  const applyTapSequence = useCallback(() => {
+    if (tapSequence.length === 0) return;
+    // Build new ordered activities from tap sequence, then append any untapped ones
+    const tapped = tapSequence
+      .map((poiId) => orderedActivities.find((a) => a.poiId === poiId))
+      .filter((a): a is DayActivityDTO => a != null);
+    const untapped = orderedActivities.filter((a) => !tapSequence.includes(a.poiId));
+    applyNewOrder([...tapped, ...untapped]);
+    setTapSequence([]);
+    setReorderMode("list");
+  }, [tapSequence, orderedActivities, applyNewOrder]);
 
   const openGoogleMapsRoute = useCallback(() => {
     if (orderedPois.length === 0) return;
-
-    // Route through POIs only — accommodation is NOT included in the route
     const origin = orderedPois[0];
     const destination = orderedPois[orderedPois.length - 1];
     const waypoints = orderedPois.slice(1, -1);
-
     let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking`;
     url += `&origin=${origin.latitude},${origin.longitude}`;
     url += `&destination=${destination.latitude},${destination.longitude}`;
@@ -362,10 +431,8 @@ function DayMapModal({
   }, [orderedPois]);
 
   const openRoundTrip = useCallback(() => {
-    // Round trip: accommodation → best route through POIs → accommodation
     const accom = startAccom ?? endAccom;
     if (!accom || orderedPois.length === 0) return;
-
     let url = `https://www.google.com/maps/dir/?api=1&travelmode=walking`;
     url += `&origin=${accom.latitude},${accom.longitude}`;
     url += `&destination=${accom.latitude},${accom.longitude}`;
@@ -376,19 +443,20 @@ function DayMapModal({
   const hasLocatedPois = orderedPois.length >= 2;
   const hasAccom = startAccom != null || endAccom != null;
 
-  // Compute numbered labels for POIs based on activity order (slot order, then position within slot)
+  // Compute numbered labels: in map-tap mode, show tap sequence numbers; otherwise activity order
   const poiNumbers = useMemo(() => {
-    const nums: Record<number, number> = {};
-    let n = 1;
-    for (const slot of TIME_SLOTS) {
-      for (const act of activities.filter((a) => a.timeSlot === slot)) {
-        if (act.poiCategory !== "ACCOMMODATION" && !(act.poiId in nums)) {
-          nums[act.poiId] = n++;
-        }
-      }
+    if (reorderMode === "map" && tapSequence.length > 0) {
+      const nums: Record<number, number> = {};
+      tapSequence.forEach((poiId, i) => { nums[poiId] = i + 1; });
+      // Untapped POIs get no number (they'll show category emoji)
+      return nums;
     }
+    const nums: Record<number, number> = {};
+    orderedActivities.forEach((act, i) => {
+      if (!(act.poiId in nums)) nums[act.poiId] = i + 1;
+    });
     return nums;
-  }, [activities]);
+  }, [orderedActivities, reorderMode, tapSequence]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
@@ -421,8 +489,196 @@ function DayMapModal({
             <button type="button" onClick={onClose} className="rounded p-1 hover:bg-[hsl(var(--muted))] text-lg leading-none">×</button>
           </div>
         </div>
-        <div className="p-4">
-          <PoiMap pois={pois} poiNumbers={poiNumbers} />
+        <div className="p-4 flex gap-3">
+          <div className="flex-1 min-w-0 relative">
+            <PoiMap
+              pois={pois}
+              poiNumbers={poiNumbers}
+              onMarkerClick={reorderMode === "map" ? handleMapTap : undefined}
+            />
+            {/* Map tap reorder overlay */}
+            {reorderMode === "map" && (
+              <div className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between gap-2 rounded-lg bg-amber-50/95 dark:bg-amber-950/95 border border-amber-300 dark:border-amber-700 px-3 py-2 shadow-lg">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-amber-600 dark:text-amber-400 text-sm">👆</span>
+                  <span className="text-xs font-medium text-amber-800 dark:text-amber-200 truncate">
+                    Tap markers in desired order ({tapSequence.length}/{orderedActivities.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {tapSequence.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setTapSequence([])}
+                      className="rounded px-2 py-1 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900"
+                    >
+                      Reset
+                    </button>
+                  )}
+                  {tapSequence.length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={applyTapSequence}
+                      className="rounded-md bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700"
+                    >
+                      Apply
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setTapSequence([]); setReorderMode("list"); }}
+                    className="rounded px-1.5 py-1 text-xs text-amber-500 hover:text-amber-700"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Reorder sidebar — collapsible */}
+          {orderedActivities.length > 1 && (
+            <div className="shrink-0 flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowReorder((v) => !v);
+                  if (reorderMode === "map") { setReorderMode("list"); setTapSequence([]); }
+                }}
+                className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+                  showReorder
+                    ? "border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-700"
+                    : "border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--muted))]"
+                }`}
+              >
+                {showReorder ? "Hide order" : "Change route order"}
+              </button>
+              {showReorder && (
+                <div className="w-56 space-y-2">
+                  {/* Mode tabs */}
+                  <div className="flex rounded-md border border-[hsl(var(--border))] overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => { setReorderMode("list"); setTapSequence([]); }}
+                      className={`flex-1 px-2 py-1 text-xs font-medium transition-colors ${
+                        reorderMode === "list"
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                          : "hover:bg-[hsl(var(--muted))]"
+                      }`}
+                    >
+                      Drag list
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setReorderMode("map")}
+                      className={`flex-1 px-2 py-1 text-xs font-medium transition-colors ${
+                        reorderMode === "map"
+                          ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                          : "hover:bg-[hsl(var(--muted))]"
+                      }`}
+                    >
+                      Tap on map
+                    </button>
+                  </div>
+                  {reorderMode === "list" && (
+                    <div className="space-y-1 overflow-y-auto max-h-[65vh]">
+                      {orderedActivities.map((act, i) => {
+                        const poi = pois.find((p) => p.id === act.poiId);
+                        const num = poiNumbers[act.poiId];
+                        return (
+                          <div
+                            key={act.id}
+                            draggable
+                            onDragStart={(e) => {
+                              setDragIdx(i);
+                              e.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }}
+                            onDrop={(e) => { e.preventDefault(); handleListDrop(i); }}
+                            onDragEnd={() => setDragIdx(null)}
+                            className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 cursor-grab active:cursor-grabbing transition-all ${
+                              dragIdx === i
+                                ? "opacity-50 border-[hsl(var(--primary))] bg-[hsl(var(--muted))]"
+                                : "border-[hsl(var(--border))] bg-[hsl(var(--background))] hover:shadow-sm"
+                            }`}
+                          >
+                            <span className="text-[hsl(var(--muted-foreground))] opacity-40">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3" height="3" rx="1"/><rect x="14" y="5" width="3" height="3" rx="1"/><rect x="7" y="11" width="3" height="3" rx="1"/><rect x="14" y="11" width="3" height="3" rx="1"/><rect x="7" y="17" width="3" height="3" rx="1"/><rect x="14" y="17" width="3" height="3" rx="1"/></svg>
+                            </span>
+                            <span
+                              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                              style={{ backgroundColor: CATEGORY_STYLES[act.poiCategory]?.dot ?? "#888" }}
+                            >
+                              {num}
+                            </span>
+                            <span className="flex-1 truncate text-xs">{poi?.name ?? act.poiName}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {reorderMode === "map" && (
+                    <div className="space-y-1 overflow-y-auto max-h-[65vh]">
+                      <p className="text-xs text-[hsl(var(--muted-foreground))] mb-1">
+                        Tap markers on the map in the order you want to visit them.
+                      </p>
+                      {tapSequence.length > 0 && (
+                        <div className="space-y-0.5">
+                          {tapSequence.map((poiId, i) => {
+                            const poi = pois.find((p) => p.id === poiId);
+                            const act = orderedActivities.find((a) => a.poiId === poiId);
+                            return (
+                              <div
+                                key={poiId}
+                                className="flex items-center gap-1.5 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/30 px-2 py-1"
+                              >
+                                <span
+                                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                                  style={{ backgroundColor: act ? (CATEGORY_STYLES[act.poiCategory]?.dot ?? "#888") : "#888" }}
+                                >
+                                  {i + 1}
+                                </span>
+                                <span className="flex-1 truncate text-xs">{poi?.name ?? "Unknown"}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setTapSequence((prev) => prev.filter((id) => id !== poiId))}
+                                  className="text-xs text-amber-400 hover:text-amber-600"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {/* Show remaining untapped POIs */}
+                      {orderedActivities.filter((a) => !tapSequence.includes(a.poiId)).length > 0 && (
+                        <div className="pt-1 border-t border-dashed border-[hsl(var(--border))]">
+                          <p className="text-xs text-[hsl(var(--muted-foreground))] opacity-60 mb-0.5">Remaining:</p>
+                          {orderedActivities.filter((a) => !tapSequence.includes(a.poiId)).map((act) => {
+                            const poi = pois.find((p) => p.id === act.poiId);
+                            return (
+                              <div
+                                key={act.id}
+                                className="flex items-center gap-1.5 rounded-md px-2 py-1 opacity-40"
+                              >
+                                <span
+                                  className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                                  style={{ backgroundColor: CATEGORY_STYLES[act.poiCategory]?.dot ?? "#888" }}
+                                >
+                                  ·
+                                </span>
+                                <span className="flex-1 truncate text-xs">{poi?.name ?? act.poiName}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1220,7 +1476,7 @@ export function DailyPlan({
   const { startAccom, endAccom } = useMemo((): { startAccom: AccommodationLoc; endAccom: AccommodationLoc } => {
     if (!mapDayPlan) return { startAccom: null, endAccom: null };
 
-    const dayIdx = dayPlans.indexOf(mapDayPlan);
+    const dayIdx = dayPlans.findIndex((dp) => dp.id === mapDayPlan.id);
 
     // Helper: find the first accommodation POI with valid coords from a day plan's activities
     function findAccom(dp: DayPlanDTO | undefined): AccommodationLoc {
@@ -1782,10 +2038,16 @@ export function DailyPlan({
         <DayMapModal
           pois={mapPois}
           activities={mapDayPlan.activities}
-          dayLabel={formatDayWithIndex(mapDayPlan.date, dayPlans.indexOf(mapDayPlan))}
+          dayLabel={formatDayWithIndex(mapDayPlan.date, dayPlans.findIndex((dp) => dp.id === mapDayPlan.id))}
           onClose={() => setMapDayPlan(null)}
           startAccom={startAccom}
           endAccom={endAccom}
+          dayPlanId={mapDayPlan.id}
+          onActivitiesChange={(dpId, reordered) => {
+            setDayPlans((prev) =>
+              prev.map((dp) => dp.id === dpId ? { ...dp, activities: reordered } : dp),
+            );
+          }}
         />
       )}
     </div>
