@@ -311,113 +311,110 @@ export async function injectMustVisitPlaces(
   const injected: DiscoveredPlace[] = [];
   const googleMetaByPlaceId = new Map<string, GoogleMeta>();
 
-  for (const name of unmatched) {
-    // 1. Get accurate coordinates from Google Places
-    const googleMeta = await fetchGoogleMeta(name, cityName, centerLat, centerLon);
-    if (!googleMeta?.latitude || !googleMeta?.longitude) continue;
+  // Resolve all unmatched names in parallel to avoid 60s Vercel timeout
+  type ResolveResult = {
+    place: DiscoveredPlace;
+    googleMeta?: GoogleMeta;
+    logMsg: string;
+  };
 
-    // 1b. Radius check — only inject places within the user's selected discover radius
-    if (radiusKm != null && isFinite(radiusKm)) {
-      const distKm = haversineKm(centerLat, centerLon, googleMeta.latitude, googleMeta.longitude);
-      if (distKm > radiusKm) {
-        console.log(`[must-visit] "${name}" outside radius (${distKm.toFixed(1)}km > ${radiusKm}km), skipping`);
-        continue;
-      }
-    }
+  const resolveResults = await Promise.allSettled(
+    unmatched.map(async (name): Promise<ResolveResult | null> => {
+      // 1. Get accurate coordinates from Google Places
+      const googleMeta = await fetchGoogleMeta(name, cityName, centerLat, centerLon);
+      if (!googleMeta?.latitude || !googleMeta?.longitude) return null;
 
-    // 2. Search Geoapify at those coordinates (tight radius, broad categories)
-    const nearbyCandidates = await searchPlacesNearCoords(
-      googleMeta.latitude,
-      googleMeta.longitude,
-      500,
-    );
-
-    // 3. Find the best name match among Geoapify results.
-    //    Match against: must-visit English name, Google display name, AND all
-    //    Geoapify international names (name:en, name:de, etc.) — this handles
-    //    cross-language matching like "Temple of Augustus" ↔ "Augustov Hram"
-    //    (where name_international.en = "Temple of Augustus").
-    let bestGeo: DiscoveredPlace | null = null;
-    let bestScore = 0;
-    for (const candidate of nearbyCandidates) {
-      if (discoveredPlaceIds.has(candidate.placeId)) continue;
-
-      // Score vs the primary (local) Geoapify name
-      const scoreVsLocal = nameSimilarity(name, candidate.name);
-      const scoreVsGoogle = googleMeta.name ? nameSimilarity(googleMeta.name, candidate.name) : 0;
-
-      // Score vs international names (e.g. name:en → "Temple of Augustus")
-      let scoreVsIntl = 0;
-      if (candidate.nameInternational) {
-        for (const intlName of Object.values(candidate.nameInternational)) {
-          scoreVsIntl = Math.max(scoreVsIntl, nameSimilarity(name, intlName));
-          if (googleMeta.name) {
-            scoreVsIntl = Math.max(scoreVsIntl, nameSimilarity(googleMeta.name, intlName));
-          }
+      // 1b. Radius check
+      if (radiusKm != null && isFinite(radiusKm)) {
+        const distKm = haversineKm(centerLat, centerLon, googleMeta.latitude, googleMeta.longitude);
+        if (distKm > radiusKm) {
+          console.log(`[must-visit] "${name}" outside radius (${distKm.toFixed(1)}km > ${radiusKm}km), skipping`);
+          return null;
         }
       }
 
-      const score = Math.max(scoreVsLocal, scoreVsGoogle, scoreVsIntl);
-      if (score > bestScore) { bestScore = score; bestGeo = candidate; }
-    }
+      // 2. Search Geoapify at those coordinates (tight radius, broad categories)
+      const nearbyCandidates = await searchPlacesNearCoords(
+        googleMeta.latitude,
+        googleMeta.longitude,
+        500,
+      );
 
-    // 3b. Proximity fallback: if no name match, check if there's exactly ONE
-    //     heritage/historic building within 50m of Google's coords. When Google
-    //     and Geoapify agree on location but the place has no English name
-    //     (e.g. "Mletačka utvrda" for Pula Castle), proximity alone is strong
-    //     evidence — but only if unambiguous (a single candidate, not multiple
-    //     heritage buildings clustered together like Forum + Temple).
-    if (!bestGeo || bestScore < 0.5) {
-      const PROXIMITY_THRESHOLD_M = 50;
-      const isHeritage = (cats: string[]) =>
-        cats.some((c) => c.includes("heritage") || c.includes("historic") || c.includes("castle"));
-
-      const heritageNearby: DiscoveredPlace[] = [];
+      // 3. Find the best name match among Geoapify results.
+      let bestGeo: DiscoveredPlace | null = null;
+      let bestScore = 0;
       for (const candidate of nearbyCandidates) {
         if (discoveredPlaceIds.has(candidate.placeId)) continue;
-        if (!isHeritage(candidate.categories)) continue;
-        const dist = haversineKm(googleMeta.latitude!, googleMeta.longitude!, candidate.latitude, candidate.longitude) * 1000;
-        if (dist <= PROXIMITY_THRESHOLD_M) {
-          heritageNearby.push(candidate);
+        const scoreVsLocal = nameSimilarity(name, candidate.name);
+        const scoreVsGoogle = googleMeta.name ? nameSimilarity(googleMeta.name, candidate.name) : 0;
+        let scoreVsIntl = 0;
+        if (candidate.nameInternational) {
+          for (const intlName of Object.values(candidate.nameInternational)) {
+            scoreVsIntl = Math.max(scoreVsIntl, nameSimilarity(name, intlName));
+            if (googleMeta.name) {
+              scoreVsIntl = Math.max(scoreVsIntl, nameSimilarity(googleMeta.name, intlName));
+            }
+          }
+        }
+        const score = Math.max(scoreVsLocal, scoreVsGoogle, scoreVsIntl);
+        if (score > bestScore) { bestScore = score; bestGeo = candidate; }
+      }
+
+      // 3b. Proximity fallback for heritage buildings within 50m
+      if (!bestGeo || bestScore < 0.5) {
+        const PROXIMITY_THRESHOLD_M = 50;
+        const isHeritage = (cats: string[]) =>
+          cats.some((c) => c.includes("heritage") || c.includes("historic") || c.includes("castle"));
+        const heritageNearby: DiscoveredPlace[] = [];
+        for (const candidate of nearbyCandidates) {
+          if (discoveredPlaceIds.has(candidate.placeId)) continue;
+          if (!isHeritage(candidate.categories)) continue;
+          const dist = haversineKm(googleMeta.latitude!, googleMeta.longitude!, candidate.latitude, candidate.longitude) * 1000;
+          if (dist <= PROXIMITY_THRESHOLD_M) heritageNearby.push(candidate);
+        }
+        if (heritageNearby.length === 1) {
+          bestGeo = heritageNearby[0];
+          bestScore = -1;
         }
       }
-      // Only use proximity when there's exactly one candidate — avoids
-      // ambiguity when multiple heritage buildings are in the same square
-      if (heritageNearby.length === 1) {
-        bestGeo = heritageNearby[0];
-        bestScore = -1; // flag: matched by proximity, not name
-      }
-    }
 
-    if (bestGeo && (bestScore >= 0.5 || bestScore === -1)) {
-      // 4. Geoapify has it — inject with full OSM data
-      const matchType = bestScore === -1 ? "proximity" : `sim=${bestScore.toFixed(2)}`;
-      console.log(`[must-visit] Geoapify: "${name}" -> "${bestGeo.name}" (${matchType})`);
-      injected.push(bestGeo);
-      discoveredPlaceIds.add(bestGeo.placeId);
-    } else {
-      // 5. Geoapify doesn't have it — create from Google data
-      const syntheticId = `must-visit-${googleMeta.googlePlaceId}`;
-      if (discoveredPlaceIds.has(syntheticId)) continue;
-      console.log(`[must-visit] Google fallback: "${name}" -> "${googleMeta.name}" (${googleMeta.rating}★, ${googleMeta.userRatingCount} reviews, type=${googleMeta.primaryType})`);
-      // Map Google primaryType to Geoapify-style categories so the route
-      // handler routes the place to the correct discovery bucket.
-      const geoCats = mapGoogleTypeToCategories(googleMeta.primaryType);
-      const place: DiscoveredPlace = {
-        placeId: syntheticId,
-        name: googleMeta.name ?? name,
-        latitude: googleMeta.latitude,
-        longitude: googleMeta.longitude,
-        placeCategory: geoCats.label,
-        categories: geoCats.tags,
-        website: googleMeta.website ?? undefined,
-        openingHours: googleMeta.openingHours ?? undefined,
-        tel: googleMeta.phoneNumber ?? undefined,
-      };
-      injected.push(place);
-      discoveredPlaceIds.add(syntheticId);
-      googleMetaByPlaceId.set(syntheticId, googleMeta);
-    }
+      if (bestGeo && (bestScore >= 0.5 || bestScore === -1)) {
+        const matchType = bestScore === -1 ? "proximity" : `sim=${bestScore.toFixed(2)}`;
+        return {
+          place: bestGeo,
+          logMsg: `[must-visit] Geoapify: "${name}" -> "${bestGeo.name}" (${matchType})`,
+        };
+      } else {
+        const syntheticId = `must-visit-${googleMeta.googlePlaceId}`;
+        const geoCats = mapGoogleTypeToCategories(googleMeta.primaryType);
+        return {
+          place: {
+            placeId: syntheticId,
+            name: googleMeta.name ?? name,
+            latitude: googleMeta.latitude,
+            longitude: googleMeta.longitude,
+            placeCategory: geoCats.label,
+            categories: geoCats.tags,
+            website: googleMeta.website ?? undefined,
+            openingHours: googleMeta.openingHours ?? undefined,
+            tel: googleMeta.phoneNumber ?? undefined,
+          },
+          googleMeta,
+          logMsg: `[must-visit] Google fallback: "${name}" -> "${googleMeta.name}" (${googleMeta.rating}★, ${googleMeta.userRatingCount} reviews, type=${googleMeta.primaryType})`,
+        };
+      }
+    }),
+  );
+
+  // Collect results, dedup by placeId
+  for (const result of resolveResults) {
+    if (result.status !== "fulfilled" || !result.value) continue;
+    const { place, googleMeta, logMsg } = result.value;
+    if (discoveredPlaceIds.has(place.placeId)) continue;
+    console.log(logMsg);
+    injected.push(place);
+    discoveredPlaceIds.add(place.placeId);
+    if (googleMeta) googleMetaByPlaceId.set(place.placeId, googleMeta);
   }
 
   const geoCount = injected.filter((p) => !p.placeId.startsWith("must-visit-")).length;
