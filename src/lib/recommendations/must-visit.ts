@@ -102,6 +102,11 @@ Return ONLY a JSON object mapping each type to the category key. Example: {"bist
 export function googleTypeToCategoryKey(primaryType?: string): string | null {
   if (!primaryType) return null;
   const t = primaryType.toLowerCase();
+  // Wellness
+  if (["spa", "gym", "fitness_center"].some((ft) => t.includes(ft)))
+    return "WELLNESS";
+  // public_bath — Google uses this for beaches and coastal bathing spots
+  if (t === "public_bath") return "NATURE";
   // Food & drink
   if (["restaurant", "bistro", "brunch_restaurant", "breakfast_restaurant",
        "hamburger_restaurant", "ramen_restaurant", "barbecue_restaurant",
@@ -131,8 +136,6 @@ export function googleTypeToCategoryKey(primaryType?: string): string | null {
   if (["museum", "art_gallery", "library", "church", "mosque", "synagogue", "hindu_temple",
        "tourist_attraction", "historical_landmark", "performing_arts_theater", "cultural_landmark"].some((ft) => t.includes(ft)))
     return "CULTURE";
-  if (["spa", "gym", "fitness_center"].some((ft) => t.includes(ft)))
-    return "WELLNESS";
   return null; // Unknown — caller should classify via LLM
 }
 
@@ -297,12 +300,21 @@ export async function injectMustVisitPlaces(
 ): Promise<{ places: DiscoveredPlace[]; googleMetaByPlaceId: Map<string, GoogleMeta> }> {
   if (!mustVisitNames.length) return { places: [], googleMetaByPlaceId: new Map() };
 
-  const discoveredNames = discoveredPlaces.map((p) => p.name);
   const discoveredPlaceIds = new Set(discoveredPlaces.map((p) => p.placeId));
 
-  // Find unmatched must-visit names
+  // Find unmatched must-visit names — check primary AND international names
+  // to catch cross-language duplicates (e.g. "Cathedral of the Assumption..."
+  // vs "katedrala Uznesenja Blažene Djevice Marije")
   const unmatched = mustVisitNames.filter((mv) =>
-    !discoveredNames.some((dn) => nameSimilarity(mv, dn) >= MATCH_THRESHOLD),
+    !discoveredPlaces.some((dp) => {
+      if (nameSimilarity(mv, dp.name) >= MATCH_THRESHOLD) return true;
+      if (dp.nameInternational) {
+        for (const intlName of Object.values(dp.nameInternational)) {
+          if (nameSimilarity(mv, intlName) >= MATCH_THRESHOLD) return true;
+        }
+      }
+      return false;
+    }),
   );
 
   if (!unmatched.length) { console.log(`[must-visit] all ${mustVisitNames.length} names matched in discovered set`); return { places: [], googleMetaByPlaceId: new Map() }; }

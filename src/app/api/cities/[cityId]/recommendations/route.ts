@@ -561,13 +561,40 @@ export async function POST(
     if (!googleMetaMap.has(placeId)) googleMetaMap.set(placeId, meta);
   }
 
+  // ── Coord correction: prefer Google coords over Geoapify ─────────────────
+  // Geoapify coords can land in water or on the wrong feature (e.g. a bay
+  // instead of the resort on its shore). Google coords are typically placed
+  // at the entrance/building, so prefer them when available and close enough.
+  {
+    const COORD_CORRECT_MAX_KM = 1;
+    let corrected = 0;
+    for (const place of allPrescanCandidates) {
+      const gMeta = googleMetaMap.get(place.placeId);
+      if (!gMeta?.latitude || !gMeta?.longitude) continue;
+      const distKm = haversineKm(place.latitude, place.longitude, gMeta.latitude, gMeta.longitude);
+      if (distKm > 0.01 && distKm <= COORD_CORRECT_MAX_KM) {
+        place.latitude = gMeta.latitude;
+        place.longitude = gMeta.longitude;
+        corrected++;
+      }
+    }
+    if (corrected) console.log(`[coord-correct] updated ${corrected} places with Google coordinates`);
+  }
+
   // ── Google-based reclassification ─────────────────────────────────────────
   // Geoapify sometimes miscategorises places (e.g. a wine bar tagged as
   // "tourism.attraction.artwork.statue"). After the Google prescan we know the
-  // Google primaryType, which is usually correct. Move places whose Google type
-  // clearly belongs to a different selected category.
+  // Google primaryType, which is usually correct for *specific* types.
+  //
+  // Generic types like "tourist_attraction" are catch-alls that Google applies
+  // to museums, beaches, viewpoints, ruins, etc. — too vague to override
+  // Geoapify's tag-based categorisation. Only reclassify when Google's type
+  // is specific enough to be trustworthy.
   {
     const { googleTypeToCategoryKey } = await import("@/lib/recommendations/must-visit");
+    const GENERIC_GOOGLE_TYPES = new Set([
+      "tourist_attraction", "point_of_interest", "establishment",
+    ]);
     let reclassified = 0;
     for (const sourceCat of categories) {
       const places = discoveryByCategory[sourceCat];
@@ -579,6 +606,7 @@ export async function POST(
           if (gMeta) console.log(`[reclassify] "${place.name}" in ${sourceCat} has Google match but no primaryType`);
           continue;
         }
+        if (GENERIC_GOOGLE_TYPES.has(gMeta.primaryType.toLowerCase())) continue;
         const correctCat = googleTypeToCategoryKey(gMeta.primaryType);
         if (!correctCat || correctCat === sourceCat) continue;
         // Only move if the correct category is one the user selected
@@ -742,7 +770,7 @@ export async function POST(
     const coordDupSet = new Set<string>();
     const selected: ScoredCandidate[] = [];
     // Track selected names + coords for fuzzy name dedup within this selection
-    const selectedInfo: Array<{ name: string; lat: number; lon: number }> = [];
+    const selectedInfo: Array<{ name: string; intlNames: string[]; lat: number; lon: number }> = [];
     for (const item of scoredItems) {
       if (selected.length >= limit) break;
       if (qualityDroppedSet.has(item.place.placeId)) continue;
@@ -790,14 +818,25 @@ export async function POST(
       );
       if (nearSelected) { coordDupSet.add(item.place.placeId); continue; }
       // Fuzzy name dedup: catch semantically identical places with different names
-      // (e.g. "Louvre Museum" vs "Musée du Louvre") within 300 m
+      // (e.g. "Louvre Museum" vs "Musée du Louvre") within 300 m.
+      // Also compare international names to catch cross-language duplicates
+      // (e.g. "Cathedral of the Assumption..." vs "katedrala Uznesenja...")
+      const itemIntlNames = item.place.nameInternational ? Object.values(item.place.nameInternational) : [];
       const fuzzyDup = selectedInfo.some((s) => {
         const dist = haversineKm(s.lat, s.lon, item.place.latitude, item.place.longitude) * 1000;
-        return dist < FUZZY_DEDUP_M && nameSimilarity(s.name, item.place.name) >= FUZZY_NAME_THRESHOLD;
+        if (dist >= FUZZY_DEDUP_M) return false;
+        if (nameSimilarity(s.name, item.place.name) >= FUZZY_NAME_THRESHOLD) return true;
+        for (const intl of itemIntlNames) {
+          if (nameSimilarity(s.name, intl) >= FUZZY_NAME_THRESHOLD) return true;
+        }
+        for (const intl of s.intlNames) {
+          if (nameSimilarity(intl, item.place.name) >= FUZZY_NAME_THRESHOLD) return true;
+        }
+        return false;
       });
       if (fuzzyDup) { coordDupSet.add(item.place.placeId); continue; }
       selected.push(item);
-      selectedInfo.push({ name: item.place.name, lat: item.place.latitude, lon: item.place.longitude });
+      selectedInfo.push({ name: item.place.name, intlNames: itemIntlNames, lat: item.place.latitude, lon: item.place.longitude });
       // Track Google Place ID within this selection so later items in the same
       // batch that resolve to the same Google Place are caught.
       if (gMeta?.googlePlaceId) seenGooglePlaceIds.add(gMeta.googlePlaceId);

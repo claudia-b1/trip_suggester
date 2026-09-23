@@ -1584,6 +1584,14 @@ export function PoiMapImpl(props: PoiMapProps) {
                     </span>
                   )}
                 </div>
+                {userRatings?.[poi.id] != null && (
+                  <div
+                    className="absolute flex items-center justify-center rounded-full border border-white pointer-events-none"
+                    style={{ top: -2, left: -4, minWidth: 15, height: 15, padding: "0 2px", backgroundColor: "#d97706", boxShadow: "0 1px 3px rgba(0,0,0,0.3)", zIndex: 1 }}
+                  >
+                    <span style={{ fontSize: 8, lineHeight: 1, color: "white", fontWeight: 700 }}>★{userRatings[poi.id]}</span>
+                  </div>
+                )}
               </div>
             </Marker>
           );
@@ -1643,6 +1651,14 @@ export function PoiMapImpl(props: PoiMapProps) {
                     </span>
                   )}
                 </div>
+                {userRatings?.[poi.id] != null && (
+                  <div
+                    className="absolute flex items-center justify-center rounded-full border border-white pointer-events-none"
+                    style={{ top: -2, left: -4, minWidth: 15, height: 15, padding: "0 2px", backgroundColor: "#d97706", boxShadow: "0 1px 3px rgba(0,0,0,0.3)", zIndex: 1 }}
+                  >
+                    <span style={{ fontSize: 8, lineHeight: 1, color: "white", fontWeight: 700 }}>★{userRatings[poi.id]}</span>
+                  </div>
+                )}
                 {/* Heart badge */}
                 <div
                   className="absolute flex items-center justify-center rounded-full bg-pink-500 border border-white"
