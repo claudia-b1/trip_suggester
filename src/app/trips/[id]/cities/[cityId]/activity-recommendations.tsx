@@ -631,11 +631,10 @@ export function ActivityRecommendations({
       const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
       if (match) return toResult(match);
     }
-    // 2. Coordinate-based matching — find the CLOSEST POI within 100m.
-    //    In dense old towns many POIs cluster together; picking the first
-    //    one caused unrelated shops (butcher, fish market) to match.
+    // 2. Coordinate-based matching — only within 25m (essentially same building).
+    //    In dense old towns even 100m matches unrelated shops (bakery, butcher).
     if (recLat != null && recLon != null) {
-      const MATCH_KM = 0.1;
+      const MATCH_KM = 0.025;
       let bestPoi: typeof pois[number] | null = null;
       let bestDist = Infinity;
       for (const p of pois) {
