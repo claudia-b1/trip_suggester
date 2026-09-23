@@ -98,6 +98,17 @@ type ListLayout = "grid" | "compact";
 
 type SortKey = "name" | "category" | "rating" | "price" | "my_rating" | "reviews";
 type StatusFilter = "assigned" | "unassigned" | "visited" | "unvisited" | "not_interested" | "hide_not_interested";
+type RatingFilter = "all" | "unrated" | "1" | "2" | "3" | "4" | "5";
+
+const RATING_OPTIONS: { key: RatingFilter; label: string }[] = [
+  { key: "all",     label: "All" },
+  { key: "unrated", label: "Not rated" },
+  { key: "1",       label: "1+ stars" },
+  { key: "2",       label: "2+ stars" },
+  { key: "3",       label: "3+ stars" },
+  { key: "4",       label: "4+ stars" },
+  { key: "5",       label: "5 stars" },
+];
 
 const SORT_OPTIONS: { key: SortKey; label: string; emoji: string }[] = [
   { key: "rating",             label: "Rating ↓",    emoji: "⭐" },
@@ -233,6 +244,68 @@ function StatusDropdown({ active, onToggle }: { active: Set<StatusFilter>; onTog
                   {isActive ? "✓" : ""}
                 </span>
                 {emoji} {optLabel}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── RatingFilterDropdown ─────────────────────────────────────────────────────
+
+function RatingFilterDropdown({ value, onChange }: { value: RatingFilter; onChange: (v: RatingFilter) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const activeLabel = RATING_OPTIONS.find((o) => o.key === value)?.label ?? "All";
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2.5 py-1.5 text-xs font-medium hover:bg-[hsl(var(--muted))]"
+        style={{ minWidth: 120, maxWidth: 200 }}
+      >
+        <span className="shrink-0 text-[hsl(var(--muted-foreground))]">My rating:</span>
+        <span className="flex-1 truncate text-left">{activeLabel}</span>
+        {value !== "all" && (
+          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] text-xs font-bold">
+            1
+          </span>
+        )}
+        <span className="shrink-0 text-[hsl(var(--muted-foreground))]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1 w-44 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-lg py-1">
+          {RATING_OPTIONS.map(({ key, label }) => {
+            const active = value === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => { onChange(key); setOpen(false); }}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-[hsl(var(--muted))] text-left"
+              >
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-xs font-bold ${
+                  active
+                    ? "bg-[hsl(var(--primary))] border-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                    : "border-[hsl(var(--border))]"
+                }`}>
+                  {active ? "✓" : ""}
+                </span>
+                {key !== "all" && key !== "unrated" ? "★".repeat(Number(key)) + " " : ""}{label}
               </button>
             );
           })}
@@ -741,6 +814,7 @@ export function PoisSection({
   );
   const [search, setSearch] = useState("");
   const [statusFilters, setStatusFilters] = useState<Set<StatusFilter>>(new Set());
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>("all");
 
   function toggleStatusFilter(f: StatusFilter) {
     setStatusFilters((prev) => {
@@ -777,12 +851,13 @@ export function PoisSection({
     setActiveCategories(new Set(CATEGORIES));
     setSearch("");
     setStatusFilters(new Set());
+    setRatingFilter("all");
     setIncludedSubcategories(new Set());
     setShowFavouritesOnly(false);
     setShowUnescoOnly(false);
   }
   const allCategoriesSelected = activeCategories.size === CATEGORIES.length;
-  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || includedSubcategories.size > 0 || showFavouritesOnly || showUnescoOnly;
+  const hasFilters = !allCategoriesSelected || search.trim().length > 0 || statusFilters.size > 0 || ratingFilter !== "all" || includedSubcategories.size > 0 || showFavouritesOnly || showUnescoOnly;
   const searchLower = search.trim().toLowerCase();
   const filteredPois = pois.filter((p) => {
     if (!activeCategories.has(p.category)) return false;
@@ -798,6 +873,11 @@ export function PoisSection({
       if (f === "unvisited"           &&  visitedIds.has(p.id))      return false;
       if (f === "not_interested"      && !notInterested.has(p.id))   return false;
       if (f === "hide_not_interested" &&  notInterested.has(p.id))   return false;
+    }
+    if (ratingFilter !== "all") {
+      const myRating = userRatings[p.id];
+      if (ratingFilter === "unrated") { if (myRating != null) return false; }
+      else { if (myRating == null || myRating < Number(ratingFilter)) return false; }
     }
     return true;
   });
@@ -1386,6 +1466,10 @@ export function PoisSection({
             <p className="text-xs text-[hsl(var(--muted-foreground))]">
               💡 <span className="hidden sm:inline">Right-click anywhere on the map to drop a pin and add a POI at that location.</span><span className="sm:hidden">Long-press anywhere on the map to drop a pin and add a POI at that location.</span>
             </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusDropdown active={statusFilters} onToggle={toggleStatusFilter} />
+              <RatingFilterDropdown value={ratingFilter} onChange={setRatingFilter} />
+            </div>
             <div className="relative min-h-[500px] lg:min-h-[600px]">
               <PoiMap
                 pois={filteredPois}
@@ -1442,6 +1526,7 @@ export function PoisSection({
               <div className="flex items-center gap-2 flex-wrap">
                 <SortDropdown sortBy={sortBy} onToggle={toggleSort} />
                 <StatusDropdown active={statusFilters} onToggle={toggleStatusFilter} />
+                <RatingFilterDropdown value={ratingFilter} onChange={setRatingFilter} />
               </div>
               <div className="inline-flex rounded-md border border-[hsl(var(--border))] p-0.5 shrink-0" role="group" aria-label="List layout">
                 <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import MapGL, {
   Marker,
   Popup,
@@ -95,6 +95,8 @@ export type PoiMapProps = {
   onPreviewScrollToCard?: (id: string) => void;
   /** Callback when "Add as POI" is clicked on a preview popup */
   onPreviewAddPoi?: (marker: RecommendationMarker) => void;
+  /** When set, marker clicks call this instead of opening the popup (used for tap-to-reorder) */
+  onMarkerClick?: (poiId: number) => void;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -590,6 +592,83 @@ function PopupContent({
   );
 }
 
+// ─── Smart popup — auto-positions above/below marker to stay within map ───────
+
+function SmartPopup({
+  markerPos,
+  containerRef,
+  arrowBorderColor,
+  arrowBgColor,
+  onMouseEnter,
+  onMouseLeave,
+  children,
+}: {
+  markerPos: { x: number; y: number };
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  arrowBorderColor: string;
+  arrowBgColor: string;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
+  children: React.ReactNode;
+}) {
+  const popupRef = useRef<HTMLDivElement>(null);
+  const [placement, setPlacement] = useState<"above" | "below">("above");
+  const [clampedX, setClampedX] = useState(markerPos.x);
+
+  useLayoutEffect(() => {
+    const popup = popupRef.current;
+    const container = containerRef.current;
+    if (!popup || !container) return;
+    const popupH = popup.offsetHeight;
+    const popupW = popup.offsetWidth;
+    const containerW = container.offsetWidth;
+    const gap = 18;
+    setPlacement(markerPos.y - popupH - gap < 0 ? "below" : "above");
+    const halfW = popupW / 2;
+    const pad = 8;
+    const clamped = Math.max(halfW + pad, Math.min(containerW - halfW - pad, markerPos.x));
+    setClampedX(clamped);
+  }, [markerPos.x, markerPos.y, containerRef, children]);
+
+  const isAbove = placement === "above";
+  const style: React.CSSProperties = {
+    left: clampedX,
+    top: markerPos.y,
+    transform: isAbove ? "translate(-50%, calc(-100% - 18px))" : "translate(-50%, 18px)",
+  };
+
+  return (
+    <div
+      ref={popupRef}
+      className="absolute z-30 pointer-events-auto"
+      style={style}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {children}
+      {isAbove ? (
+        <>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: `8px solid ${arrowBorderColor}` }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: `7px solid ${arrowBgColor}` }} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -8 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderBottom: `8px solid ${arrowBorderColor}` }} />
+          </div>
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ top: -6 }}>
+            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderBottom: `7px solid ${arrowBgColor}` }} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Favourite marker & popup ─────────────────────────────────────────────────
 
 function FavouriteMarkerIcon({ category, subcategory, active }: { category: Category; subcategory?: string | null; active?: boolean }) {
@@ -722,7 +801,7 @@ function FavouritePopupContent({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function PoiMapImpl(props: PoiMapProps) {
-  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop, previewMarkers = [], highlightedPreviewId, onPreviewMarkerClick, onPreviewScrollToCard, onPreviewAddPoi } = props;
+  const { pois, cityId, cityLat, cityLon, radiusKm, nearbyRadiusKm, dayPlans = [], dragOnly, focusPoiId, onAddAtLocation, onViewInList, userRatings, notInterested, onRatePoi, onToggleNotInterested, onFocusConsumed, favouriteItems = [], onFavourite, isPoiFavourited, poiNumbers, onSetAccommodation, currentAccommodationId, isStop, previewMarkers = [], highlightedPreviewId, onPreviewMarkerClick, onPreviewScrollToCard, onPreviewAddPoi, onMarkerClick } = props;
   const router = useRouter();
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   const mapRef = useRef<MapRef>(null);
@@ -1455,6 +1534,10 @@ export function PoiMapImpl(props: PoiMapProps) {
               anchor="bottom"
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
+                if (onMarkerClick) {
+                  onMarkerClick(poi.id);
+                  return;
+                }
                 const newId = activeId === poi.id ? null : poi.id;
                 setActiveId(newId);
                 setActiveClusterKey(null);
@@ -1520,6 +1603,10 @@ export function PoiMapImpl(props: PoiMapProps) {
               style={{ zIndex: 2 }}
               onClick={(e) => {
                 e.originalEvent.stopPropagation();
+                if (onMarkerClick) {
+                  onMarkerClick(poi.id);
+                  return;
+                }
                 setActiveId((prev) => prev === poi.id ? null : poi.id);
               }}
             >
@@ -1744,10 +1831,12 @@ export function PoiMapImpl(props: PoiMapProps) {
       )}
 
       {/* Custom popup rendered OUTSIDE MapGL so it can overflow the map's overflow:hidden */}
-      {visiblePoi && popupPos && (
-        <div
-          className="absolute z-30 pointer-events-auto"
-          style={{ left: popupPos.x, top: popupPos.y, transform: "translate(-50%, calc(-100% - 18px))" }}
+      {visiblePoi && popupPos && !onMarkerClick && (
+        <SmartPopup
+          markerPos={popupPos}
+          containerRef={containerRef}
+          arrowBorderColor="hsl(var(--border))"
+          arrowBgColor="hsl(var(--background))"
           onMouseEnter={() => cancelHoverClose()}
           onMouseLeave={() => { if (activeId !== visiblePoi.id) setHoverId(null); }}
         >
@@ -1777,21 +1866,16 @@ export function PoiMapImpl(props: PoiMapProps) {
               isCurrentAccommodation={visiblePoi.id === currentAccommodationId}
             />
           </div>
-          {/* Arrow tip pointing down at the marker */}
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid hsl(var(--border))" }} />
-          </div>
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
-          </div>
-        </div>
+        </SmartPopup>
       )}
 
       {/* Favourite item popup — rendered outside MapGL */}
       {activeFavItem && favPopupPos && (
-        <div
-          className="absolute z-30 pointer-events-auto"
-          style={{ left: favPopupPos.x, top: favPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        <SmartPopup
+          markerPos={favPopupPos}
+          containerRef={containerRef}
+          arrowBorderColor="rgb(251, 207, 232)"
+          arrowBgColor="hsl(var(--background))"
         >
           <div className="relative rounded-lg border border-pink-200 bg-[hsl(var(--background))] shadow-xl p-3">
             <button
@@ -1807,21 +1891,16 @@ export function PoiMapImpl(props: PoiMapProps) {
               onImported={() => { setActiveFavId(null); router.refresh(); }}
             />
           </div>
-          {/* Arrow tip */}
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid rgb(251, 207, 232)" }} />
-          </div>
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
-          </div>
-        </div>
+        </SmartPopup>
       )}
 
       {/* POI cluster popup — shows all POIs when cluster is clicked at high zoom */}
       {activeCluster && clusterPopupPos && (
-        <div
-          className="absolute z-30 pointer-events-auto"
-          style={{ left: clusterPopupPos.x, top: clusterPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        <SmartPopup
+          markerPos={clusterPopupPos}
+          containerRef={containerRef}
+          arrowBorderColor="hsl(var(--border))"
+          arrowBgColor="hsl(var(--background))"
         >
           <div className="relative rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] shadow-xl p-3 max-w-[280px]">
             <button
@@ -1857,21 +1936,16 @@ export function PoiMapImpl(props: PoiMapProps) {
               })}
             </div>
           </div>
-          {/* Arrow tip */}
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: "8px solid hsl(var(--border))" }} />
-          </div>
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
-          </div>
-        </div>
+        </SmartPopup>
       )}
 
       {/* Recommendation preview popup — rendered outside MapGL */}
       {popupCluster && previewPopupPos && (
-        <div
-          className="absolute z-30 pointer-events-auto"
-          style={{ left: previewPopupPos.x, top: previewPopupPos.y, transform: "translate(-50%, calc(-100% - 16px))" }}
+        <SmartPopup
+          markerPos={previewPopupPos}
+          containerRef={containerRef}
+          arrowBorderColor="hsl(var(--primary) / 0.4)"
+          arrowBgColor="hsl(var(--background))"
         >
           <div className="relative rounded-lg border border-dashed border-[hsl(var(--primary))]/40 bg-[hsl(var(--background))] shadow-xl p-3 max-w-[280px]">
             <button
@@ -1982,14 +2056,7 @@ export function PoiMapImpl(props: PoiMapProps) {
               </div>
             )}
           </div>
-          {/* Arrow tip */}
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -8 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "8px solid transparent", borderRight: "8px solid transparent", borderTop: `8px solid hsl(var(--primary) / 0.4)` }} />
-          </div>
-          <div className="absolute left-1/2 -translate-x-1/2" style={{ bottom: -6 }}>
-            <div className="w-0 h-0" style={{ borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "7px solid hsl(var(--background))" }} />
-          </div>
-        </div>
+        </SmartPopup>
       )}
     </div>
   );

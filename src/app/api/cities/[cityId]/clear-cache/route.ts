@@ -59,9 +59,10 @@ export async function POST(
           where: { placeId: { in: placeIds } },
         })
       : Promise.resolve({ count: 0 }),
-    // City info cache (AI-generated)
+    // City info cache (AI-generated) — preserve must-visit list since it's
+    // about what's notable in the city, not discovery-specific data
     prisma.cityInfoCache.deleteMany({
-      where: { cityId: cityIdNum },
+      where: { cityId: cityIdNum, type: { not: "must-visit" } },
     }),
   ]);
 
