@@ -386,9 +386,12 @@ export async function injectMustVisitPlaces(
         if (score > bestScore) { bestScore = score; bestGeo = candidate; }
       }
 
-      // 3b. Proximity fallback for heritage buildings within 50m
+      // 3b. Proximity fallback for heritage buildings within 50m — require
+      // minimal name overlap to avoid matching unrelated nearby buildings
+      // (e.g. "Balbijev luk" arch for "Rovinj Heritage Museum")
       if (!bestGeo || bestScore < 0.5) {
         const PROXIMITY_THRESHOLD_M = 50;
+        const MIN_PROXIMITY_SIM = 0.2;
         const isHeritage = (cats: string[]) =>
           cats.some((c) => c.includes("heritage") || c.includes("historic") || c.includes("castle"));
         const heritageNearby: DiscoveredPlace[] = [];
@@ -396,7 +399,12 @@ export async function injectMustVisitPlaces(
           if (discoveredPlaceIds.has(candidate.placeId)) continue;
           if (!isHeritage(candidate.categories)) continue;
           const dist = haversineKm(googleMeta.latitude!, googleMeta.longitude!, candidate.latitude, candidate.longitude) * 1000;
-          if (dist <= PROXIMITY_THRESHOLD_M) heritageNearby.push(candidate);
+          if (dist > PROXIMITY_THRESHOLD_M) continue;
+          const sim = Math.max(
+            nameSimilarity(name, candidate.name),
+            googleMeta.name ? nameSimilarity(googleMeta.name, candidate.name) : 0,
+          );
+          if (sim >= MIN_PROXIMITY_SIM) heritageNearby.push(candidate);
         }
         if (heritageNearby.length === 1) {
           bestGeo = heritageNearby[0];
