@@ -1896,7 +1896,7 @@ function RecommendationCard({
             className="flex items-center gap-1.5 text-left w-full group"
           >
             <span className="text-xs shrink-0">{catIcon}</span>
-            <h4 className="text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors truncate">{rec.title}</h4>
+            <h4 className={`text-sm font-semibold leading-tight group-hover:text-[hsl(var(--primary))] transition-colors ${expanded ? "" : "truncate"}`}>{rec.title}</h4>
             {poiLink?.isUnescoSite && (
               <span className="shrink-0 rounded-full bg-indigo-700 px-1.5 py-0.5 text-xs font-bold text-white">UNESCO</span>
             )}
