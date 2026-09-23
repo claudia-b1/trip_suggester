@@ -9,6 +9,7 @@
  */
 
 import { haversineM } from "@/lib/geo";
+import { nameSimilarity } from "@/lib/recommendations/scoring";
 
 const PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText";
 const PHOTO_BASE        = "https://places.googleapis.com/v1";
@@ -218,6 +219,13 @@ export async function fetchGoogleMeta(
             console.log(`[google-meta] address retry for "${name}": ${Math.round(addrDist)}m (was ${Math.round(dist)}m) — using address result`);
             return addrMeta;
           }
+        }
+        // Both queries returned results far from expected coords. If the name
+        // also doesn't match well, this is the wrong place (e.g. Google returns
+        // "Villa Valdibora" hotel for "Uvala Valdibora" beach).
+        if (meta.name && nameSimilarity(name, meta.name) < 0.4) {
+          console.log(`[google-meta] rejecting "${meta.name}" for "${name}" — coord mismatch ${Math.round(dist)}m + low name similarity`);
+          return null;
         }
       }
     }
