@@ -401,17 +401,30 @@ export async function POST(
         }
       }
 
-      // LLM classification for unmatched types (single batched call, cached by type)
+      // Classify unmatched types: try googleTypeToCategoryKey first, then LLM
+      const { googleTypeToCategoryKey } = await import("@/lib/recommendations/must-visit");
       if (unmatched.length) {
-        const llmResults = await classifyGoogleTypes(
-          unmatched.map((u) => ({ name: u.place.name, primaryType: u.primaryType })),
-          categories,
-        );
-        for (const { place, primaryType } of unmatched) {
-          const llmCat = llmResults.get(primaryType.toLowerCase());
-          const cat = llmCat && (categories as string[]).includes(llmCat) ? llmCat : categories[0];
-          console.log(`[type-classify] "${place.name}" (${primaryType}) → ${cat}${llmCat ? " (LLM)" : " (fallback)"}`);
-          matched.push({ place, cat });
+        const stillUnmatched: typeof unmatched = [];
+        for (const entry of unmatched) {
+          const directCat = googleTypeToCategoryKey(entry.primaryType);
+          if (directCat && (categories as string[]).includes(directCat)) {
+            console.log(`[type-classify] "${entry.place.name}" (${entry.primaryType}) → ${directCat}`);
+            matched.push({ place: entry.place, cat: directCat });
+          } else {
+            stillUnmatched.push(entry);
+          }
+        }
+        if (stillUnmatched.length) {
+          const llmResults = await classifyGoogleTypes(
+            stillUnmatched.map((u) => ({ name: u.place.name, primaryType: u.primaryType })),
+            categories,
+          );
+          for (const { place, primaryType } of stillUnmatched) {
+            const llmCat = llmResults.get(primaryType.toLowerCase());
+            const cat = llmCat && (categories as string[]).includes(llmCat) ? llmCat : categories[0];
+            console.log(`[type-classify] "${place.name}" (${primaryType}) → ${cat}${llmCat ? " (LLM)" : " (fallback)"}`);
+            matched.push({ place, cat });
+          }
         }
       }
 

@@ -127,7 +127,9 @@ export function googleTypeToCategoryKey(primaryType?: string): string | null {
     return "NIGHTLIFE";
   if (["park", "national_park", "beach", "campground", "garden"].some((ft) => t.includes(ft)))
     return "NATURE";
-  if (["amusement_park", "aquarium", "zoo", "movie_theater", "bowling_alley"].some((ft) => t.includes(ft)))
+  if (["amusement_park", "aquarium", "zoo", "movie_theater", "bowling_alley",
+       "tour_agency", "tour_operator", "adventure_sports_center",
+       ].some((ft) => t.includes(ft)))
     return "ENTERTAINMENT";
   if (["market", "grocery_store", "supermarket", "farmers_market"].some((ft) => t === ft))
     return "GROCERIES";
@@ -336,7 +338,19 @@ export async function injectMustVisitPlaces(
       const googleMeta = await fetchGoogleMeta(name, cityName, centerLat, centerLon);
       if (!googleMeta?.latitude || !googleMeta?.longitude) return null;
 
-      // 1b. Radius check
+      // 1b. Reject service businesses named after landmarks (e.g. a tour agency
+      // called "Sightseeing Rovinj Old Town" matching the query "Old Town Rovinj")
+      const SERVICE_TYPES = new Set(["tour_agency", "travel_agency", "real_estate_agency", "insurance_agency"]);
+      if (googleMeta.primaryType && SERVICE_TYPES.has(googleMeta.primaryType.toLowerCase())) {
+        const queryTokens = name.toLowerCase().split(/\s+/);
+        const isTourQuery = queryTokens.some((t) => ["tour", "excursion", "sightseeing", "agency"].includes(t));
+        if (!isTourQuery) {
+          console.log(`[must-visit] rejecting "${googleMeta.name}" for "${name}" — service type ${googleMeta.primaryType}`);
+          return null;
+        }
+      }
+
+      // 1c. Radius check
       if (radiusKm != null && isFinite(radiusKm)) {
         const distKm = haversineKm(centerLat, centerLon, googleMeta.latitude, googleMeta.longitude);
         if (distKm > radiusKm) {
