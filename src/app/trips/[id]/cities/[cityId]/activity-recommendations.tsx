@@ -290,7 +290,7 @@ export function ActivityRecommendations({
 
     // Must-do recommendations — skip items already linked to a POI
     data.recommendations.forEach((rec, i) => {
-      if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude) && nearCity(rec.latitude, rec.longitude, 50)) {
+      if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace) && nearCity(rec.latitude, rec.longitude, 50)) {
         items.push({
           id: `rec-mustdo-${i}`,
           title: rec.title,
@@ -352,7 +352,7 @@ export function ActivityRecommendations({
     // Custom sections — skip items already linked to a POI
     data.customSections?.forEach((section) => {
       section.items.forEach((rec, i) => {
-        if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude) && nearCity(rec.latitude, rec.longitude, 50)) {
+        if (rec.latitude != null && rec.longitude != null && !findPoiLink(rec.linkedPlace) && nearCity(rec.latitude, rec.longitude, 50)) {
           items.push({
             id: `rec-custom-${section.id}-${i}`,
             title: rec.title,
@@ -620,18 +620,21 @@ export function ActivityRecommendations({
     }
   }
 
-  function findPoiLink(linkedPlace?: string, title?: string, _recLat?: number | null, _recLon?: number | null): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
-    if (!pois?.length) return null;
+  function findPoiLink(linkedPlace?: string): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
+    if (!pois?.length || !linkedPlace) return null;
     type PoiResult = { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null };
     const toResult = (p: typeof pois[number]): PoiResult => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite });
-    // Name-based matching only — coordinate proximity caused false links
-    // (bakery, arch, fish market) in dense old towns.
-    const names = [linkedPlace, title].filter(Boolean) as string[];
-    for (const name of names) {
-      const lower = name.toLowerCase();
-      const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
-      if (match) return toResult(match);
-    }
+    const lower = linkedPlace.toLowerCase();
+    const match = pois.find((p) => {
+      const poiLower = p.name.toLowerCase();
+      const isSubstring = poiLower.includes(lower) || lower.includes(poiLower);
+      if (!isSubstring) return false;
+      // Reject when names differ too much in length (e.g. "Valalta" matching "Discount Valalta")
+      const shorter = Math.min(lower.length, poiLower.length);
+      const longer = Math.max(lower.length, poiLower.length);
+      return shorter / longer >= 0.5;
+    });
+    if (match) return toResult(match);
     return null;
   }
 
@@ -1085,7 +1088,7 @@ export function ActivityRecommendations({
             >
               <div className="grid gap-3 sm:grid-cols-2">
                 {data!.recommendations.map((rec, i) => {
-                  const poiLink = findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude);
+                  const poiLink = findPoiLink(rec.linkedPlace);
                   return (
                     <RecommendationCard
                       key={i}
@@ -1436,7 +1439,7 @@ export function ActivityRecommendations({
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   {section.items.map((rec, i) => {
-                    const poiLink = findPoiLink(rec.linkedPlace, rec.title, rec.latitude, rec.longitude);
+                    const poiLink = findPoiLink(rec.linkedPlace);
                     return (
                       <RecommendationCard
                         key={i}
