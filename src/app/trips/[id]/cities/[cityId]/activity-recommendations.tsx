@@ -622,22 +622,31 @@ export function ActivityRecommendations({
 
   function findPoiLink(linkedPlace?: string, title?: string, recLat?: number | null, recLon?: number | null): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
     if (!pois?.length) return null;
+    type PoiResult = { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null };
+    const toResult = (p: typeof pois[number]): PoiResult => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite });
     // 1. Name-based matching (substring)
     const names = [linkedPlace, title].filter(Boolean) as string[];
     for (const name of names) {
       const lower = name.toLowerCase();
       const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
-      if (match) return { id: match.id, name: match.name, photoUrl: match.photoUrl, isUnescoSite: match.isUnescoSite };
+      if (match) return toResult(match);
     }
-    // 2. Coordinate-based matching (within 200m) — handles cross-language names
-    //    like "Temple of Augustus" in recs vs "Augustov Hram" in POIs.
+    // 2. Coordinate-based matching — find the CLOSEST POI within 100m.
+    //    In dense old towns many POIs cluster together; picking the first
+    //    one caused unrelated shops (butcher, fish market) to match.
     if (recLat != null && recLon != null) {
-      const MATCH_KM = 0.2;
-      const match = pois.find((p) =>
-        p.latitude != null && p.longitude != null &&
-        haversineKm(recLat, recLon, p.latitude, p.longitude) <= MATCH_KM,
-      );
-      if (match) return { id: match.id, name: match.name, photoUrl: match.photoUrl, isUnescoSite: match.isUnescoSite };
+      const MATCH_KM = 0.1;
+      let bestPoi: typeof pois[number] | null = null;
+      let bestDist = Infinity;
+      for (const p of pois) {
+        if (p.latitude == null || p.longitude == null) continue;
+        const dist = haversineKm(recLat, recLon, p.latitude, p.longitude);
+        if (dist <= MATCH_KM && dist < bestDist) {
+          bestDist = dist;
+          bestPoi = p;
+        }
+      }
+      if (bestPoi) return toResult(bestPoi);
     }
     return null;
   }
