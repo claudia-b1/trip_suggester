@@ -620,32 +620,17 @@ export function ActivityRecommendations({
     }
   }
 
-  function findPoiLink(linkedPlace?: string, title?: string, recLat?: number | null, recLon?: number | null): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
+  function findPoiLink(linkedPlace?: string, title?: string, _recLat?: number | null, _recLon?: number | null): { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null } | null {
     if (!pois?.length) return null;
     type PoiResult = { id: number; name: string; photoUrl?: string | null; isUnescoSite?: boolean | null };
     const toResult = (p: typeof pois[number]): PoiResult => ({ id: p.id, name: p.name, photoUrl: p.photoUrl, isUnescoSite: p.isUnescoSite });
-    // 1. Name-based matching (substring)
+    // Name-based matching only — coordinate proximity caused false links
+    // (bakery, arch, fish market) in dense old towns.
     const names = [linkedPlace, title].filter(Boolean) as string[];
     for (const name of names) {
       const lower = name.toLowerCase();
       const match = pois.find((p) => p.name.toLowerCase().includes(lower) || lower.includes(p.name.toLowerCase()));
       if (match) return toResult(match);
-    }
-    // 2. Coordinate-based matching — only within 25m (essentially same building).
-    //    In dense old towns even 100m matches unrelated shops (bakery, butcher).
-    if (recLat != null && recLon != null) {
-      const MATCH_KM = 0.025;
-      let bestPoi: typeof pois[number] | null = null;
-      let bestDist = Infinity;
-      for (const p of pois) {
-        if (p.latitude == null || p.longitude == null) continue;
-        const dist = haversineKm(recLat, recLon, p.latitude, p.longitude);
-        if (dist <= MATCH_KM && dist < bestDist) {
-          bestDist = dist;
-          bestPoi = p;
-        }
-      }
-      if (bestPoi) return toResult(bestPoi);
     }
     return null;
   }
