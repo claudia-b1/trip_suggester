@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTimeSlot } from "@/lib/slots";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyDayActivityOwnership, verifyDayPlanOwnership } from "@/lib/ownership";
 
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { id } = await params;
+  if (!await verifyDayActivityOwnership(Number(id), userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   await prisma.dayActivity.delete({ where: { id: Number(id) } });
   return new NextResponse(null, { status: 204 });
 }
@@ -16,15 +25,29 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { id } = await params;
   const activityId = Number(id);
+  if (!await verifyDayActivityOwnership(activityId, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Invalid body" }, { status: 400 });
 
   const { dayPlanId, timeSlot, order } = body;
 
   const data: { dayPlanId?: number; timeSlot?: string; order?: number } = {};
-  if (typeof dayPlanId === "number") data.dayPlanId = dayPlanId;
+  if (typeof dayPlanId === "number") {
+    // Owning the activity isn't enough — the destination day plan must be the
+    // user's too, or this becomes a way to move items into someone else's trip.
+    if (!await verifyDayPlanOwnership(dayPlanId, userId)) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    data.dayPlanId = dayPlanId;
+  }
   if (typeof timeSlot === "string" && isTimeSlot(timeSlot)) data.timeSlot = timeSlot;
   if (typeof order === "number") data.order = order;
 

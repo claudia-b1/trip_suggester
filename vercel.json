@@ -1,7 +1,20 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "src/app/api/cities/[cityId]/recommendations/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
+    },
+    "src/app/api/cities/[cityId]/activities/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cities/[cityId]/city-info/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/cities/[cityId]/re-enrich/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cities/[cityId]/generate-descriptions/route.ts": {
+      "maxDuration": 300
     }
   }
 }

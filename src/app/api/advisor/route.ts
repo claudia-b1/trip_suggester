@@ -10,9 +10,7 @@
  *  3. Format recommendations in a parseable JSON block.
  */
 import { getActiveUserId } from "@/lib/active-user";
-
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
-const MODEL = "inclusionai/ling-3.0-flash-sante:free";
+import { rawStream, OpenRouterFailure, type ChatMessage } from "@/lib/openrouter";
 
 const SYSTEM_PROMPT = `You are a friendly travel advisor. Match the user's language (Dutch → Dutch, English → English, etc.).
 
@@ -64,30 +62,26 @@ export async function POST(req: Request) {
     });
   }
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
+  let res: Response;
+  try {
+    res = await rawStream({
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        ...messages,
+        ...(messages as ChatMessage[]),
       ],
-      max_tokens: 8000,
+      maxTokens: 8000,
       temperature: 0.5,
       stream: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return new Response(JSON.stringify({ error: "AI request failed", detail: text }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
     });
+  } catch (e) {
+    if (e instanceof OpenRouterFailure) {
+      console.error("[advisor] request failed:", e.info.detail);
+      return new Response(JSON.stringify({ error: e.info.userMessage }), {
+        status: e.info.status,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw e;
   }
 
   // Stream the response through to the client

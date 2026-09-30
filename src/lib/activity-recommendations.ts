@@ -6,6 +6,13 @@
  */
 
 import { haversineKm } from "@/lib/geo";
+import {
+  parseItems,
+  activityRecommendationSchema,
+  nearbyCitySchema,
+  nearbyActivitySchema,
+  routeSchema,
+} from "@/lib/llm-schemas";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -117,7 +124,22 @@ export type ActivityRecommendationsResult = {
   customSections: CustomRecommendationSection[];
   generatedAt: string;
   model: string;
+  /**
+   * Prompt version this result was generated with. Absent on anything cached
+   * before versioning. Without it a prompt change leaves old caches
+   * indistinguishable from new ones, so you can't tell whether what you're
+   * looking at reflects the current prompt.
+   */
+  promptVersion?: number;
 };
+
+/**
+ * Bump whenever `buildActivityPrompt` changes in a way that should make existing
+ * cached results count as stale.
+ *   1 — original
+ *   2 — grounds the prompt in verified places; forbids unverifiable logistics
+ */
+export const ACTIVITY_PROMPT_VERSION = 2;
 
 /** Options controlling which sections to generate and distance limits */
 export type GenerateOptions = {
@@ -133,10 +155,16 @@ export type GenerateOptions = {
 // ── Model config ─────────────────────────────────────────────────────────────
 // Change this to swap models. Any OpenRouter-compatible model ID works.
 
+// Kept as a literal rather than importing from `@/lib/openrouter`: this module is
+// also imported by client components, and that one is server-only.
+// Keep in sync with DEFAULT_MODEL there.
 export const ACTIVITY_MODEL = "inclusionai/ling-3.0-flash-sante:free";
 
 // ── Prompt builder ───────────────────────────────────────────────────────────
 // Edit this function to iterate on the prompt. The UI will not change.
+
+/** A place we independently verified exists, via Geoapify/OSM and Google. */
+export type KnownPlace = { name: string; category?: string | null; isUnescoSite?: boolean | null };
 
 export function buildActivityPrompt(
   cityName: string,
@@ -144,6 +172,7 @@ export function buildActivityPrompt(
   options?: GenerateOptions,
   coords?: { lat: number; lon: number } | null,
   existingTitles?: string[],
+  knownPlaces?: KnownPlace[],
 ): string {
   const location = country ? `${cityName}, ${country}` : cityName;
   const includeMustDo = options?.includeMustDo !== false;
@@ -240,20 +269,34 @@ Suggest cycling routes and bike trips in and around ${cityName}.
     ? `\n## ALREADY RECOMMENDED\nThese items exist in other sections. Do NOT repeat them or variations of them:\n${existingTitles.map((t) => `- ${t}`).join("\n")}\n`
     : "";
 
+  // Ground the model in places we already verified exist. Without this it invents
+  // linkedPlace names from memory, and a name that matches nothing real is
+  // indistinguishable downstream from one that does.
+  const knownPlacesBlock = knownPlaces && knownPlaces.length > 0
+    ? `\n## VERIFIED PLACES IN ${cityName.toUpperCase()}
+These places are confirmed to exist. When a recommendation relates to one of them,
+use its name EXACTLY as written here for "linkedPlace" — do not paraphrase or translate it.
+Prefer these over places you recall from memory. You may still recommend an activity
+that matches none of them, but then set "linkedPlace" to null rather than inventing a name.
+${knownPlaces
+  .map((p) => `- ${p.name}${p.isUnescoSite ? " [UNESCO]" : ""}${p.category ? ` (${p.category})` : ""}`)
+  .join("\n")}\n`
+    : "";
+
   return `Generate recommendations for a visitor to ${location}.${coordStr ? ` City coordinates: ${coordStr}.` : ""}
 
 LOCATION: "${cityName}" is in ${countryLabel}.${coordStr ? ` Centre: ${coordStr}.` : ""} All results MUST be for this location only.
 
 ${sections.join("\n\n")}
-${alreadyRecommended}
+${knownPlacesBlock}${alreadyRecommended}
 ## RULES
 1. EVERY recommendation must be in or directly around ${location}${coordStr ? ` (near ${coordStr})` : ""} — not any other "${cityName}" in another country
 2. All GPS coordinates must be near ${coordStr ?? countryLabel} — reject any on the wrong continent
 3. Only include places/activities you are HIGHLY confident exist and haven't closed
 4. Each recommendation: 1-2 sentences, specific and actionable, not generic advice
-5. No duplicates across sections. No opening hours, prices, or booking information
-6. Do NOT invent venue names unless highly confident they exist at this location
-7. If tied to a named landmark, include it as linkedPlace
+5. No duplicates across sections. Do NOT state opening hours, prices, admission fees, or booking details — they change and you cannot verify them
+6. Do NOT invent venue names. Use a name for "linkedPlace" only if ${knownPlacesBlock ? `it appears in VERIFIED PLACES above, or ` : ""}you are highly confident it exists at this location; otherwise set it to null
+7. Describe what makes a place worth visiting, not logistics you cannot verify
 
 If there is ANY doubt, remove the item.
 
@@ -337,96 +380,49 @@ export function parseActivityResponse(
       ? parseRecommendationArray(recsArr, cityCoords)
       : [];
 
-    const nearbyCities = Array.isArray(nearbyCitiesArr)
-      ? nearbyCitiesArr
-          .filter(
-            (item: unknown): item is Record<string, unknown> =>
-              typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).name === "string",
-          )
-          .slice(0, 8)
-          .map((item: Record<string, unknown>) => ({
-            name: String(item.name),
-            description: String(item.description ?? ""),
-            distance: typeof item.distance === "string" ? item.distance : undefined,
-            country: typeof item.country === "string" ? item.country : undefined,
-            ...validateCoords(
-              typeof item.latitude === "number" ? item.latitude : undefined,
-              typeof item.longitude === "number" ? item.longitude : undefined,
-              cityCoords, 500,
-            ),
-          }))
-      : [];
+    const cityResult = parseItems(nearbyCitySchema, nearbyCitiesArr, 8);
+    const nearbyCities = cityResult.items.map((item) => ({
+      name: item.name,
+      description: item.description,
+      distance: item.distance,
+      country: item.country,
+      ...validateCoords(item.latitude, item.longitude, cityCoords, 500),
+    }));
 
-    const nearbyActivities = Array.isArray(nearbyActivitiesArr)
-      ? nearbyActivitiesArr
-          .filter(
-            (item: unknown): item is Record<string, unknown> =>
-              typeof item === "object" && item !== null &&
-              typeof (item as Record<string, unknown>).title === "string" &&
-              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
-          )
-          .slice(0, 10)
-          .map((item: Record<string, unknown>) => ({
-            title: String(item.title),
-            description: String(item.description ?? ""),
-            location: String(item.location ?? ""),
-            distance: typeof item.distance === "string" ? item.distance : undefined,
-            category: typeof item.category === "string" ? item.category : undefined,
-            ...validateCoords(
-              typeof item.latitude === "number" ? item.latitude : undefined,
-              typeof item.longitude === "number" ? item.longitude : undefined,
-              cityCoords, 150,
-            ),
-          }))
-      : [];
+    const activityResult = parseItems(nearbyActivitySchema, nearbyActivitiesArr, 10);
+    const nearbyActivities = activityResult.items.map((item) => ({
+      title: item.title,
+      description: item.description,
+      location: item.location,
+      distance: item.distance,
+      category: item.category,
+      ...validateCoords(item.latitude, item.longitude, cityCoords, 150),
+    }));
 
-    const hikes = Array.isArray(hikesArr)
-      ? hikesArr
-          .filter(
-            (item: unknown): item is Record<string, unknown> =>
-              typeof item === "object" && item !== null &&
-              typeof (item as Record<string, unknown>).title === "string" &&
-              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
-          )
-          .slice(0, 8)
-          .map((item: Record<string, unknown>) => ({
-            title: String(item.title),
-            description: String(item.description ?? ""),
-            distance: typeof item.distance === "string" ? item.distance : undefined,
-            duration: typeof item.duration === "string" ? item.duration : undefined,
-            difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
-            startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
-            ...validateCoords(
-              typeof item.latitude === "number" ? item.latitude : undefined,
-              typeof item.longitude === "number" ? item.longitude : undefined,
-              cityCoords, 100,
-            ),
-          }))
-      : [];
+    const hikeResult = parseItems(routeSchema, hikesArr, 8);
+    const hikes = hikeResult.items.map((item) => ({
+      title: item.title,
+      description: item.description,
+      distance: item.distance,
+      duration: item.duration,
+      difficulty: item.difficulty,
+      startLocation: item.startLocation,
+      ...validateCoords(item.latitude, item.longitude, cityCoords, 100),
+    }));
 
-    const cycling = Array.isArray(cyclingArr)
-      ? cyclingArr
-          .filter(
-            (item: unknown): item is Record<string, unknown> =>
-              typeof item === "object" && item !== null &&
-              typeof (item as Record<string, unknown>).title === "string" &&
-              !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
-          )
-          .slice(0, 8)
-          .map((item: Record<string, unknown>) => ({
-            title: String(item.title),
-            description: String(item.description ?? ""),
-            distance: typeof item.distance === "string" ? item.distance : undefined,
-            duration: typeof item.duration === "string" ? item.duration : undefined,
-            difficulty: typeof item.difficulty === "string" ? item.difficulty : undefined,
-            startLocation: typeof item.startLocation === "string" ? item.startLocation : undefined,
-            ...validateCoords(
-              typeof item.latitude === "number" ? item.latitude : undefined,
-              typeof item.longitude === "number" ? item.longitude : undefined,
-              cityCoords, 100,
-            ),
-          }))
-      : [];
+    const cyclingResult = parseItems(routeSchema, cyclingArr, 8);
+    const cycling = cyclingResult.items.map((item) => ({
+      title: item.title,
+      description: item.description,
+      distance: item.distance,
+      duration: item.duration,
+      difficulty: item.difficulty,
+      startLocation: item.startLocation,
+      ...validateCoords(item.latitude, item.longitude, cityCoords, 100),
+    }));
+
+    const rejected = cityResult.rejected + activityResult.rejected + hikeResult.rejected + cyclingResult.rejected;
+    if (rejected) console.warn(`[activities] dropped ${rejected} item(s) that failed schema validation`);
 
     return { recommendations, nearbyCities, nearbyActivities, hikes, cycling };
   } catch {
@@ -443,24 +439,16 @@ function parseRecommendationArray(
   arr: unknown[],
   cityCoords?: { lat: number; lon: number } | null,
 ): ActivityRecommendation[] {
-  return arr
-    .filter(
-      (item: unknown): item is Record<string, unknown> =>
-        typeof item === "object" && item !== null && typeof (item as Record<string, unknown>).title === "string" &&
-        !isTemplatePlaceholder(String((item as Record<string, unknown>).title)),
-    )
-    .slice(0, 15)
-    .map((item) => ({
-      title: String(item.title),
-      description: String(item.description ?? ""),
-      linkedPlace: typeof item.linkedPlace === "string" && item.linkedPlace !== "null" ? item.linkedPlace : undefined,
-      category: typeof item.category === "string" ? item.category : undefined,
-      ...validateCoords(
-        typeof item.latitude === "number" ? item.latitude : undefined,
-        typeof item.longitude === "number" ? item.longitude : undefined,
-        cityCoords, 50,
-      ),
-    }));
+  const { items, rejected } = parseItems(activityRecommendationSchema, arr, 15);
+  if (rejected) console.warn(`[activities] dropped ${rejected} recommendation(s) that failed schema validation`);
+
+  return items.map((item) => ({
+    title: item.title,
+    description: item.description,
+    linkedPlace: item.linkedPlace,
+    category: item.category,
+    ...validateCoords(item.latitude, item.longitude, cityCoords, 50),
+  }));
 }
 
 // ── Custom section prompt & parser ──────────────────────────────────────────

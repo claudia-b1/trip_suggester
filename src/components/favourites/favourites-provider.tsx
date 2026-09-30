@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Category } from "@/lib/categories";
+import { useUser } from "@/components/user/user-provider";
 
 /* ── Shared types ──────────────────────────────────────────────────────── */
 
@@ -143,6 +144,7 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
   const [addModalPrefill, setAddModalPrefill] = useState<NewFavouriteItemPrefill | null>(null);
   const [editModalItem, setEditModalItem] = useState<FavouriteItemDTO | null>(null);
   const [currentCity, setCurrentCity] = useState<CurrentCityContext | null>(null);
+  const { activeUser } = useUser();
 
   const fetchLists = useCallback(async () => {
     setLoading(true);
@@ -158,12 +160,15 @@ export function FavouritesProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Eagerly fetch favourites on mount so hearts show correct state immediately.
-  // Also re-fetch when the active-user-id cookie changes (user switch).
+  // Fetch as soon as there is an active user, so hearts show correct state
+  // immediately. Waiting for the user matters: the session cookie is set by a
+  // server round-trip, so fetching on bare mount races it and 401s on a first
+  // visit, leaving every heart looking empty.
   useEffect(() => {
+    if (!activeUser) return;
     setHasFetched(false);
     fetchLists();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeUser, fetchLists]);
 
   // Re-fetch when cookie changes (detected via a custom event dispatched by switchUser)
   useEffect(() => {

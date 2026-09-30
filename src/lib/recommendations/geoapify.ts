@@ -380,17 +380,23 @@ export async function searchPlaces(
       }
       return true;
     })
-    .reduce<GeoFeature[]>((acc, f) => {
-      // Deduplicate by place_id and by name (case-insensitive)
-      const id = f.properties.place_id;
-      const name = f.properties.name!.toLowerCase().trim();
-      if (acc.some((a) => (
-        (id && a.properties.place_id === id) ||
-        a.properties.name!.toLowerCase().trim() === name
-      ))) return acc;
-      acc.push(f);
-      return acc;
-    }, [])
+    // Deduplicate by place_id and by name (case-insensitive).
+    // Set-based rather than the previous `acc.some(...)` scan: ring searches
+    // return up to 500 features each and this runs once per search, so the
+    // quadratic version did ~125k comparisons per call — each allocating two
+    // lowercased strings.
+    .filter((() => {
+      const seenIds = new Set<string>();
+      const seenNames = new Set<string>();
+      return (f: GeoFeature) => {
+        const id = f.properties.place_id;
+        const name = f.properties.name!.toLowerCase().trim();
+        if ((id && seenIds.has(id)) || seenNames.has(name)) return false;
+        if (id) seenIds.add(id);
+        seenNames.add(name);
+        return true;
+      };
+    })())
     .map((f): DiscoveredPlace => {
       const p = f.properties;
       const raw = p.datasource?.raw;

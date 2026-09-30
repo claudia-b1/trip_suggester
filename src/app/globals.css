@@ -15,6 +15,10 @@
   --primary-foreground: 240 40% 99%;
   --accent: 240 30% 96%;
   --accent-foreground: 240 40% 11%;
+  --secondary: 243 45% 92%;
+  --secondary-foreground: 243 55% 30%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 40% 11%;
   --border: 240 24% 90%;
   --input: 240 24% 90%;
   --ring: 243 75% 59%;
@@ -34,6 +38,10 @@
   --primary-foreground: 240 30% 6%;
   --accent: 240 20% 14%;
   --accent-foreground: 240 30% 96%;
+  --secondary: 243 30% 24%;
+  --secondary-foreground: 243 40% 92%;
+  --popover: 240 30% 11%;
+  --popover-foreground: 240 30% 96%;
   --border: 240 20% 18%;
   --input: 240 20% 18%;
   --ring: 243 70% 55%;
@@ -52,6 +60,10 @@
   --color-primary-foreground: hsl(var(--primary-foreground));
   --color-accent: hsl(var(--accent));
   --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
   --color-border: hsl(var(--border));
   --color-input: hsl(var(--input));
   --color-ring: hsl(var(--ring));

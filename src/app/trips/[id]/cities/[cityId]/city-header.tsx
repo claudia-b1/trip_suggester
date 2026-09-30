@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Pill } from "@/components/ui/pill";
 import { useToast } from "@/components/ui/toast";
 import { CATEGORY_STYLES, CATEGORY_ICONS, type Category } from "@/lib/categories";
 import { MS_PER_DAY } from "@/lib/constants";
@@ -371,11 +372,12 @@ export function CityHeader({
             {cities.map((c) => {
               const isActive = c.id === (activeCityId ?? cityId);
               return (
-                <button
+                <Pill
                   key={c.id}
+                  size="nav"
                   onClick={() => !isActive && router.push(`/trips/${tripId}/cities/${c.id}`)}
                   aria-current={isActive ? "page" : undefined}
-                  className={`rounded-full px-3 py-1 text-sm font-medium transition-colors max-w-[180px] truncate ${
+                  className={`max-w-[180px] truncate ${
                     isActive
                       ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] cursor-default"
                       : "border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]"
@@ -383,7 +385,7 @@ export function CityHeader({
                   title={c.nickname ?? c.name}
                 >
                   {c.nickname ?? c.name}
-                </button>
+                </Pill>
               );
             })}
           </div>

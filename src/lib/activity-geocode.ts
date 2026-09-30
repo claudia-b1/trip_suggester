@@ -10,6 +10,7 @@
 import { prisma } from "@/lib/prisma";
 import { geocodeAddress } from "@/lib/geocode";
 import { haversineKm } from "@/lib/geo";
+import { fetchGoogleMeta } from "@/lib/recommendations/google-places";
 import type {
   ActivityRecommendation,
   NearbyCityRecommendation,
@@ -357,6 +358,25 @@ export async function resolveActivityCoordinates(
   for (let i = 0; i < toGeocode.length; i++) {
     const candidate = toGeocode[i];
     if (i > 0) await sleep(GEOCODE_DELAY_MS);
+
+    // For priority 1 items (linkedPlace), try Google Places Text Search first —
+    // it returns precise POI-level coordinates (entrance/building), while the
+    // Geocoding API returns a general area which can be hundreds of meters off.
+    if (candidate.priority === 1) {
+      try {
+        const meta = await fetchGoogleMeta(
+          candidate.matchName, cityName, cityCoords.lat, cityCoords.lon,
+        );
+        if (meta?.latitude != null && meta?.longitude != null) {
+          const dist = haversineKm(cityCoords.lat, cityCoords.lon, meta.latitude, meta.longitude);
+          if (dist <= candidate.maxDistKm) {
+            applyCoords(result, candidate, meta.latitude, meta.longitude, "geocoded");
+            stats.geocoded++;
+            continue;
+          }
+        }
+      } catch { /* fall through to geocoding */ }
+    }
 
     // Try each query variation until one succeeds with valid coordinates
     let resolved = false;

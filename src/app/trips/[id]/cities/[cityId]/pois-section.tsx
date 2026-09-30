@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Pill } from "@/components/ui/pill";
 import { Label } from "@/components/ui/label";
 import { CATEGORIES, CATEGORY_STYLES, CATEGORY_LABELS, CATEGORY_ICONS, isCategory, type Category } from "@/lib/categories";
 import { TIME_SLOTS, type TimeSlot } from "@/lib/slots";
@@ -1231,8 +1232,7 @@ export function PoisSection({
               )}
             </div>
             <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Category filters">
-              <button
-                type="button"
+              <Pill
                 onClick={() => {
                   if (allCategoriesSelected) {
                     setActiveCategories(new Set());
@@ -1240,59 +1240,56 @@ export function PoisSection({
                     setActiveCategories(new Set(CATEGORIES));
                   }
                 }}
-                className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                className={`border ${
                   allCategoriesSelected
                     ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
                     : "border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]"
                 }`}
               >
                 All ({pois.length})
-              </button>
-              <button
-                type="button"
+              </Pill>
+              <Pill
                 onClick={() => setShowFavouritesOnly((v) => !v)}
                 aria-pressed={showFavouritesOnly}
-                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                className={`border ${
                   showFavouritesOnly
                     ? "border-pink-400 bg-pink-100 text-pink-700 ring-2 ring-offset-1 ring-pink-300"
                     : "border-pink-200 bg-pink-50 text-pink-400 hover:text-pink-600 hover:bg-pink-100"
                 }`}
               >
                 ♥ Favourites
-              </button>
+              </Pill>
               {pois.some((p) => p.isUnescoSite) && (
-                <button
-                  type="button"
+                <Pill
                   onClick={() => setShowUnescoOnly((v) => !v)}
                   aria-pressed={showUnescoOnly}
-                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                  className={`border ${
                     showUnescoOnly
                       ? "border-indigo-400 bg-indigo-100 text-indigo-700 ring-2 ring-offset-1 ring-indigo-300 dark:bg-indigo-900/40 dark:text-indigo-300 dark:border-indigo-500 dark:ring-indigo-500"
                       : "border-indigo-200 bg-indigo-50 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 dark:bg-indigo-950/30 dark:text-indigo-500 dark:border-indigo-800 dark:hover:bg-indigo-900/40"
                   }`}
                 >
                   {"🏛"} UNESCO ({pois.filter((p) => p.isUnescoSite).length})
-                </button>
+                </Pill>
               )}
               {CATEGORIES.map((c) => {
                 const active = activeCategories.has(c);
                 const count = pois.filter((p) => p.category === c).length;
                 if (count === 0) return null;
                 return (
-                  <button
+                  <Pill
                     key={c}
-                    type="button"
                     onClick={() => toggleCategory(c)}
                     aria-pressed={active}
-                    className={`flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium transition ${
+                    className={
                       active
                         ? `${CATEGORY_STYLES[c].badge} ring-2 ring-offset-1 ring-[hsl(var(--ring))]`
                         : `${CATEGORY_STYLES[c].badge} opacity-50 hover:opacity-100`
-                    }`}
+                    }
                   >
                     <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: CATEGORY_STYLES[c].dot }} />
                     {CATEGORY_ICONS[c]} {CATEGORY_LABELS[c]} ({count})
-                  </button>
+                  </Pill>
                 );
               })}
             </div>
@@ -1470,7 +1467,7 @@ export function PoisSection({
               <StatusDropdown active={statusFilters} onToggle={toggleStatusFilter} />
               <RatingFilterDropdown value={ratingFilter} onChange={setRatingFilter} />
             </div>
-            <div className="relative min-h-[500px] lg:min-h-[600px]">
+            <div className="relative min-h-[340px] lg:min-h-[600px]">
               <PoiMap
                 pois={filteredPois}
                 cityId={cityId}

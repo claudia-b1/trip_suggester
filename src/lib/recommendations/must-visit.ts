@@ -4,9 +4,21 @@ import { haversineKm } from "@/lib/geo";
 import { nameSimilarity } from "./scoring";
 import { searchPlacesNearCoords, type DiscoveredPlace } from "./geoapify";
 import { fetchGoogleMeta, type GoogleMeta } from "./google-places";
+import { completeJson, OpenRouterFailure } from "@/lib/openrouter";
+import { withEnrichCache } from "./cache";
 
-const MODEL = "inclusionai/ling-3.0-flash-sante:free";
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+/** Failed lookups back off for an hour rather than retrying on every run. */
+const EMPTY_RESULT_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * Synthetic cache id for a must-visit name lookup. Normalised so casing and
+ * spacing variations of the same name share one entry.
+ */
+function mustVisitCacheKey(cityName: string, placeName: string): string {
+  const norm = (s: string) => s.toLowerCase().trim().replace(/\s+/g, " ");
+  return `mv:${norm(cityName)}:${norm(placeName)}`;
+}
 const MATCH_THRESHOLD = 0.8;
 
 // ── LLM type classification for unknown Google primaryTypes ──────────────
@@ -55,41 +67,32 @@ Types to classify: ${typeList}
 Return ONLY a JSON object mapping each type to the category key. Example: {"bistro":"FOOD","fort":"CULTURE"}`;
 
   try {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages: [
-          { role: "system", content: "Output ONLY raw JSON. No thinking, no explanation." },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 300,
-        temperature: 0,
-      }),
+    const text = await completeJson({
+      messages: [
+        { role: "system", content: "Output ONLY raw JSON. No thinking, no explanation." },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 300,
+      temperature: 0,
+      timeoutMs: 20_000,
+      retries: 0,
     });
 
-    if (res.ok) {
-      const json = await res.json();
-      const text: string = json?.choices?.[0]?.message?.content ?? "";
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        const parsed = JSON.parse(match[0]) as Record<string, string>;
-        const validCats = new Set(availableCategories);
-        for (const [type, cat] of Object.entries(parsed)) {
-          if (typeof cat === "string" && validCats.has(cat.toUpperCase())) {
-            const normalised = cat.toUpperCase();
-            typeClassificationCache.set(type.toLowerCase(), normalised);
-            result.set(type.toLowerCase(), normalised);
-          }
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]) as Record<string, string>;
+      const validCats = new Set(availableCategories);
+      for (const [type, cat] of Object.entries(parsed)) {
+        if (typeof cat === "string" && validCats.has(cat.toUpperCase())) {
+          const normalised = cat.toUpperCase();
+          typeClassificationCache.set(type.toLowerCase(), normalised);
+          result.set(type.toLowerCase(), normalised);
         }
       }
     }
-  } catch {
-    console.log("[type-classify] LLM classification failed — using fallback");
+  } catch (e) {
+    const why = e instanceof OpenRouterFailure ? e.info.detail : String(e);
+    console.log(`[type-classify] LLM classification failed — using fallback (${why})`);
   }
 
   return result;
@@ -127,7 +130,9 @@ export function googleTypeToCategoryKey(primaryType?: string): string | null {
     return "NIGHTLIFE";
   if (["park", "national_park", "beach", "campground", "garden"].some((ft) => t.includes(ft)))
     return "NATURE";
-  if (["amusement_park", "aquarium", "zoo", "movie_theater", "bowling_alley"].some((ft) => t.includes(ft)))
+  if (["amusement_park", "aquarium", "zoo", "movie_theater", "bowling_alley",
+       "tour_agency", "tour_operator", "adventure_sports_center",
+       ].some((ft) => t.includes(ft)))
     return "ENTERTAINMENT";
   if (["market", "grocery_store", "supermarket", "farmers_market"].some((ft) => t === ft))
     return "GROCERIES";
@@ -189,18 +194,30 @@ export async function getMustVisitList(
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return [];
 
-  // Check cache
+  // The generated list is scoped to the requested categories (they're in the
+  // prompt below), so the cache key has to be too. Keyed on type alone, a run
+  // for CULTURE would serve its list to a later FOOD run and vice versa —
+  // silently returning names for the wrong categories.
+  const cacheType = `must-visit:${[...categories].sort().join(",")}`;
+
   const cached = await prisma.cityInfoCache.findUnique({
-    where: { cityId_type: { cityId, type: "must-visit" } },
+    where: { cityId_type: { cityId, type: cacheType } },
   });
-  if (cached && Date.now() - cached.generatedAt.getTime() < CACHE_TTL_MS) {
+  if (cached) {
     try {
       const parsed = JSON.parse(cached.data) as string[];
-      if (Array.isArray(parsed)) { console.log(`[must-visit] cache hit: ${parsed.length} names`); return parsed; }
+      if (Array.isArray(parsed)) {
+        // An empty list means the last attempt failed (usually an upstream 429).
+        // Expire that quickly so it's retried soon, but not on the very next run.
+        const ttl = parsed.length === 0 ? EMPTY_RESULT_TTL_MS : CACHE_TTL_MS;
+        if (Date.now() - cached.generatedAt.getTime() < ttl) {
+          console.log(`[must-visit] cache hit: ${parsed.length} names`);
+          return parsed;
+        }
+      }
     } catch { /* regenerate */ }
-  } else {
-    console.log(`[must-visit] cache miss (cached=${!!cached}), calling LLM`);
   }
+  console.log(`[must-visit] cache miss (cached=${!!cached}), calling LLM`);
 
   const categoryLabels = categories
     .map((c) => CATEGORY_LABELS[c as Category])
@@ -209,29 +226,32 @@ export async function getMustVisitList(
 
   const prompt = `List the 20 most popular and notable places to visit in ${cityName}${country ? `, ${country}` : ""} for these categories: ${categoryLabels}. For each place, return just its name. Return a JSON array of strings. Example: ["Place A", "Place B"]. No explanation, no markdown.`;
 
+  // This call blocks the whole discover run before any Geoapify or Google work
+  // starts, and must-visit injection is an enhancement rather than a
+  // requirement — a run without it is still a good run. So cap it tightly and
+  // give up rather than letting a slow free-tier model consume the budget:
+  // at 45s × 2 attempts this alone could outlast the entire function.
+  const LLM_TIMEOUT_MS = 10_000;
+
   let names: string[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
+    let text: string;
+    try {
+      text = await completeJson({
         messages: [
           { role: "system", content: "Output ONLY raw JSON. No thinking, no reasoning, no explanation, no markdown fences." },
           { role: "user", content: prompt },
         ],
-        max_tokens: 2000,
+        maxTokens: 2000,
         temperature: 0.3,
-      }),
-    });
-
-    if (!res.ok) { console.log(`[must-visit] LLM call failed: ${res.status} ${res.statusText}`); continue; }
-
-    const json = await res.json();
-    const text: string = json?.choices?.[0]?.message?.content ?? "";
+        timeoutMs: LLM_TIMEOUT_MS,
+        retries: 0,
+      });
+    } catch (e) {
+      const why = e instanceof OpenRouterFailure ? e.info.detail : String(e);
+      console.log(`[must-visit] LLM call failed: ${why}`);
+      continue;
+    }
 
     let cleaned = text.replace(/```[\s\S]*?```/g, (m) => m.replace(/```\w*\n?/g, "").replace(/```/g, "")).trim();
     // Handle truncated arrays: if starts with [ but no closing ], try to close it
@@ -264,12 +284,13 @@ export async function getMustVisitList(
       console.log("[must-visit] JSON parse failed");
     }
   }
-  if (!names.length) return [];
-
-  // Cache the result
+  // Cache failures too, on a much shorter TTL. The free-tier model is regularly
+  // rate-limited upstream, and without this every run re-attempts it — paying
+  // the full timeout twice before any discovery work starts, every time. A short
+  // TTL means we back off for an hour rather than retrying on every run.
   await prisma.cityInfoCache.upsert({
-    where: { cityId_type: { cityId, type: "must-visit" } },
-    create: { cityId, type: "must-visit", data: JSON.stringify(names) },
+    where: { cityId_type: { cityId, type: cacheType } },
+    create: { cityId, type: cacheType, data: JSON.stringify(names) },
     update: { data: JSON.stringify(names), generatedAt: new Date() },
   });
 
@@ -332,11 +353,32 @@ export async function injectMustVisitPlaces(
 
   const resolveResults = await Promise.allSettled(
     unmatched.map(async (name): Promise<ResolveResult | null> => {
-      // 1. Get accurate coordinates from Google Places
-      const googleMeta = await fetchGoogleMeta(name, cityName, centerLat, centerLon);
+      // 1. Get accurate coordinates from Google Places.
+      //
+      // Cached under a synthetic key. This resolves a *name* to a place, so
+      // unlike every other Google call in the pipeline there is no placeId to
+      // key on — which meant it was never cached at all, and re-queried the
+      // same ~13-20 names on every single run, warm or cold.
+      const googleMeta = await withEnrichCache<GoogleMeta>(
+        mustVisitCacheKey(cityName, name),
+        "google-meta-name",
+        () => fetchGoogleMeta(name, cityName, centerLat, centerLon),
+      );
       if (!googleMeta?.latitude || !googleMeta?.longitude) return null;
 
-      // 1b. Radius check
+      // 1b. Reject service businesses named after landmarks (e.g. a tour agency
+      // called "Sightseeing Rovinj Old Town" matching the query "Old Town Rovinj")
+      const SERVICE_TYPES = new Set(["tour_agency", "travel_agency", "real_estate_agency", "insurance_agency"]);
+      if (googleMeta.primaryType && SERVICE_TYPES.has(googleMeta.primaryType.toLowerCase())) {
+        const queryTokens = name.toLowerCase().split(/\s+/);
+        const isTourQuery = queryTokens.some((t) => ["tour", "excursion", "sightseeing", "agency"].includes(t));
+        if (!isTourQuery) {
+          console.log(`[must-visit] rejecting "${googleMeta.name}" for "${name}" — service type ${googleMeta.primaryType}`);
+          return null;
+        }
+      }
+
+      // 1c. Radius check
       if (radiusKm != null && isFinite(radiusKm)) {
         const distKm = haversineKm(centerLat, centerLon, googleMeta.latitude, googleMeta.longitude);
         if (distKm > radiusKm) {
@@ -372,9 +414,12 @@ export async function injectMustVisitPlaces(
         if (score > bestScore) { bestScore = score; bestGeo = candidate; }
       }
 
-      // 3b. Proximity fallback for heritage buildings within 50m
+      // 3b. Proximity fallback for heritage buildings within 50m — require
+      // minimal name overlap to avoid matching unrelated nearby buildings
+      // (e.g. "Balbijev luk" arch for "Rovinj Heritage Museum")
       if (!bestGeo || bestScore < 0.5) {
         const PROXIMITY_THRESHOLD_M = 50;
+        const MIN_PROXIMITY_SIM = 0.2;
         const isHeritage = (cats: string[]) =>
           cats.some((c) => c.includes("heritage") || c.includes("historic") || c.includes("castle"));
         const heritageNearby: DiscoveredPlace[] = [];
@@ -382,7 +427,12 @@ export async function injectMustVisitPlaces(
           if (discoveredPlaceIds.has(candidate.placeId)) continue;
           if (!isHeritage(candidate.categories)) continue;
           const dist = haversineKm(googleMeta.latitude!, googleMeta.longitude!, candidate.latitude, candidate.longitude) * 1000;
-          if (dist <= PROXIMITY_THRESHOLD_M) heritageNearby.push(candidate);
+          if (dist > PROXIMITY_THRESHOLD_M) continue;
+          const sim = Math.max(
+            nameSimilarity(name, candidate.name),
+            googleMeta.name ? nameSimilarity(googleMeta.name, candidate.name) : 0,
+          );
+          if (sim >= MIN_PROXIMITY_SIM) heritageNearby.push(candidate);
         }
         if (heritageNearby.length === 1) {
           bestGeo = heritageNearby[0];

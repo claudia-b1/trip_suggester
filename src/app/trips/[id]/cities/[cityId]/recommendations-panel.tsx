@@ -305,8 +305,18 @@ export function RecommendationsPanel({
       abortRef.current = null;
 
       if (!res.ok) {
+        // A JSON body means the route itself reported the problem. No JSON body
+        // means the request never reached that code — a platform timeout or a
+        // crashed worker — so report the status rather than a bare "it failed",
+        // which leaves nothing to act on.
         const body: { error?: string } = await res.json().catch(() => ({}));
-        const msg = body.error ?? "Failed to run Discover";
+        const msg = body.error ?? (
+          res.status === 504 || res.status === 408
+            ? "Discover timed out. Try fewer categories, a smaller radius, or turn off “include nearby”."
+            : res.status === 401
+              ? "Your session expired — reload the page and try again."
+              : `Discover failed (HTTP ${res.status}). Check the server logs for details.`
+        );
         setError(msg);
         toast(msg, {
           variant: "error",
@@ -346,7 +356,13 @@ export function RecommendationsPanel({
       setGenerating(false);
       setProgressStep(null);
       abortRef.current = null;
-      const msg = err instanceof Error ? err.message : "Failed to run Discover";
+      // A dropped connection surfaces as a bare TypeError with no detail, which
+      // on a long Discover run almost always means the request was cut off.
+      const msg = err instanceof TypeError
+        ? "Lost connection during Discover — it may have taken too long. Try fewer categories or a smaller radius."
+        : err instanceof Error
+          ? err.message
+          : "Failed to run Discover";
       setError(msg);
       toast(msg, {
         variant: "error",

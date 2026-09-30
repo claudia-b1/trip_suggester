@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyPoiOwnership } from "@/lib/ownership";
 
 const PLACES_API = "https://places.googleapis.com/v1";
 
@@ -20,10 +22,17 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ poiId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { poiId: raw } = await params;
   const poiId = Number(raw);
   if (!Number.isInteger(poiId)) {
     return NextResponse.json({ error: "Invalid POI ID" }, { status: 400 });
+  }
+
+  if (!await verifyPoiOwnership(poiId, userId)) {
+    return NextResponse.json({ error: "POI not found" }, { status: 404 });
   }
 
   const poi = await prisma.poi.findUnique({

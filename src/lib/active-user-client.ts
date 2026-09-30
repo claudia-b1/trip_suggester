@@ -1,19 +1,56 @@
 /**
  * Client-side active user helpers.
- * Manages the active-user-id cookie and the per-device default user in localStorage.
+ *
+ * The session cookie is httpOnly and signed, so the browser can neither read nor
+ * write it directly — these go through `/api/users/session`. The per-device
+ * default user stays in localStorage, since it's only a convenience hint about
+ * which user to pre-select and carries no authority.
  */
 
-export function setActiveUser(userId: number) {
-  document.cookie = `active-user-id=${userId};path=/;max-age=${60 * 60 * 24 * 365};SameSite=Lax`;
+/**
+ * Remove the pre-signing `active-user-id` cookie if it is still around.
+ * Nothing reads it any more, but leaving a stale user id in the browser is
+ * confusing when debugging.
+ */
+function dropLegacyCookie() {
+  if (document.cookie.includes("active-user-id=")) {
+    document.cookie = "active-user-id=;path=/;max-age=0;SameSite=Lax";
+  }
 }
 
-export function getActiveUserIdFromCookie(): number | null {
-  const match = document.cookie.match(/(?:^|;\s*)active-user-id=(\d+)/);
-  return match ? Number(match[1]) : null;
+/** Switch the active user. Resolves once the server has set the cookie. */
+export async function setActiveUser(userId: number): Promise<boolean> {
+  dropLegacyCookie();
+  try {
+    const res = await fetch("/api/users/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
-export function clearActiveUser() {
-  document.cookie = "active-user-id=;path=/;max-age=0;SameSite=Lax";
+/** Ask the server who the active user is. */
+export async function getActiveUserId(): Promise<number | null> {
+  try {
+    const res = await fetch("/api/users/session");
+    if (!res.ok) return null;
+    const data = (await res.json()) as { userId?: number | null };
+    return data.userId ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function clearActiveUser(): Promise<void> {
+  try {
+    await fetch("/api/users/session", { method: "DELETE" });
+  } catch {
+    // Signing out locally is best-effort; the cookie expires on its own.
+  }
 }
 
 export function setDefaultUser(userId: number) {

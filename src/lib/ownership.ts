@@ -94,6 +94,41 @@ export async function verifyFavouriteItemOwnership(
   return item !== null;
 }
 
+/** Verify a day activity's day plan's city's trip belongs to the given user. */
+export async function verifyDayActivityOwnership(
+  activityId: number,
+  userId: number,
+): Promise<boolean> {
+  const activity = await prisma.dayActivity.findFirst({
+    where: { id: activityId, dayPlan: { city: { trip: { userId } } } },
+    select: { id: true },
+  });
+  return activity !== null;
+}
+
+/**
+ * Verify a note belongs to the given user.
+ * TripNote is polymorphic — exactly one of tripId/cityId/dayPlanId is set —
+ * so each path has to be checked separately.
+ */
+export async function verifyNoteOwnership(
+  noteId: number,
+  userId: number,
+): Promise<boolean> {
+  const note = await prisma.tripNote.findFirst({
+    where: {
+      id: noteId,
+      OR: [
+        { trip: { userId } },
+        { city: { trip: { userId } } },
+        { dayPlan: { city: { trip: { userId } } } },
+      ],
+    },
+    select: { id: true },
+  });
+  return note !== null;
+}
+
 /** Verify a discover profile belongs to the given user. */
 export async function verifyDiscoverProfileOwnership(
   profileId: number,

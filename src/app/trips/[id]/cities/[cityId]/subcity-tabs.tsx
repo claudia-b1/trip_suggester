@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { Pill } from "@/components/ui/pill";
 
 type SubcityTabsProps = {
   tripId: number;
@@ -22,14 +23,15 @@ export function SubcityTabs({ tripId, parentCity, subcities, activeCityId }: Sub
       {tabs.map((tab) => {
         const isActive = tab.id === activeCityId;
         return (
-          <button
+          <Pill
             key={tab.id}
+            size="nav"
             onClick={() => !isActive && router.push(`/trips/${tripId}/cities/${tab.id}`)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            className={
               isActive
                 ? "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] border border-[hsl(var(--secondary))]"
                 : "border border-dashed border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
-            }`}
+            }
             aria-current={isActive ? "page" : undefined}
           >
             {tab.isParent && (
@@ -38,13 +40,14 @@ export function SubcityTabs({ tripId, parentCity, subcities, activeCityId }: Sub
               </span>
             )}
             {tab.name}
-          </button>
+          </Pill>
         );
       })}
 
       {/* "+ Sub-destination" button — only show when viewing the parent */}
       {activeCityId === parentCity.id && (
-        <button
+        <Pill
+          size="nav"
           onClick={() => {
             // Navigate to trip page with addCity flow for sub-destination
             const url = new URL(window.location.origin + `/trips/${tripId}`);
@@ -52,10 +55,10 @@ export function SubcityTabs({ tripId, parentCity, subcities, activeCityId }: Sub
             url.searchParams.set("parentCityId", String(parentCity.id));
             router.push(url.pathname + url.search);
           }}
-          className="rounded-full px-2.5 py-1 text-xs text-[hsl(var(--muted-foreground))] border border-dashed border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))] transition-colors"
+          className="text-[hsl(var(--muted-foreground))] border border-dashed border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))] hover:text-[hsl(var(--foreground))]"
         >
           + Sub-destination
-        </button>
+        </Pill>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rateLimit, clientKey, tooManyRequests } from "@/lib/rate-limit";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const GEOAPIFY_KEY = process.env.GEOAPIFY_API_KEY;
@@ -12,6 +13,9 @@ const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
  * Fallback: Geoapify geocode/autocomplete
  */
 export async function GET(req: Request) {
+  const limited = rateLimit(clientKey(req, "cities-search"), 60, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited.retryAfter);
+
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q");
   const placeId = searchParams.get("placeId");

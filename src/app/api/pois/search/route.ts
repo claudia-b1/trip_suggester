@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rateLimit, clientKey, tooManyRequests } from "@/lib/rate-limit";
 
 const GEOAPIFY_KEY = process.env.GEOAPIFY_API_KEY;
 
@@ -9,6 +10,9 @@ const GEOAPIFY_KEY = process.env.GEOAPIFY_API_KEY;
  * Returns name, formatted address, lat/lon, and categories.
  */
 export async function GET(req: Request) {
+  const limited = rateLimit(clientKey(req, "pois-search"), 60, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited.retryAfter);
+
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q");
   const lat = searchParams.get("lat");

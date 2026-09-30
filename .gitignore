@@ -8,3 +8,10 @@ node_modules
 # SQLite
 prisma/dev.db
 prisma/dev.db-journal
+dev.db
+
+# Build artifacts
+tsconfig.tsbuildinfo
+
+# Local editor/agent settings
+.claude/
