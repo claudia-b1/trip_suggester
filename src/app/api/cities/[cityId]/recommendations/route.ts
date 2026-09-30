@@ -13,7 +13,7 @@
  *                   enforce minimum rating and review count thresholds.
  *  4. ENRICHMENT  — Wikidata + Google photo for selected POIs only (cached per-POI).
  */
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyCityOwnership } from "@/lib/ownership";
@@ -22,11 +22,13 @@ import {
   type RecommendableCategory,
 } from "@/lib/recommendations";
 import { searchPlaces, discoverUnescoCities, type DiscoveredPlace, CATEGORY_CATEGORIES, SUBCAT_CATEGORIES } from "@/lib/recommendations/geoapify";
-import { enrichPlace } from "@/lib/recommendations/enrichment";
+import { buildPoiFromPrescan } from "@/lib/recommendations/enrichment";
+import { backfillEnrichment } from "@/lib/recommendations/backfill";
 import { scorePoiDetailed, scoreRegularPoi, scoreNearbyPoi, nameSimilarity, type ScoreBreakdown } from "@/lib/recommendations/scoring";
-import { withEnrichCache } from "@/lib/recommendations/cache";
+import { createEnrichCacheBatch } from "@/lib/recommendations/cache";
+import { pMapSettled } from "@/lib/p-map";
 import { haversineKm, geocodeCity, offsetLatLon } from "@/lib/recommendations/_shared";
-import { fetchGoogleMeta, type GoogleMeta } from "@/lib/recommendations/google-places";
+import { fetchGoogleMeta, GOOGLE_META_SCHEMA_VERSION, type GoogleMeta } from "@/lib/recommendations/google-places";
 import { SUBCATEGORIES } from "@/lib/recommendations/subcategories";
 
 export async function POST(
@@ -170,6 +172,17 @@ export async function POST(
         ? { lat: city.latitude, lon: city.longitude }
         : undefined;
 
+  // Stage timing — cold runs are dominated by external I/O and the split between
+  // stages is not obvious from the outside. Logged so a slow run can be diagnosed
+  // from the server log rather than guessed at.
+  const runStart = Date.now();
+  let stageMark = runStart;
+  const stage = (label: string) => {
+    const now = Date.now();
+    console.log(`[timing] ${label}: ${((now - stageMark) / 1000).toFixed(1)}s (total ${((now - runStart) / 1000).toFixed(1)}s)`);
+    stageMark = now;
+  };
+
   // ── 1. DISCOVERY — fetch raw candidates per category (always live) ──────────
   //
   // Geoapify is called fresh on every Discover run — no caching.  This ensures
@@ -211,6 +224,8 @@ export async function POST(
     }
   }
 
+  stage("discovery");
+
   // ── 1c. NEARBY DISCOVERY — multi-centre strategy ────────────────────────────
   // A single large-radius Geoapify search biases toward places near the search
   // centre (even without our own bias param). To cover the full ring, we add 6
@@ -242,15 +257,21 @@ export async function POST(
 
     await Promise.allSettled(
       nearbyCategories.map(async (cat) => {
-        // ① One centre search (full radius) — always live, no cache
-        const centrePlaces = await searchPlaces(city.name, cat, [], 200, nearbyRadiusM, true, searchCenterOverride);
-
-        // ② Six ring searches (offset centres, smaller radius) — always live, no cache
-        const ringResults = await Promise.allSettled(
-          ringCentres.map(({ bearing, lat, lon }) =>
+        // The centre search and the six rings are independent, so issue all
+        // seven at once rather than awaiting the centre first. Geoapify is on a
+        // 3000/day free tier and a whole run uses ~40 calls, so the extra
+        // parallelism costs nothing.
+        const [centreResult, ...ringResults] = await Promise.allSettled([
+          searchPlaces(city.name, cat, [], 200, nearbyRadiusM, true, searchCenterOverride),
+          ...ringCentres.map(({ lat, lon }) =>
             searchPlaces(city.name, cat, [], 500, ringRadiusM, true, { lat, lon }),
           ),
-        );
+        ]);
+
+        const centrePlaces = centreResult.status === "fulfilled" ? centreResult.value : [];
+        if (centreResult.status === "rejected") {
+          console.error("[nearby] centre fetch failed:", centreResult.reason);
+        }
 
         // ③ Merge and deduplicate by placeId
         const seenIds = new Set<string>();
@@ -274,6 +295,8 @@ export async function POST(
       }),
     );
   }
+
+  stage("nearby-discovery");
 
   // ── 1d. UNESCO CITY INJECTION — cities/towns that ARE the UNESCO site ────────
   //
@@ -347,12 +370,15 @@ export async function POST(
     }
   }
 
+  stage("unesco");
+
   // ── 1d. MUST-VISIT INJECTION — fill gaps from LLM reference list ────────────
   // Generate a must-visit list, check which names are missing from discovery,
   // then resolve them via Geoapify name search (with local-name fallback) or
   // Google Places. Injected places enter the normal pre-scan → scoring pipeline.
   let mustVisitNames: string[] = [];
   let injectedGoogleMetaMap = new Map<string, GoogleMeta>();
+  const injectedPlaceIds = new Set<string>();
   try {
     const { getMustVisitList, injectMustVisitPlaces, classifyGoogleTypes } = await import("@/lib/recommendations/must-visit");
     mustVisitNames = await getMustVisitList(
@@ -367,8 +393,13 @@ export async function POST(
 
     if (mustVisitNames.length && center) {
       const allDiscovered = categories.flatMap((cat) => discoveryByCategory[cat] ?? []);
+      // Must-visit names come from an LLM and are resolved through a Google text
+      // search with only a soft location bias, so an unbounded radius lets a
+      // hallucinated or homonymous name resolve to a place anywhere on earth.
+      // Always pass a finite bound, even when discovery itself is unbounded.
+      const mustVisitRadiusKm = isFinite(radiusKm) ? radiusKm : (city.discoverRadiusKm ?? 50);
       const { places: injectedPlaces, googleMetaByPlaceId: injectedGoogleMeta } =
-        await injectMustVisitPlaces(mustVisitNames, allDiscovered, city.name, city.country ?? "", center.lat, center.lon, radiusKm);
+        await injectMustVisitPlaces(mustVisitNames, allDiscovered, city.name, city.country ?? "", center.lat, center.lon, mustVisitRadiusKm);
 
       // Add injected places to the best-matching category's discovery list.
       // Match the place's Geoapify tags against CATEGORY_CATEGORIES to find
@@ -432,6 +463,7 @@ export async function POST(
       for (const { place, cat } of matched) {
         if (!discoveryByCategory[cat]) discoveryByCategory[cat] = [];
         discoveryByCategory[cat].push(place);
+        injectedPlaceIds.add(place.placeId);
       }
 
       // Store for merging into googleMetaMap after pre-scan
@@ -440,6 +472,8 @@ export async function POST(
   } catch (e) {
     console.error("[recommendations] must-visit injection failed:", e);
   }
+
+  stage("must-visit");
 
   // ── 2. GOOGLE PRE-SCAN — filtered candidates only, to stay within the 100 req/day quota ────
   //
@@ -473,9 +507,12 @@ export async function POST(
   for (const cat of categories) {
     const catPlaces = discoveryByCategory[cat] ?? [];
     const k = Math.max((counts[cat] ?? 10) * PRESCAN_MULTIPLIER, 20);
-    // Force-include UNESCO sites and Wikidata-linked places regardless of list position
+    // Force-include UNESCO sites and Wikidata-linked places regardless of list position.
+    // Must-visit injections are appended to the end of the bucket, so without this
+    // they fall outside the slice below and get dropped by the quality gate —
+    // exactly in the dense categories where gap-filling is needed most.
     for (const p of catPlaces) {
-      if (p.isUnescoSite || p.wikidataId) prescanIds.add(p.placeId);
+      if (p.isUnescoSite || p.wikidataId || injectedPlaceIds.has(p.placeId)) prescanIds.add(p.placeId);
     }
     // Top-K from Geoapify's natural ordering (OSM importance + proximity bias)
     catPlaces.slice(0, k).forEach((p) => prescanIds.add(p.placeId));
@@ -535,51 +572,80 @@ export async function POST(
   // Use place.poiCityName (actual municipality from Geoapify) as the query city
   // so nearby places in different towns are matched correctly.
   const googleMetaMap = new Map<string, GoogleMeta | null>();
-  const PRESCAN_BATCH = 40;
+  const PRESCAN_CONCURRENCY = 40;
   const allPrescanCandidates = [...regularCandidates, ...nearbyCandidatesFiltered];
 
   console.log(`[prescan] regular=${regularCandidates.length} nearby=${nearbyCandidatesFiltered.length} total=${allPrescanCandidates.length}`);
 
-  for (let i = 0; i < allPrescanCandidates.length; i += PRESCAN_BATCH) {
-    const batch = allPrescanCandidates.slice(i, i + PRESCAN_BATCH);
-    await Promise.allSettled(
-      batch.map(async (place) => {
+  // One query for every cache entry this stage needs, instead of a findUnique
+  // per candidate. Writes are buffered and flushed once at the end.
+  const prescanCache = createEnrichCacheBatch("google-meta");
+  await prescanCache.preload(allPrescanCandidates.map((p) => p.placeId));
+
+  await pMapSettled(
+    allPrescanCandidates,
+    async (place) => {
+      {
         // Use the POI's actual city from Geoapify rather than the trip city.
         // This prevents wrong Google matches for nearby places in different municipalities.
         const queryCityName = place.poiCityName ?? city.name;
-        let meta = await withEnrichCache<GoogleMeta>(
+        let meta = await prescanCache.get<GoogleMeta>(
           place.placeId,
-          "google-meta",
           () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName, place.address),
           undefined,   // ttlDays — use default
           nearbyOnlyPlaceIds.has(place.placeId), // skipCachedNull for nearby (cache-healing for old wrong-city nulls)
         );
-        // Stale cache migration: entries cached before primaryType was added to
-        // the Google field mask are missing it. Re-fetch to get the full data.
-        if (meta && !meta.primaryType) {
-          meta = await withEnrichCache<GoogleMeta>(
+        // Stale cache migration: entries cached before `primaryType` joined the
+        // field mask are missing it, and are worth one refetch to fill in.
+        //
+        // Both halves of this condition matter. Testing `!primaryType` alone
+        // refetched forever, because Google legitimately omits it for many
+        // places and the refetch never produced one either. Testing the schema
+        // version alone refetches every pre-versioning entry — including the
+        // majority that already have `primaryType` and gain nothing from it,
+        // which roughly doubles the Google calls on a cold city.
+        //
+        // So: only legacy entries that actually lack `primaryType`. The refetch
+        // writes `_schemaVersion`, so each one is retried at most once even when
+        // it comes back without a type again.
+        // A stamped entry below the current version is a different case: the
+        // field mask itself changed (see GOOGLE_PLACES_RICH_SUMMARY), so it has
+        // to be refetched regardless of whether it has a primaryType.
+        const needsRefetch = meta != null && (
+          meta._schemaVersion == null
+            ? !meta.primaryType
+            : meta._schemaVersion < GOOGLE_META_SCHEMA_VERSION
+        );
+        if (needsRefetch) {
+          meta = await prescanCache.get<GoogleMeta>(
             place.placeId,
-            "google-meta",
             () => fetchGoogleMeta(place.name, queryCityName, place.latitude, place.longitude, place.tourism, place.streetName, place.address),
             0,  // force cache miss by setting TTL to 0
           );
         }
         googleMetaMap.set(place.placeId, meta);
-      }),
-    );
-  }
+      }
+    },
+    PRESCAN_CONCURRENCY,
+    (err, place) => console.error(`[prescan] failed for "${place.name}":`, err),
+  );
+
+  const prescanWrites = await prescanCache.flush();
+  console.log(`[prescan] complete — ${prescanWrites} cache entr${prescanWrites === 1 ? "y" : "ies"} written`);
 
   // Merge pre-resolved Google meta for must-visit Google-fallback places
   for (const [placeId, meta] of injectedGoogleMetaMap) {
     if (!googleMetaMap.has(placeId)) googleMetaMap.set(placeId, meta);
   }
 
-  // ── Coord correction: prefer Google coords over Geoapify ─────────────────
-  // Geoapify coords can land in water or on the wrong feature (e.g. a bay
-  // instead of the resort on its shore). Google coords are typically placed
-  // at the entrance/building, so prefer them when available and close enough.
+  // ── Coord correction: prefer Google coords for micro-adjustments only ────
+  // Geoapify coords can be slightly off from the actual entrance/building.
+  // Google coords are typically placed at the entrance, so use them for
+  // small corrections only. Larger drifts (>100m) suggest Google matched a
+  // different location or has inaccurate data (e.g. Rovinj old town POIs
+  // are systematically ~400m off in Google).
   {
-    const COORD_CORRECT_MAX_KM = 1;
+    const COORD_CORRECT_MAX_KM = 0.1;
     let corrected = 0;
     for (const place of allPrescanCandidates) {
       const gMeta = googleMetaMap.get(place.placeId);
@@ -709,6 +775,8 @@ export async function POST(
   }
 
   type ScoredCandidate = { place: DiscoveredPlace; score: number; breakdown: ScoreBreakdown; meta: GoogleMeta | null | undefined; distKm: number };
+
+  stage("google-prescan");
 
   // ── 3. SCORING — two formulas: regular (city-radius) vs nearby (ring-search) ─
   //
@@ -1097,19 +1165,18 @@ export async function POST(
     }
   }
 
+  stage("scoring");
+
   // ── 4. ENRICHMENT — Wikidata + Google photo for top-N only (cached) ────────────
   // Pass pre-scanned GoogleMeta so enrichPlace skips the Text Search API call
-  const BATCH_SIZE = 25;
-  const enrichedResults: PromiseSettledResult<import("@/lib/recommendations/_shared").RecommendedPoi>[] = [];
-  for (let i = 0; i < topPlaces.length; i += BATCH_SIZE) {
-    const batch = topPlaces.slice(i, i + BATCH_SIZE);
-    const results = await Promise.allSettled(
-      batch.map(({ place, category, googleMeta }) =>
-        enrichPlace(place, category, city.name, googleMeta),
-      ),
-    );
-    enrichedResults.push(...results);
-  }
+  // Built synchronously from prescan data — no network calls. The photo resolve
+  // and Wikidata lookups that used to happen here are deferred to
+  // `backfillEnrichment`, scheduled after the response below.
+  const enrichedResults: PromiseSettledResult<import("@/lib/recommendations/_shared").RecommendedPoi>[] =
+    topPlaces.map(({ place, category, googleMeta }) => ({
+      status: "fulfilled",
+      value: buildPoiFromPrescan(place, category, city.name, googleMeta),
+    }));
 
   // ── 4b. RE-RANK — final ordering by score, trim to per-category limits ────────
   type EnrichedEntry = { poi: import("@/lib/recommendations/_shared").RecommendedPoi; category: RecommendableCategory };
@@ -1303,6 +1370,8 @@ export async function POST(
     if (row.selected && row.placeId) poiSubcategoryMap.set(row.placeId, row.subcategory);
   }
 
+  stage("enrichment");
+
   // ── 5. PERSIST CANDIDATES — replace previous run's candidate log ────────────
   await prisma.poiCandidate.deleteMany({ where: { cityId: cityIdNum } });
   await prisma.poiCandidate.createMany({
@@ -1377,6 +1446,24 @@ export async function POST(
       });
     }),
   );
+
+  stage("persist");
+
+  // Fill in photos and Wikidata after the response is sent. `after()` keeps this
+  // inside the same invocation, so it needs no auth re-check and no self-call —
+  // the user just gets their POIs first and the detail arrives moments later.
+  const backfillItems = clusteredFinalPois
+    .map(({ poi: p }) => topPlaces.find((t) => t.place.placeId === p.placeId))
+    .filter((t): t is NonNullable<typeof t> => t != null)
+    .map(({ place, category, googleMeta }) => ({ place, category, googleMeta }));
+
+  after(async () => {
+    try {
+      await backfillEnrichment(cityIdNum, city.name, backfillItems);
+    } catch (err) {
+      console.error("[backfill] enrichment backfill failed:", err);
+    }
+  });
 
   return NextResponse.json(
     { created: created.length, failures },

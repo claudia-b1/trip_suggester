@@ -11,8 +11,30 @@
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { haversineM } from "@/lib/geo";
+import { nameSimilarity } from "@/lib/recommendations/scoring";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 
 const PLACES_API = "https://places.googleapis.com/v1";
+
+/**
+ * A Google text search for an ambiguous name ("Pekara", "Lidl") readily returns
+ * a different business, whose photo then gets written to the POI permanently.
+ *
+ * Distance does the real work here, not the name. POI names come from OSM and
+ * are often in the local language while Google returns the translated name
+ * ("Balbijev luk" vs "Balbi Arch", "Zavičajni muzej Grada Rovinja" vs "Rovinj
+ * Heritage Museum" — both score 0.00), so gating on name similarity alone would
+ * reject correct matches across most of a non-English trip. Conversely the worst
+ * case, a different branch of the same chain, scores a perfect 1.00.
+ *
+ * So: trust anything essentially on top of the POI, reject anything far away,
+ * and only fall back to the name in the ambiguous band between.
+ */
+const TRUST_DISTANCE_M = 150;
+const MAX_MATCH_DISTANCE_M = 300;
+const MIN_NAME_SIMILARITY = 0.4;
 
 /** Concurrency limiter */
 function pMap<T, R>(items: T[], fn: (item: T, i: number) => Promise<R>, concurrency: number): Promise<R[]> {
@@ -48,6 +70,8 @@ type PlaceResult = {
   places?: Array<{
     id?: string;
     photos?: Array<{ name: string }>;
+    displayName?: { text?: string };
+    location?: { latitude?: number; longitude?: number };
   }>;
 };
 
@@ -75,7 +99,7 @@ async function findGooglePhoto(
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "places.id,places.photos",
+        "X-Goog-FieldMask": "places.id,places.photos,places.displayName,places.location",
       },
       body: JSON.stringify(body),
     });
@@ -85,6 +109,26 @@ async function findGooglePhoto(
     const place = data.places?.[0];
     const photoName = place?.photos?.[0]?.name;
     if (!photoName) return null;
+
+    const matchedName = place?.displayName?.text;
+    const gLat = place?.location?.latitude;
+    const gLon = place?.location?.longitude;
+
+    // locationBias is a soft hint, so Google can still return a distant branch.
+    if (lat != null && lon != null && gLat != null && gLon != null) {
+      const dist = haversineM(lat, lon, gLat, gLon);
+      if (dist > MAX_MATCH_DISTANCE_M) {
+        console.log(`[re-enrich] rejecting "${matchedName ?? "?"}" for "${poiName}" — ${Math.round(dist)}m away`);
+        return null;
+      }
+      if (dist > TRUST_DISTANCE_M && matchedName) {
+        const similarity = nameSimilarity(poiName, matchedName);
+        if (similarity < MIN_NAME_SIMILARITY) {
+          console.log(`[re-enrich] rejecting "${matchedName}" for "${poiName}" — ${Math.round(dist)}m away and name similarity ${similarity.toFixed(2)}`);
+          return null;
+        }
+      }
+    }
 
     return { photoName, googlePlaceId: place?.id };
   } catch {
@@ -111,9 +155,18 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { cityId: raw } = await params;
   const cityId = Number(raw);
   if (!cityId) return NextResponse.json({ error: "invalid cityId" }, { status: 400 });
+
+  // This route spends Google Places quota, so it must not be callable for
+  // arbitrary city ids.
+  if (!await verifyCityOwnership(cityId, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "GOOGLE_PLACES_API_KEY not set" }, { status: 500 });

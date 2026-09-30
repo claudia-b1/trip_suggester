@@ -14,7 +14,28 @@ import { nameSimilarity } from "@/lib/recommendations/scoring";
 const PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText";
 const PHOTO_BASE        = "https://places.googleapis.com/v1";
 
-// Fields we want from the Google Places response
+/**
+ * Per-call caps. A Places text search that hasn't answered in 8s is not going
+ * to produce a useful result before it costs more than it's worth — the prescan
+ * runs hundreds of these and a stalled one occupies a concurrency slot.
+ */
+const SEARCH_TIMEOUT_MS = 8_000;
+const PHOTO_TIMEOUT_MS = 8_000;
+
+// Fields requested from Google Places Text Search.
+//
+// Google bills each call at the highest tier any requested field belongs to, and
+// this mask runs on every prescan candidate (~300 on a cold discover run), not
+// just the ~50 that end up selected.
+//
+// `editorialSummary` is the most expensive field here and the least load-bearing:
+// it is only the *second* fallback for a POI description, behind the Wikipedia
+// summary and ahead of two further fallbacks, so dropping it never leaves a POI
+// blank. Set GOOGLE_PLACES_RICH_SUMMARY=1 to request it anyway — check your
+// current per-SKU rates before deciding, since Google's tier pricing changed in
+// 2025 and the saving depends on where the tier boundary actually falls.
+const INCLUDE_EDITORIAL_SUMMARY = process.env.GOOGLE_PLACES_RICH_SUMMARY === "1";
+
 const FIELD_MASK = [
   "places.id",
   "places.displayName",
@@ -26,7 +47,7 @@ const FIELD_MASK = [
   "places.internationalPhoneNumber",
   "places.websiteUri",
   "places.photos",
-  "places.editorialSummary",
+  ...(INCLUDE_EDITORIAL_SUMMARY ? ["places.editorialSummary"] : []),
   "places.primaryType",
 ].join(",");
 
@@ -53,7 +74,26 @@ export type GoogleMeta = {
   longitude?: number;
   /** Google primary type (e.g. "restaurant", "museum", "park") — used to assign the right category for must-visit injection. */
   primaryType?: string;
+  /**
+   * Payload schema version. Absent on entries cached before `primaryType` was
+   * added to the field mask. Lets the prescan re-fetch those once, instead of
+   * re-fetching every entry that merely has no primaryType — Google legitimately
+   * omits it for many places, which otherwise costs a full search on every run.
+   */
+  _schemaVersion?: number;
 };
+
+/**
+ * Bump when the field mask changes in a way that needs cached entries refreshed.
+ *   1 — before `primaryType` was in the mask (absent on those entries)
+ *   2 — lean mask
+ *   3 — lean mask plus `editorialSummary`
+ *
+ * Ordering matters: the prescan refetches anything below the current version, so
+ * a v3 (rich) entry satisfies a lean run — its data is a superset — while a v2
+ * entry correctly fails a rich run, because it has no summary to offer.
+ */
+export const GOOGLE_META_SCHEMA_VERSION = INCLUDE_EDITORIAL_SUMMARY ? 3 : 2;
 
 export type GoogleEnrichment = {
   googlePlaceId: string;
@@ -114,7 +154,7 @@ export async function resolvePhotoUri(photoName: string, apiKey: string): Promis
     const url =
       `${PHOTO_BASE}/${photoName}/media` +
       `?maxHeightPx=800&maxWidthPx=1200&key=${apiKey}&skipHttpRedirect=true`;
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS) });
     if (!res.ok) return undefined;
     const data = await res.json() as { photoUri?: string };
     return data.photoUri ?? undefined;
@@ -164,6 +204,10 @@ export async function fetchGoogleMeta(
         "X-Goog-FieldMask": FIELD_MASK,
       },
       body: JSON.stringify(body),
+      // Without a cap a single hung request holds a slot in the prescan window
+      // for as long as the platform allows, which on a 260-candidate run is the
+      // difference between a fast pass and a timeout.
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
 
     if (!res.ok) return null;
@@ -186,6 +230,7 @@ export async function fetchGoogleMeta(
       latitude:        place.location?.latitude,
       longitude:       place.location?.longitude,
       primaryType:     (place as Record<string, unknown>).primaryType as string | undefined,
+      _schemaVersion:  GOOGLE_META_SCHEMA_VERSION,
     };
   }
 

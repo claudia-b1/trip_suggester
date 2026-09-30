@@ -19,6 +19,15 @@ const USER_AGENT      = "TripPlanner/1.0 (educational project)";
 /** Small delay to avoid Wikidata API rate limits during batch enrichment. */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Per-call caps. Neither endpoint had one, and enrichment runs ~120 POIs at
+ * concurrency 25 — so a single stalled request held a slot for as long as the
+ * platform allowed. Measured, enrichment was 75 of 104 seconds on a cold run.
+ * WDQS is the slowest dependency in the pipeline and deserves the shorter leash.
+ */
+const SEARCH_TIMEOUT_MS = 5_000;
+const SPARQL_TIMEOUT_MS = 6_000;
+
 export type WikidataEnrichment = {
   wikidataId: string;
   description?: string;
@@ -53,6 +62,7 @@ async function findQIdInLang(name: string, language: string): Promise<string | n
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(url.toString(), {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
 
     if (res.status === 429) {
@@ -165,6 +175,7 @@ async function fetchWikipediaSummary(articleUrl: string): Promise<string | null>
     const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${title}`;
     const res = await fetch(url, {
       headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
 
@@ -205,7 +216,10 @@ export async function enrichWithWikidata(
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await fetch(
         `${SPARQL_ENDPOINT}?query=${encodeURIComponent(sparql)}&format=json`,
-        { headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" } },
+        {
+          headers: { "User-Agent": USER_AGENT, Accept: "application/sparql-results+json" },
+          signal: AbortSignal.timeout(SPARQL_TIMEOUT_MS),
+        },
       );
       if (res.status === 429) {
         await sleep(2000 * (attempt + 1));

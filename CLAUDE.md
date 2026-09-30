@@ -8,9 +8,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev          # Start dev server (listens on 0.0.0.0)
-npm run build        # Production build — also serves as the full type + lint check
+npm run build        # Production build — the real type + lint gate
 npx tsc --noEmit     # Type-check only (faster than full build)
-npm run lint         # ESLint via Next.js
+npm test             # Vitest — pure-logic unit tests, no DB or network
+npm run test:watch   # Vitest in watch mode
 npm run db:push      # Sync schema.prisma → database (PostgreSQL on Neon)
 npm run db:studio    # Open Prisma Studio at localhost:5555
 npm run db:seed      # Seed sample data (deletes existing first)
@@ -36,7 +37,7 @@ After changing `prisma/schema.prisma`, run `npx prisma migrate dev --name <name>
 - **Categories and time slots** are string unions constrained at the app layer (`src/lib/categories.ts`, `src/lib/slots.ts`) — not DB enums.
 - **DayPlans** are auto-created via `ensureDayPlans()` — one row per date in the city's date range, upserted on city page load.
 - **Cross-component communication** uses `CustomEvent` dispatch (e.g. `focus-poi-on-map` event from recommendations to PoisSection).
-- **AI generation** uses OpenRouter with model `nvidia/nemotron-3-super-120b-a12b:free`. Results cached in `CityInfoCache` table with compound unique `(cityId, type)` for "city-info" and "activities" types.
+- **AI generation** uses OpenRouter with model `inclusionai/ling-3.0-flash-sante:free` (activities, city-info, advisor, must-visit) and `nex-agi/nex-n2.5-mini:free` (POI descriptions). Results cached in `CityInfoCache` table with compound unique `(cityId, type)` for "city-info", "activities" and "must-visit" types.
 - **Geocoding** falls back through Google Places → Mapbox. The `/api/geocode` route handles autocomplete, forward geocode, reverse geocode, and country validation.
 
 ### Styling
@@ -50,6 +51,16 @@ Tailwind v4 CSS-first config in `globals.css` with `@theme inline` — no `tailw
 - `GEOAPIFY_API_KEY` — POI discovery
 - `GOOGLE_PLACES_API_KEY` — geocoding, place search, enrichment
 - `OPENROUTER_API_KEY` — AI-generated city info and activity recommendations
+
+Optional:
+
+- `AUTH_SECRET` — HMAC key for the signed active-user cookie. Falls back to a key derived from `DATABASE_URL`; set it explicitly to keep sessions valid across a database URL change.
+- `GOOGLE_PLACES_RICH_SUMMARY` — set to `1` to request `editorialSummary` on every Places prescan call. Off by default: it is the most expensive field in the mask and only the second of four description fallbacks.
+- `OPENROUTER_SITE_URL` — sent as `HTTP-Referer` for OpenRouter attribution.
+
+### Auth
+
+There is no password auth. The active user is a signed, httpOnly cookie (`src/lib/session.ts`) set via `/api/users/session`. API routes resolve it with `getActiveUserId()` and must scope every query with a `verify*Ownership` helper from `src/lib/ownership.ts` — the two go together; the cookie only establishes *who*, not *what they may touch*.
 
 ### File layout
 

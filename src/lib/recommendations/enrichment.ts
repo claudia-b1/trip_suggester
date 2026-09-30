@@ -15,21 +15,6 @@ import type { RecommendedPoi } from "./_shared";
 import type { Category } from "@/lib/categories";
 import { buildFallbackDescription } from "@/lib/smart-fallback-description";
 
-// ─── Best-time heuristics per place category label ─────────────────────────
-
-function inferBestTime(placeCategory: string): "morning" | "afternoon" | "evening" {
-  const c = placeCategory.toLowerCase();
-  if (c.includes("bar") || c.includes("nightclub") || c.includes("pub") ||
-      c.includes("brewery") || c.includes("casino") || c.includes("night"))
-    return "evening";
-  if (c.includes("café") || c.includes("cafe") || c.includes("coffee") ||
-      c.includes("bakery") || c.includes("museum") || c.includes("gallery") ||
-      c.includes("historic") || c.includes("park") || c.includes("garden") ||
-      c.includes("beach"))
-    return "morning";
-  return "afternoon";
-}
-
 function inferDuration(placeCategory: string): number {
   const c = placeCategory.toLowerCase();
   if (c.includes("museum") || c.includes("gallery"))    return 120;
@@ -44,22 +29,6 @@ function inferDuration(placeCategory: string): number {
   if (c.includes("theatre") || c.includes("performing")) return 150;
   if (c.includes("fast food") || c.includes("bakery"))  return 20;
   return 60;
-}
-
-function inferTip(category: Category, placeCategory: string): string {
-  const c = placeCategory.toLowerCase();
-  if (c.includes("museum"))       return "Book tickets online in advance to skip the queue.";
-  if (c.includes("historic"))     return "Guided tours offer much richer context than self-guided visits.";
-  if (c.includes("restaurant"))   return "Book ahead for dinner — popular spots fill up fast.";
-  if (c.includes("café") || c.includes("coffee")) return "Great for a slow morning with a local newspaper.";
-  if (c.includes("bar"))          return "Happy hour is usually 5–7 PM.";
-  if (c.includes("nightclub"))    return "Dress code may apply — check in advance.";
-  if (c.includes("park"))         return "Early morning visits avoid midday crowds and heat.";
-  if (c.includes("beach"))        return "Arrive before 10 AM for the best spots.";
-  if (c.includes("viewpoint") || c.includes("lookout")) return "Golden hour just after sunrise offers the most dramatic light.";
-  if (category === "ENTERTAINMENT")  return "Check opening hours and any booking requirements.";
-  if (category === "WELLNESS")    return "Book treatments in advance, especially at weekends.";
-  return "Check opening times and any admission fees before visiting.";
 }
 
 // ─── Core enrichment functions ────────────────────────────────────────────────
@@ -94,6 +63,61 @@ async function getGoogle(
 // Categories where Wikidata enrichment is worthwhile — only major cultural
 // landmarks and natural sites tend to have Wikidata entries.
 const WIKIDATA_CATEGORIES = new Set<string>(["CULTURE", "NATURE"]);
+
+/**
+ * Build a POI from data the prescan already fetched — no network calls.
+ *
+ * The Google prescan meta already carries rating, review count, price level,
+ * opening hours, phone and website, and OSM already gave us `isUnescoSite` and
+ * `wikidataId`. So the only things full enrichment adds are the resolved photo
+ * URL (one HTTP call per POI) and Wikidata's description/inception year.
+ *
+ * Measured, that enrichment pass was 76 of 111 seconds on a cold run — enough
+ * on its own to blow the function budget. Everything it adds is display-only
+ * and nullable, so the run returns POIs built from what it already has and
+ * `backfillEnrichment` fills the rest in afterwards.
+ */
+export function buildPoiFromPrescan(
+  place: DiscoveredPlace,
+  category: Category,
+  cityName: string,
+  googleMeta?: GoogleMeta | null,
+): RecommendedPoi {
+  const g = googleMeta ?? null;
+  const rating =
+    g?.rating ??
+    (place.sourceRating != null ? Math.round((place.sourceRating / 10) * 5 * 10) / 10 : undefined);
+
+  return {
+    name:        place.name,
+    category,
+    // No Wikipedia summary yet — the smart fallback keeps the card readable
+    // until the backfill replaces it.
+    description: g?.editorialSummary ?? buildFallbackDescription({
+      category,
+      placeCategory: place.placeCategory,
+      cuisine: place.cuisine,
+      rating: rating ?? null,
+      userRatingCount: g?.userRatingCount,
+      cityName,
+    }),
+    latitude:    place.latitude,
+    longitude:   place.longitude,
+    rating,
+    estimatedDurationMinutes: inferDuration(place.placeCategory),
+    placeId:     place.placeId,
+    priceLevel:  g?.priceLevel ?? place.priceLevel,
+    website:     g?.website ?? place.website,
+    phoneNumber: g?.phoneNumber ?? place.tel,
+    openingHours: g?.openingHours ?? place.openingHours,
+    // Deliberately unresolved — this is the per-POI HTTP call being deferred.
+    photoUrl:    place.photoUrl,
+    isUnescoSite: place.isUnescoSite ?? false,
+    wikidataId:  place.wikidataId,
+    fee:         place.fee,
+    userRatingCount: g?.userRatingCount,
+  };
+}
 
 export async function enrichPlace(
   place: DiscoveredPlace,
@@ -153,9 +177,12 @@ export async function enrichPlace(
     latitude:    place.latitude,
     longitude:   place.longitude,
     rating,
-    bestTimeToVisit:          inferBestTime(place.placeCategory),
+    // `bestTimeToVisit` and `tips` are deliberately not auto-filled. They used
+    // to be keyword guesses off the category label, which produced invented
+    // specifics presented as facts about a particular place ("Happy hour is
+    // usually 5–7 PM" for any bar) — and in practice 91% of POIs just got the
+    // same generic fallback string. Both columns stay, for the user's own notes.
     estimatedDurationMinutes: inferDuration(place.placeCategory),
-    tips:        inferTip(category, place.placeCategory),
     // New enhanced fields
     placeId:     place.placeId,
     priceLevel:  priceLevel,
