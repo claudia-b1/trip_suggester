@@ -11,7 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import {
   setActiveUser as setCookie,
-  getActiveUserIdFromCookie,
+  getActiveUserId as getActiveUserIdFromServer,
   clearActiveUser,
   setDefaultUser as setDefault,
   getDefaultUserId,
@@ -91,8 +91,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // 1. Check cookie
-      let userId = getActiveUserIdFromCookie();
+      // 1. Ask the server who the signed cookie says we are
+      const sessionUserId = await getActiveUserIdFromServer();
+      let userId = sessionUserId;
 
       // 2. Fallback to localStorage default
       if (!userId) {
@@ -106,19 +107,29 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
       // Validate the user exists
       const user = allUsers.find((u) => u.id === userId) ?? allUsers[0];
-      setCookie(user.id);
+      await setCookie(user.id);
       setActiveUser(user);
       setLoading(false);
+
+      // The page was server-rendered before this session existed, so anything
+      // user-scoped came back empty. Refresh once to pick it up — but only when
+      // we actually established a new session, or this loops forever.
+      if (sessionUserId !== user.id) {
+        router.refresh();
+      }
     }
 
     init();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const switchUser = useCallback(
-    (id: number) => {
+    async (id: number) => {
       const user = users.find((u) => u.id === id);
       if (!user) return;
-      setCookie(id);
+      // The cookie is set server-side now, so wait for it before navigating —
+      // otherwise the next request still carries the previous user.
+      const ok = await setCookie(id);
+      if (!ok) return;
       setActiveUser(user);
       // Notify FavouritesProvider and other listeners
       window.dispatchEvent(new CustomEvent("user-switched"));
@@ -145,7 +156,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
       // If this is the first user, auto-activate
       if (!activeUser) {
-        setCookie(user.id);
+        await setCookie(user.id);
         setDefault(user.id);
         setActiveUser(user);
         router.refresh();
@@ -187,18 +198,24 @@ export function UserProvider({ children }: { children: ReactNode }) {
         throw new Error(body.error ?? "Failed to delete user");
       }
 
-      setUsers((prev) => {
-        const remaining = prev.filter((u) => u.id !== id);
-        // If the deleted user was active, switch to first remaining
-        if (activeUser?.id === id && remaining.length > 0) {
-          setCookie(remaining[0].id);
+      const remaining = users.filter((u) => u.id !== id);
+      setUsers(remaining);
+
+      // Setting the cookie is a server round-trip now, so it can't happen
+      // inside the state updater.
+      if (activeUser?.id === id) {
+        if (remaining.length > 0) {
+          await setCookie(remaining[0].id);
           setActiveUser(remaining[0]);
-          router.refresh();
+        } else {
+          await clearActiveUser();
+          setActiveUser(null);
+          setNeedsOnboarding(true);
         }
-        return remaining;
-      });
+        router.refresh();
+      }
     },
-    [activeUser, router],
+    [activeUser, users, router],
   );
 
   const refreshUsers = useCallback(async () => {

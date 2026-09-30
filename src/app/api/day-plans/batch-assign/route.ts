@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isTimeSlot } from "@/lib/slots";
 import { batchAssignSchema, parseBody } from "@/lib/api-schemas";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyPoiOwnership } from "@/lib/ownership";
 
 /**
  * POST /api/day-plans/batch-assign
@@ -9,6 +11,9 @@ import { batchAssignSchema, parseBody } from "@/lib/api-schemas";
  * Body: { poiId: number, dayPlanIds: number[], timeSlot: string }
  */
 export async function POST(req: Request) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const raw = await req.json();
   const parsed = parseBody(batchAssignSchema, raw);
   if (!parsed.success) {
@@ -19,6 +24,20 @@ export async function POST(req: Request) {
 
   if (!isTimeSlot(timeSlot)) {
     return NextResponse.json({ error: "Invalid timeSlot" }, { status: 400 });
+  }
+
+  if (!await verifyPoiOwnership(poiId, userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Check every target day plan in one query rather than per-iteration, then
+  // reject the whole request if any belongs to someone else — a partial write
+  // would be harder to reason about than an outright rejection.
+  const ownedCount = await prisma.dayPlan.count({
+    where: { id: { in: dayPlanIds }, city: { trip: { userId } } },
+  });
+  if (ownedCount !== dayPlanIds.length) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const results = [];

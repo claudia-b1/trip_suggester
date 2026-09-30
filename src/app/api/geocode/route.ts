@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { rateLimit, clientKey, tooManyRequests } from "@/lib/rate-limit";
 
 const GOOGLE_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -17,6 +18,9 @@ const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
  *   → reverse geocode lat/lng to address, city, country (Mapbox first)
  */
 export async function GET(req: Request) {
+  const limited = rateLimit(clientKey(req, "geocode"), 60, 60_000);
+  if (!limited.allowed) return tooManyRequests(limited.retryAfter);
+
   const { searchParams } = new URL(req.url);
   const action = searchParams.get("action");
 

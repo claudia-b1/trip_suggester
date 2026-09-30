@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyDayPlanOwnership } from "@/lib/ownership";
 
 /**
  * POST /api/day-plans/:id/copy
@@ -14,6 +16,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
   const { id } = await params;
   const sourceDayPlanId = Number(id);
   const { targetDayPlanId, mode } = await req.json();
@@ -26,6 +31,15 @@ export async function POST(
   }
   if (sourceDayPlanId === targetDayPlanId) {
     return NextResponse.json({ error: "Cannot move to the same day" }, { status: 400 });
+  }
+
+  // Both ends move data, so both have to belong to the caller.
+  const [ownsSource, ownsTarget] = await Promise.all([
+    verifyDayPlanOwnership(sourceDayPlanId, userId),
+    verifyDayPlanOwnership(targetDayPlanId, userId),
+  ]);
+  if (!ownsSource || !ownsTarget) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   // Verify both day plans exist

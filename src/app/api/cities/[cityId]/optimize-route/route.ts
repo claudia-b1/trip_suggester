@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getActiveUserId } from "@/lib/active-user";
+import { verifyCityOwnership } from "@/lib/ownership";
 
 type WaypointInput = { id: string; lat: number; lon: number };
 
@@ -12,8 +14,13 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ cityId: string }> },
 ) {
-  // cityId is validated but not used — the route is scoped to a city for future auth/logging
-  await params;
+  const userId = await getActiveUserId();
+  if (!userId) return NextResponse.json({ error: "No active user" }, { status: 401 });
+
+  const { cityId } = await params;
+  if (!await verifyCityOwnership(Number(cityId), userId)) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const body = (await req.json()) as { waypoints?: WaypointInput[] };
   const { waypoints } = body;
