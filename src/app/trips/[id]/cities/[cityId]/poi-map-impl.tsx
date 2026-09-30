@@ -1384,7 +1384,7 @@ export function PoiMapImpl(props: PoiMapProps) {
         ref={mapRef}
         mapboxAccessToken={token}
         initialViewState={{ longitude: centerLon, latitude: centerLat, zoom: 12 }}
-        style={{ width: "100%", height: fullscreen ? "100dvh" : "clamp(500px, 75vh, 1100px)" }}
+        style={{ width: "100%", height: fullscreen ? "100dvh" : "clamp(340px, 65vh, 1100px)" }}
         mapStyle={MAP_STYLES[mapStyle]}
         onLoad={() => {
           setMapReady(true);

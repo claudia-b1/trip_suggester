@@ -1328,7 +1328,7 @@ export function StopPlanningSection({
                 </div>
               )}
               {view === "map" ? (
-                <div className="relative min-h-[400px] lg:min-h-[500px]">
+                <div className="relative min-h-[340px] lg:min-h-[500px]">
                   <PoiMap
                     pois={filteredPois}
                     cityId={cityId}
