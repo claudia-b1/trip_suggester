@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyCityOwnership } from "@/lib/ownership";
 import { parseAIResponse, type GeneratedCityInfo } from "@/lib/city-info";
+import { completeJson, OpenRouterFailure } from "@/lib/openrouter";
 
 // ── Prompt builder ─────────────────────────────────────────────────────────────
 
@@ -364,48 +365,28 @@ export async function POST(
     : null;
   const prompt = buildPrompt(cityLabel, city.name, cityCoords);
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "inclusionai/ling-3.0-flash-sante:free",
+  let content: string;
+  try {
+    content = await completeJson({
       messages: [
         { role: "system", content: prompt },
         { role: "user", content: "Generate the city information now." },
       ],
-      max_tokens: 16000,
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return NextResponse.json(
-      { error: `OpenRouter error (${res.status}): ${text.slice(0, 300)}` },
-      { status: 502 },
-    );
+      maxTokens: 16000,
+    });
+  } catch (e) {
+    if (e instanceof OpenRouterFailure) {
+      console.error("[city-info] generation failed:", e.info.detail);
+      return NextResponse.json({ error: e.info.userMessage }, { status: e.info.status });
+    }
+    throw e;
   }
 
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    error?: { message?: string };
-  };
-
-  if (data.error) {
-    return NextResponse.json(
-      { error: data.error.message ?? "OpenRouter returned an error" },
-      { status: 502 },
-    );
-  }
-
-  const text = data.choices?.[0]?.message?.content ?? "";
-  if (!text) {
+  if (!content) {
     return NextResponse.json({ error: "Empty response from model" }, { status: 502 });
   }
 
-  const categories = parseAIResponse(text);
+  const categories = parseAIResponse(content);
   if (categories.length === 0) {
     return NextResponse.json(
       { error: "Could not parse model response — try regenerating" },

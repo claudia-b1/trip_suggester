@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveUserId } from "@/lib/active-user";
 import { verifyCityOwnership } from "@/lib/ownership";
+import { completeText, OpenRouterFailure } from "@/lib/openrouter";
 import {
   ACTIVITY_MODEL,
+  ACTIVITY_PROMPT_VERSION,
   buildActivityPrompt,
   buildCustomSectionPrompt,
   parseActivityResponse,
@@ -11,6 +13,7 @@ import {
   type ActivityRecommendationsResult,
   type GenerateOptions,
   type CustomRecommendationSection,
+  type KnownPlace,
 } from "@/lib/activity-recommendations";
 import {
   collectExistingTitles,
@@ -135,72 +138,25 @@ async function callAndParse(
   | { ok: true; recommendations: ReturnType<typeof parseActivityResponse>; rawText: string }
   | { ok: false; error: string; status: number; retryable: boolean; rawText?: string }
 > {
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  let text: string;
+  try {
+    text = await completeText({
       model: ACTIVITY_MODEL,
       messages: [
         { role: "system", content: "You are a travel advisor. Output ONLY raw JSON. No thinking, no reasoning, no explanation, no markdown fences, no preamble. Start your response with { and end with }." },
         { role: "user", content: prompt },
       ],
-      max_tokens: 16000,
+      maxTokens: 16000,
       temperature: 0.5,
-      stream: true,
-    }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    console.error(`[activities] Attempt ${attempt}: OpenRouter HTTP error ${res.status}:`, errText.slice(0, 300));
-    return { ok: false, error: `OpenRouter error (${res.status}): ${errText.slice(0, 300)}`, status: 502, retryable: true };
-  }
-
-  // Accumulate streamed tokens server-side into a single string
-  const decoder = new TextDecoder();
-  const reader = res.body?.getReader();
-  if (!reader) {
-    return { ok: false, error: "No response body from OpenRouter", status: 502, retryable: true };
-  }
-
-  let text = "";
-  let sseBuffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split("\n");
-      sseBuffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-        const data = trimmed.slice(6);
-        if (data === "[DONE]") continue;
-
-        try {
-          const parsed = JSON.parse(data) as {
-            choices?: Array<{ delta?: { content?: string } }>;
-            error?: { message?: string };
-          };
-          if (parsed.error) {
-            console.error(`[activities] Attempt ${attempt}: OpenRouter stream error:`, parsed.error.message);
-            return { ok: false, error: parsed.error.message ?? "OpenRouter stream error", status: 502, retryable: true };
-          }
-          const content = parsed.choices?.[0]?.delta?.content;
-          if (content) text += content;
-        } catch {
-          // Skip unparseable SSE chunks
-        }
-      }
+      // The caller already retries this whole function, so don't nest retries.
+      retries: 0,
+    });
+  } catch (e) {
+    if (e instanceof OpenRouterFailure) {
+      console.error(`[activities] Attempt ${attempt}: ${e.info.detail}`);
+      return { ok: false, error: e.info.userMessage, status: e.info.status, retryable: e.info.retryable };
     }
-  } finally {
-    reader.releaseLock();
+    throw e;
   }
 
   if (!text) {
@@ -344,6 +300,7 @@ export async function POST(
         customSections: updatedCustom,
         generatedAt: new Date().toISOString(),
         model: ACTIVITY_MODEL,
+        promptVersion: ACTIVITY_PROMPT_VERSION,
       };
 
       // Deduplicate across all sections
@@ -398,7 +355,40 @@ export async function POST(
     existingTitles = collectExistingTitles(existing, excludeSection);
   }
 
-  const prompt = buildActivityPrompt(city.name, city.country ?? undefined, options, cityCoords, existingTitles);
+  // Ground the prompt in places Discover already verified, so linkedPlace refers
+  // to something real instead of whatever the model recalls. Prefer saved POIs
+  // (the user kept them), then fall back to scored candidates.
+  const [savedPois, topCandidates] = await Promise.all([
+    prisma.poi.findMany({
+      where: { cityId: cityIdNum },
+      select: { name: true, category: true, isUnescoSite: true },
+      take: 60,
+    }),
+    prisma.poiCandidate.findMany({
+      where: { cityId: cityIdNum, selected: true },
+      select: { name: true, category: true },
+      orderBy: { score: "desc" },
+      take: 60,
+    }),
+  ]);
+
+  const seenNames = new Set<string>();
+  const knownPlaces: KnownPlace[] = [];
+  const addPlace = (place: KnownPlace) => {
+    const key = place.name.toLowerCase().trim();
+    if (!key || seenNames.has(key) || knownPlaces.length >= 80) return;
+    seenNames.add(key);
+    knownPlaces.push(place);
+  };
+  for (const p of savedPois) {
+    addPlace({ name: p.name, category: p.category, isUnescoSite: p.isUnescoSite });
+  }
+  for (const c of topCandidates) {
+    addPlace({ name: c.name, category: c.category });
+  }
+  console.log(`[activities] grounding prompt with ${knownPlaces.length} verified place(s)`);
+
+  const prompt = buildActivityPrompt(city.name, city.country ?? undefined, options, cityCoords, existingTitles, knownPlaces);
 
   function hasRequestedContent(parsed: ReturnType<typeof parseActivityResponse>): boolean {
     const results: boolean[] = [];
@@ -450,6 +440,7 @@ export async function POST(
       customSections: Array.isArray(existing.customSections) ? existing.customSections : [],
       generatedAt: new Date().toISOString(),
       model: ACTIVITY_MODEL,
+      promptVersion: ACTIVITY_PROMPT_VERSION,
     };
 
     // Redistribute must-do items to hikes/cycling, then deduplicate across sections

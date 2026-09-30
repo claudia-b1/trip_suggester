@@ -11,11 +11,8 @@
 
 import { prisma } from "@/lib/prisma";
 import { searchSerper } from "@/lib/serper";
+import { completeJson, DESCRIPTION_MODEL } from "@/lib/openrouter";
 
-// ── Model config ─────────────────────────────────────────────────────────────
-// Fast free model for description generation. Change to swap models.
-const DESCRIPTION_MODEL = "nex-agi/nex-n2.5-mini:free";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const BATCH_SIZE = 8; // POIs per LLM call (model uses reasoning tokens, keep batches moderate)
 
 type PoiForDescription = {
@@ -236,31 +233,14 @@ Return ONLY a valid JSON array, one entry per place, in this exact format:
 Places:
 ${poiLines.join("\n")}`;
 
-  const res = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: DESCRIPTION_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3,
-      max_tokens: 8000,
-    }),
-    signal: AbortSignal.timeout(120000),
+  const content = await completeJson({
+    model: DESCRIPTION_MODEL,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.3,
+    maxTokens: 8000,
+    timeoutMs: 120_000,
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  const data = await res.json() as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-
-  const content = data.choices?.[0]?.message?.content?.trim();
   if (!content) return [];
 
   // Parse JSON from the response (handle markdown code fences)

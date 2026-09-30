@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { ACTIVITY_PROMPT_VERSION } from "@/lib/activity-recommendations";
 import type {
   ActivityRecommendation,
   NearbyCityRecommendation,
@@ -1630,11 +1631,32 @@ export function ActivityRecommendations({
             )
           )}
 
-          {hasContent && (
-            <p className="text-xs text-center text-[hsl(var(--muted-foreground))]">
-              Generated {new Date(data!.generatedAt).toLocaleDateString()} · {data!.model}
-            </p>
-          )}
+          {hasContent && (() => {
+            const ageDays = Math.floor(
+              (Date.now() - new Date(data!.generatedAt).getTime()) / 86_400_000,
+            );
+            // These caches never expire on their own — deleting a user's curated
+            // recommendations on a read would be worse than showing them — so
+            // say how old they are and let the user decide to regenerate.
+            const stale = ageDays >= 90 || (data!.promptVersion ?? 0) < ACTIVITY_PROMPT_VERSION;
+            return (
+              <p className="text-xs text-center text-[hsl(var(--muted-foreground))]">
+                Generated {new Date(data!.generatedAt).toLocaleDateString()} · {data!.model}
+                {stale && (
+                  <span
+                    className="ml-1 text-amber-600 dark:text-amber-500"
+                    title={
+                      (data!.promptVersion ?? 0) < ACTIVITY_PROMPT_VERSION
+                        ? "These were generated before the current recommendation rules. Regenerating will apply them."
+                        : `These are about ${ageDays} days old. Places may have changed.`
+                    }
+                  >
+                    {" · outdated"}
+                  </span>
+                )}
+              </p>
+            );
+          })()}
         </CardContent>
       )}
 
@@ -1934,8 +1956,21 @@ function RecommendationCard({
           </button>
         )}
         {!poiLink && rec.linkedPlace && (
-          <span className="inline-flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]">
-            {"📍"} {rec.linkedPlace}
+          // No matching POI. Only a geocode hit says the place was found at all —
+          // otherwise this name is just something the model produced, and showing
+          // it identically to a verified link would imply more than we know.
+          <span
+            className="inline-flex items-center gap-1 text-xs text-[hsl(var(--muted-foreground))]"
+            title={
+              rec.coordinateSource === "geocoded"
+                ? `“${rec.linkedPlace}” was found by search but isn't in your POI list for this destination.`
+                : `“${rec.linkedPlace}” is AI-suggested and hasn't been verified against a map. Check it before relying on it.`
+            }
+          >
+            {rec.coordinateSource === "geocoded" ? "📍" : "💬"} {rec.linkedPlace}
+            {rec.coordinateSource !== "geocoded" && (
+              <span className="opacity-70">(unverified)</span>
+            )}
           </span>
         )}
         {distanceKm != null && distanceKm >= 1 && (
